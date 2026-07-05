@@ -1,111 +1,613 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+/* =====================================================================
+   index.css — global CSS variables, base reset, layout, and utilities
+   All component class names live here to avoid scattering CSS files.
+   ===================================================================== */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/* ── 1. CSS custom properties (light theme default) ─────────────────── */
+:root
+{
+  /* grayscale scale */
+  --gray-0:   #FFFFFF;
+  --gray-50:  #F8FAFC;
+  --gray-100: #F1F5F9;
+  --gray-200: #E2E8F0;
+  --gray-300: #CBD5E1;
+  --gray-400: #94A3B8;
+  --gray-500: #64748B;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --gray-800: #1E293B;
+  --gray-900: #0F172A;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
+  /* semantic surface tokens */
+  --bg:          var(--gray-0);    /* main page background */
+  --bg-surface:  var(--gray-50);   /* sidebar, topbar, table rows */
+  --bg-elevated: var(--gray-0);    /* cards, modals, inputs */
+  --border:      var(--gray-200);  /* default border */
+  --text:        var(--gray-800);  /* primary text */
+  --text-muted:  var(--gray-500);  /* secondary / placeholder text */
+
+  /* accent — blue */
+  --accent:        #3B82F6;
+  --accent-bg:     #DBEAFE;
+  --accent-border: #93C5FD;
+
+  /* status colours */
+  --success:    #22C55E;
+  --success-bg: #DCFCE7;
+  --danger:     #EF4444;
+  --danger-bg:  #FEE2E2;
+  --warning:    #F59E0B;
+  --warning-bg: #FEF3C7;
+
+  /* fixed-dark surfaces — never change with theme */
+  --surface-feed:     #0F172A;  /* live screen / webcam frame bg */
+  --border-feed:      #334155;  /* frame border */
+  --text-feed:        #94A3B8;  /* placeholder text inside feed */
+  --surface-terminal: #0B1220;  /* keylogger terminal bg */
+  --text-terminal:    #4ADE80;  /* keylogger text (green) */
+
+  /* typography */
+  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--text);
   background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+/* ── 2. Dark theme overrides ─────────────────────────────────────────── */
+[data-theme="dark"]
+{
+  --gray-0:   #0F172A;
+  --gray-50:  #16181D;
+  --gray-100: #1E293B;
+  --gray-200: #334155;
+  --gray-300: #475569;
+  --gray-400: #64748B;
+  --gray-500: #94A3B8;
+  --gray-800: #F1F5F9;
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+  --bg:          var(--gray-0);
+  --bg-surface:  var(--gray-50);
+  --bg-elevated: var(--gray-100);
+  --border:      var(--gray-200);
+  --text:        var(--gray-800);
+  --text-muted:  var(--gray-500);
+
+  --accent:        #60A5FA;
+  --accent-bg:     rgba(96, 165, 250, 0.16);
+  --accent-border: rgba(96, 165, 250, 0.4);
+
+  --success:    #4ADE80;
+  --success-bg: rgba(74, 222, 128, 0.14);
+  --danger:     #F87171;
+  --danger-bg:  rgba(248, 113, 113, 0.16);
+  --warning:    #FBBF24;
+  --warning-bg: rgba(251, 191, 36, 0.14);
+
+  /* surface-feed and surface-terminal stay dark regardless of theme */
 }
 
-body {
+/* ── 3. Base reset ───────────────────────────────────────────────────── */
+*,
+*::before,
+*::after
+{
+  box-sizing: border-box;
   margin: 0;
+  padding: 0;
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+body
+{
+  margin: 0;
+  overflow: hidden;   /* the app shell manages its own scroll */
+}
+
+#root
+{
+  width: 100%;
+  height: 100vh;
+}
+
+button
+{
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+input
+{
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* ── 4. App shell — two-column grid ─────────────────────────────────── */
+.app-shell
+{
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* right-panel stacks topbar above the main content */
+.right-panel
+{
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
+  overflow: hidden;
+  height: 100vh;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* ── 5. Sidebar ──────────────────────────────────────────────────────── */
+.sidebar
+{
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+.sidebar__header
+{
+  padding: 14px 16px 10px;
+  flex-shrink: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
+.sidebar__logo
+{
   font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.5px;
+}
+
+.sidebar__label
+{
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.sidebar__search-wrap
+{
+  padding: 0 14px 10px;
+  flex-shrink: 0;
+}
+
+.sidebar__search-input
+{
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sidebar__search-input::placeholder
+{
+  color: var(--text-muted);
+}
+
+.sidebar__search-input:focus
+{
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-border);
+}
+
+.sidebar__agent-list
+{
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 14px 8px;
+}
+
+/* thin scrollbar inside sidebar */
+.sidebar__agent-list::-webkit-scrollbar        { width: 4px; }
+.sidebar__agent-list::-webkit-scrollbar-track  { background: transparent; }
+.sidebar__agent-list::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 2px; }
+
+.sidebar__footer
+{
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sidebar__footer-text
+{
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ── 6. Agent card (sidebar) ─────────────────────────────────────────── */
+.agent-card
+{
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px 8px 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.agent-card:hover
+{
+  border-color: var(--accent-border);
+}
+
+.agent-card--active
+{
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+
+.agent-card__row
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.agent-card__name
+{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card__info
+{
+  font-size: 9px;
+  color: var(--text-muted);
+  padding-left: 18px;   /* indent to align under name (past the dot) */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 7. Status dot (shared) ──────────────────────────────────────────── */
+.status-dot
+{
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.status-dot--online   { background: var(--success); }
+.status-dot--offline  { background: var(--gray-400); }
+.status-dot--session  { background: var(--danger); }
+
+/* small dot variant used inside grid thumbnails */
+.status-dot--sm
+{
+  width: 8px;
+  height: 8px;
+}
+
+/* ── 8. Session badge (shared) ───────────────────────────────────────── */
+.session-badge
+{
+  font-size: 8px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+
+/* active-session indicator inside TopBar (larger) */
+.session-badge--topbar
+{
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+/* ── 9. TopBar ───────────────────────────────────────────────────────── */
+.topbar
+{
+  height: 60px;
+  min-height: 60px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.topbar__title
+{
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar__connection
+{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.topbar__btn
+{
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 10px;
+  white-space: nowrap;
+  transition: border-color 0.15s;
+}
+
+.topbar__btn:hover
+{
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+/* ── 10. Main area ───────────────────────────────────────────────────── */
+.main-area
+{
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 11. Grid view ───────────────────────────────────────────────────── */
+.grid-view
+{
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.grid-view__subtitle
+{
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.grid-view__grid
+{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.grid-view__empty
+{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 320px;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── 12. Agent thumbnail (grid tile) ─────────────────────────────────── */
+.agent-thumbnail
+{
+  background: var(--surface-feed);
+  border: 1px solid var(--border-feed);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.agent-thumbnail:hover
+{
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-border);
+}
+
+.agent-thumbnail__header
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.agent-thumbnail__name
+{
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  flex: 1;
+}
+
+.agent-thumbnail__feed
+{
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-thumbnail__placeholder
+{
+  font-size: 10px;
+  color: var(--text-feed);
+  letter-spacing: 0.5px;
+}
+
+/* ── 13. Focus view ──────────────────────────────────────────────────── */
+.focus-view
+{
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Tab bar — 7 equal tabs spanning full width */
+.focus-view__tabs
+{
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+}
+
+.focus-view__tab
+{
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 6px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-bottom-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.focus-view__tab:hover
+{
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.focus-view__tab--active
+{
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--accent-bg);
+  font-weight: 700;
+}
+
+/* Scrollable module content panel */
+.focus-view__panel
+{
+  flex: 1;
+  overflow: auto;
+}
+
+/* prompt shown when no agent is selected in focus mode */
+.focus-view__no-agent
+{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── 14. Module placeholder ──────────────────────────────────────────── */
+.module-placeholder
+{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 300px;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.module-placeholder__label
+{
+  font-size: 13px;
+}
+
+/* ── 15. Utility classes ─────────────────────────────────────────────── */
+.visually-hidden
+{
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+/* ── 16. Responsive — collapse sidebar on narrow screens ─────────────── */
+@media (max-width: 768px)
+{
+  .app-shell
+  {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar
+  {
+    display: none;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 200;
+    width: 220px;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
+  }
+
+  /* shown when UiStore.sidebar_open is true */
+  .sidebar--open
+  {
+    display: flex;
+  }
+
+  /* overlay behind open sidebar */
+  .sidebar-overlay
+  {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 199;
+  }
 }
