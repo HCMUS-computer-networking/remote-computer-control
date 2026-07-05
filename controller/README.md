@@ -1,16 +1,46 @@
-# React + Vite
+# Controller
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Controller là giao diện web dùng để **điều khiển từ xa** các máy Agent trong đồ án "Điều khiển máy tính từ xa". Người dùng (Controller) quan sát danh sách Agent đang kết nối, xem màn hình trực tiếp (live screen), và gửi lệnh điều khiển (file, process, power, keylog, webcam, application...) tới từng Agent thông qua Gateway trung gian.
 
-Currently, two official plugins are available:
+## Tech stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **React 19** — UI
+- **Vite** — dev server & build tool
+- **Zustand** — quản lý state (agent, connection, module, UI)
+- **WebSocket** — giao tiếp real-time với Gateway/Agent
 
-## React Compiler
+## Cách chạy
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm install
+npm run dev
+```
 
-## Expanding the Oxlint configuration
+Các lệnh khác:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+```bash
+npm run build     # build production
+npm run preview   # preview bản build
+npm run lint      # kiểm tra lint với oxlint
+```
+
+## Cấu trúc thư mục
+
+```
+src/
+├── assets/            # hình ảnh, icon tĩnh
+├── components/
+│   ├── agents/        # danh sách, card, chọn agent
+│   ├── layout/         # sidebar, topbar, theme toggle
+│   ├── livescreen/     # xem màn hình agent (grid/focus view)
+│   └── modules/        # các tab chức năng: File, Process, Power, Keylog, Webcam, Application, Screen
+├── hooks/              # custom hooks (vd: UseAgentSocket)
+├── services/           # Socket.js, MockSocket.js, Protocol.js
+├── store/              # Zustand store: Agent, Connection, Module, UI
+├── App.jsx
+└── main.jsx
+```
+
+## Ghi chú
+
+> ⚠️ Hiện tại project đang chạy bằng **`MockSocket`** ([src/services/MockSocket.js](src/services/MockSocket.js)) để giả lập dữ liệu/agent trong lúc phát triển UI. Khi Gateway thật đã sẵn sàng, cần đổi sang **`Socket.js`** ([src/services/Socket.js](src/services/Socket.js)) để kết nối WebSocket thật.
