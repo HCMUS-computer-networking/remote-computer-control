@@ -1,14 +1,14 @@
 /* TopBar.jsx — header bar: breadcrumb title, session badge, connection, theme, admin */
 import { Wifi, WifiOff, Loader2, User, ChevronDown, LayoutGrid, Maximize2 } from 'lucide-react'
-import useUiStore    from '../../store/UiStore'
-import useAgentStore from '../../store/AgentStore'
+import useUiStore         from '../../store/UiStore'
+import useAgentStore      from '../../store/AgentStore'
 import useConnectionStore from '../../store/ConnectionStore'
-import ThemeToggle   from './ThemeToggle'
+import ThemeToggle        from './ThemeToggle'
 
 /* map connection status to its icon + colour */
 function ConnectionIndicator({ status })
 {
-  if (status === 'connected')
+  if (status === 'open')
   {
     return (
       <span className="topbar__connection">
@@ -26,6 +26,7 @@ function ConnectionIndicator({ status })
       </span>
     )
   }
+  // 'idle' or 'closed'
   return (
     <span className="topbar__connection">
       <WifiOff size={14} strokeWidth={1.75} style={{ color: 'var(--danger)' }} />
@@ -36,25 +37,25 @@ function ConnectionIndicator({ status })
 
 function TopBar()
 {
-  const { view_mode, active_tab, setViewMode } = useUiStore()
-  const { getSelectedAgent }                   = useAgentStore()
-  const { status }                             = useConnectionStore()
+  const { layout_mode, active_tab, setLayoutMode } = useUiStore()
+  const { getFocusedAgent }                        = useAgentStore()
+  const { status }                                 = useConnectionStore()
 
-  const selected_agent = getSelectedAgent()
+  const focused_agent = getFocusedAgent()
 
   /* build the breadcrumb title shown in the header */
   let title = 'Grid View — All Agents'
-  if (view_mode === 'focus' && selected_agent)
+  if (layout_mode === 'focus' && focused_agent)
   {
     const tab_label = active_tab.charAt(0).toUpperCase() + active_tab.slice(1)
-    title = `${selected_agent.name}  ›  ${tab_label}`
+    title = `${focused_agent.name}  ›  ${tab_label}`
   }
-  else if (view_mode === 'focus')
+  else if (layout_mode === 'focus')
   {
     title = 'Focus Mode — Select an Agent'
   }
 
-  const in_session = selected_agent?.in_session && view_mode === 'focus'
+  const in_session = focused_agent?.in_session && layout_mode === 'focus'
 
   return (
     <header className="topbar">
@@ -69,18 +70,18 @@ function TopBar()
       {/* view-mode toggle buttons */}
       <button
         className="topbar__btn"
-        onClick={() => setViewMode('grid')}
+        onClick={() => setLayoutMode('grid')}
         title="Grid view — all agents"
-        aria-pressed={view_mode === 'grid'}
+        aria-pressed={layout_mode === 'grid'}
       >
         <LayoutGrid size={14} strokeWidth={1.75} />
       </button>
 
       <button
         className="topbar__btn"
-        onClick={() => setViewMode('focus')}
+        onClick={() => setLayoutMode('focus')}
         title="Focus view — single agent"
-        aria-pressed={view_mode === 'focus'}
+        aria-pressed={layout_mode === 'focus'}
       >
         <Maximize2 size={14} strokeWidth={1.75} />
       </button>

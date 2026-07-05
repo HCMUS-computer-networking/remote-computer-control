@@ -1,31 +1,43 @@
-/* AgentList.jsx — renders filtered agent cards inside the sidebar */
-import { Inbox } from 'lucide-react'
+// AgentList.jsx — renders the MultiSelect toolbar followed by filtered agent cards.
+import { Inbox }     from 'lucide-react'
 import useAgentStore from '../../store/AgentStore'
 import AgentCard     from './AgentCard'
+import MultiSelect   from './MultiSelect'
 
 function AgentList()
 {
-  const { getFilteredAgents } = useAgentStore()
-  const filtered_agents       = getFilteredAgents()
+    // subscribe to only agents + search_query so the list re-renders only when these change,
+    // not on every focused/selected change happening in other components
+    const agents       = useAgentStore((s) => s.agents)
+    const search_query = useAgentStore((s) => s.search_query)
 
-  if (filtered_agents.length === 0)
-  {
+    const q = search_query.trim().toLowerCase()
+    const filtered_agents = q
+        ? agents.filter(function (a)
+        {
+            return a.name.toLowerCase().includes(q) || a.ip.includes(q)
+        })
+        : agents
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '24px 0', color: 'var(--text-muted)' }}>
-        <Inbox size={28} strokeWidth={1.5} />
-        <span style={{ fontSize: 11 }}>No agents found</span>
-      </div>
-    )
-  }
+        <div>
+            {/* multi-agent selection controls above the list */}
+            <MultiSelect />
 
-  return (
-    <div>
-      {filtered_agents.map(function (agent)
-      {
-        return <AgentCard key={agent.id} agent={agent} />
-      })}
-    </div>
-  )
+            {filtered_agents.length === 0
+                ? (
+                    <div className="agent-list__empty">
+                        <Inbox size={28} strokeWidth={1.5} />
+                        <span>No agents found</span>
+                    </div>
+                )
+                : filtered_agents.map(function (agent)
+                {
+                    return <AgentCard key={agent.id} agent={agent} />
+                })
+            }
+        </div>
+    )
 }
 
 export default AgentList

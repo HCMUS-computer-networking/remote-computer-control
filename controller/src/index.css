@@ -41,11 +41,12 @@
   --warning-bg: #FEF3C7;
 
   /* fixed-dark surfaces — never change with theme */
-  --surface-feed:     #0F172A;  /* live screen / webcam frame bg */
-  --border-feed:      #334155;  /* frame border */
-  --text-feed:        #94A3B8;  /* placeholder text inside feed */
-  --surface-terminal: #0B1220;  /* keylogger terminal bg */
-  --text-terminal:    #4ADE80;  /* keylogger text (green) */
+  --surface-feed:      #0F172A;  /* live screen / webcam frame bg */
+  --border-feed:       #334155;  /* frame border */
+  --text-feed:         #94A3B8;  /* placeholder text inside feed */
+  --text-feed-name:    #FFFFFF;  /* agent name on dark feed header — always white */
+  --surface-terminal:  #0B1220;  /* keylogger terminal bg */
+  --text-terminal:     #4ADE80;  /* keylogger text (green) */
 
   /* typography */
   --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -459,7 +460,7 @@ input
 {
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-feed-name);
   flex: 1;
 }
 
@@ -578,7 +579,86 @@ input
   white-space: nowrap;
 }
 
-/* ── 16. Responsive — collapse sidebar on narrow screens ─────────────── */
+/* ── 16. Agent list empty state ─────────────────────────────────────── */
+.agent-list__empty
+{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* ── 17. Multi-select bar (above agent list in sidebar) ──────────────── */
+.multi-select-bar
+{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px 8px;
+  margin-bottom: 2px;
+}
+
+.multi-select-bar__label
+{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* the "select all" checkbox inside the label */
+.multi-select-bar__checkbox
+{
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);   /* tints the native checkbox in modern browsers */
+  cursor: pointer;
+}
+
+.multi-select-bar__clear
+{
+  font-size: 10px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.multi-select-bar__clear:hover
+{
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ── 18. AgentCard checkbox + selected state ─────────────────────────── */
+
+/* highlighted border when the agent is checked in multi-select */
+.agent-card--selected
+{
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+/* the per-row checkbox inside each AgentCard */
+.agent-card__checkbox
+{
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ── 19. Responsive — collapse sidebar on narrow screens ─────────────── */
 @media (max-width: 768px)
 {
   .app-shell

@@ -12,7 +12,8 @@ import WebcamTab      from '../modules/WebcamTab'
 import PowerTab       from '../modules/PowerTab'
 
 /* tab definitions — order matches wireframe left-to-right */
-const TABS = [
+const TABS =
+[
   { id: 'application', label: 'Application', Icon: AppWindow  },
   { id: 'process',     label: 'Process',     Icon: Cpu        },
   { id: 'screen',      label: 'Screen',      Icon: MonitorPlay },
@@ -25,24 +26,24 @@ const TABS = [
 /* map tab id → module component */
 const TAB_PANELS =
 {
-  application: ApplicationTab,
-  process:     ProcessTab,
-  screen:      ScreenTab,
-  keylog:      KeylogTab,
-  file:        FileTab,
-  webcam:      WebcamTab,
-  power:       PowerTab,
+  application : ApplicationTab,
+  process     : ProcessTab,
+  screen      : ScreenTab,
+  keylog      : KeylogTab,
+  file        : FileTab,
+  webcam      : WebcamTab,
+  power       : PowerTab,
 }
 
 function FocusView()
 {
   const { active_tab, setActiveTab } = useUiStore()
-  const { getSelectedAgent }         = useAgentStore()
+  const { getFocusedAgent }          = useAgentStore()
 
-  const selected_agent = getSelectedAgent()
+  const focused_agent = getFocusedAgent()
 
-  /* no agent selected yet — prompt the user */
-  if (!selected_agent)
+  /* no agent focused yet — prompt the user */
+  if (!focused_agent)
   {
     return (
       <div className="focus-view">
@@ -79,7 +80,7 @@ function FocusView()
 
       {/* active module panel */}
       <div className="focus-view__panel" role="tabpanel">
-        <ActivePanel agent={selected_agent} />
+        <ActivePanel agent={focused_agent} />
       </div>
     </div>
   )

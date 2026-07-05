@@ -1,4 +1,5 @@
-/* AgentCard.jsx — single agent row in the sidebar list */
+// AgentCard.jsx — one agent row in the sidebar list.
+// Left checkbox: toggles multi-select. Clicking the card body: opens focus view.
 import useAgentStore from '../../store/AgentStore'
 import useUiStore    from '../../store/UiStore'
 
@@ -8,47 +9,72 @@ import useUiStore    from '../../store/UiStore'
 */
 function AgentCard({ agent })
 {
-  const { selected_agent_id, setSelectedAgent } = useAgentStore()
-  const { setViewMode }                         = useUiStore()
+    // subscribe to only the slice that affects THIS card to avoid re-rendering all cards on every selection change
+    const is_focused   = useAgentStore((s) => s.focused_agent_id === agent.id)
+    const is_selected  = useAgentStore((s) => s.selected_agent_ids.includes(agent.id))
+    const setFocused   = useAgentStore((s) => s.setFocused)
+    const toggleSelect = useAgentStore((s) => s.toggleSelect)
+    const setLayoutMode = useUiStore((s) => s.setLayoutMode)
+    const dot_class    = agent.online
+        ? 'status-dot status-dot--online'
+        : 'status-dot status-dot--offline'
 
-  const is_active   = selected_agent_id === agent.id
-  const dot_class   = agent.online ? 'status-dot status-dot--online' : 'status-dot status-dot--offline'
-  const card_class  = `agent-card${is_active ? ' agent-card--active' : ''}`
+    let card_class = 'agent-card'
+    if (is_focused)  card_class += ' agent-card--active'
+    if (is_selected) card_class += ' agent-card--selected'
 
-  function handleClick()
-  {
-    setSelectedAgent(agent.id)
-    setViewMode('focus')  // clicking an agent switches to focus mode
-  }
+    function handleCardClick()
+    {
+        setFocused(agent.id)
+        setLayoutMode('focus')
+    }
 
-  return (
-    <div
-      className={card_class}
-      onClick={handleClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && handleClick()}
-      aria-pressed={is_active}
-      aria-label={`Agent ${agent.name}, ${agent.online ? 'online' : 'offline'}`}
-    >
-      <div className="agent-card__row">
-        {/* online / offline indicator dot */}
-        <span className={dot_class} aria-hidden="true" />
+    function handleCheckboxChange(e)
+    {
+        e.stopPropagation()   // prevent handleCardClick from firing
+        toggleSelect(agent.id)
+    }
 
-        <span className="agent-card__name">{agent.name}</span>
+    return (
+        <div
+            className={card_class}
+            onClick={handleCardClick}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && handleCardClick()}
+            aria-pressed={is_focused}
+            aria-label={`Agent ${agent.name}, ${agent.online ? 'online' : 'offline'}`}
+        >
+            <div className="agent-card__row">
+                {/* status dot */}
+                <span className={dot_class} aria-hidden="true" />
 
-        {/* session badge only when agent is currently being controlled */}
-        {agent.in_session && (
-          <span className="session-badge" aria-label="Session active">SESSION</span>
-        )}
-      </div>
+                {/* agent name — takes remaining space */}
+                <span className="agent-card__name">{agent.name}</span>
 
-      {/* OS and IP — secondary info line */}
-      <div className="agent-card__info">
-        {agent.os} &mdash; {agent.ip}
-      </div>
-    </div>
-  )
+                {/* session badge — only when actively controlled */}
+                {agent.in_session && (
+                    <span className="session-badge" aria-label="Session active">SESSION</span>
+                )}
+
+                {/* multi-select checkbox — placed at the far right */}
+                <input
+                    type="checkbox"
+                    className="agent-card__checkbox"
+                    checked={is_selected}
+                    onChange={handleCheckboxChange}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${agent.name}`}
+                    tabIndex={-1}   // card itself is the tab stop; checkbox reachable by click
+                />
+            </div>
+
+            {/* OS and IP — secondary info line */}
+            <div className="agent-card__info">
+                {agent.os} &mdash; {agent.ip}
+            </div>
+        </div>
+    )
 }
 
 export default AgentCard

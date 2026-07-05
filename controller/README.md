@@ -1,61 +1,51 @@
 # Controller — Đồ án Điều khiển máy tính từ xa
 
-Phần **Controller** là giao diện web ReactJS cho phép người quản trị:
-
-- Xem danh sách Agent đang kết nối (online/offline, trạng thái phiên điều khiển).
-- Chuyển giữa **Grid view** (thumbnail màn hình nhiều Agent) và **Focus view** (điều khiển 1 Agent với 7 tab module).
-- Gửi lệnh điều khiển tới Agent thông qua Gateway trung gian qua WebSocket.
-
-Controller **chỉ render dữ liệu** mà Agent chủ động gửi lên sau khi người dùng đầu Agent đã đồng ý — không tự thu thập dữ liệu.
+Phần **Controller** là giao diện web cho phép người quản trị giám sát và điều khiển các máy Agent từ xa thông qua một Gateway trung gian. Toàn bộ dữ liệu chỉ được thu thập sau khi người dùng đầu Agent đồng ý.
 
 ---
 
 ## Tech stack
 
-| Thư viện           | Phiên bản | Mục đích                                                           |
-| ------------------ | --------- | ------------------------------------------------------------------ |
-| React              | 19.2      | UI                                                                 |
-| Vite               | 8.1       | Dev server + build                                                 |
-| Zustand            | 5.0       | Quản lý state (tránh re-render thừa khi dữ liệu cập nhật liên tục) |
-| lucide-react       | ^1.23.0   | Icon (nhẹ, nhất quán)                                              |
-| WebSocket (native) | —         | Giao tiếp real-time với Gateway                                    |
+| Thư viện | Phiên bản | Mục đích |
+|---|---|---|
+| React | 19.2 | UI |
+| Vite | 8.1 | Dev server + build |
+| Zustand | 5.0 | Global state (tránh re-render thừa) |
+| lucide-react | 1.23 | Icon |
+| WebSocket (native) | — | Giao tiếp real-time với Gateway |
 
-> Không dùng TypeScript, không dùng Redux, không dùng Context API cho state liên tục.  
-> Lý do chi tiết: [`docs/technical_explanation/`](docs/technical_explanation/)
+> Không dùng TypeScript, không dùng Redux, không dùng Context API cho state liên tục.
 
 ---
 
 ## Cách chạy
 
 ```bash
-# cài dependencies (chỉ cần làm 1 lần)
-npm install
-
-# khởi động dev server → http://localhost:5173
-npm run dev
+npm install        # cài dependencies (chỉ cần làm 1 lần)
+npm run dev        # khởi động dev server → http://localhost:5173
 ```
 
-Các lệnh khác:
+Lệnh khác:
 
 ```bash
-npm run build     # build production ra dist/
-npm run preview   # preview bản build
-npm run lint      # kiểm tra lint với oxlint
+npm run build      # build production ra dist/
+npm run preview    # preview bản build
+npm run lint       # kiểm tra lint với oxlint
 ```
 
 ---
 
 ## 7 module quản trị
 
-| Tab         | Tính năng                                                    |
-| ----------- | ------------------------------------------------------------ |
-| Application | Xem + Start/Stop ứng dụng trong whitelist                    |
-| Process     | Xem toàn bộ tiến trình + Kill                                |
-| Screen      | Chụp màn hình 1 lần + Live Stream 24fps                      |
-| Keylog      | Xem keystroke log (có chỉ báo consent trực quan)             |
-| File        | Duyệt cây thư mục sandbox + Upload/Download                  |
-| Webcam      | Xem live webcam (có chỉ báo consent trực quan)               |
-| Power       | Lock / Restart / Shutdown / Sleep (modal đếm ngược xác nhận) |
+| Tab | Tính năng |
+|---|---|
+| Application | Xem + Start/Stop ứng dụng trong whitelist |
+| Process | Xem toàn bộ tiến trình + Kill |
+| Screen | Chụp màn hình 1 lần + Live Stream 24fps |
+| Keylog | Xem keystroke log (có chỉ báo consent trực quan) |
+| File | Duyệt cây thư mục sandbox + Upload/Download |
+| Webcam | Xem live webcam (có chỉ báo consent trực quan) |
+| Power | Lock / Restart / Shutdown / Sleep (đếm ngược xác nhận) |
 
 ---
 
@@ -65,19 +55,19 @@ npm run lint      # kiểm tra lint với oxlint
 controller/
 ├── docs/
 │   ├── wireframe/              Wireframe drawio + bảng màu + icon guide
-│   ├── formatjson/             Draft JSON protocol 7 module (chưa chốt với nhóm)
+│   ├── formatjson/             Draft JSON protocol 7 module
 │   ├── technical_explanation/  Giải thích kỹ thuật cho báo cáo (tiếng Việt)
 │   └── screenshot/wireframe_UI/ Ảnh chụp wireframe light/dark
 │
 └── src/
     ├── store/          UiStore · AgentStore · ConnectionStore · ModuleStore
-    ├── services/       Socket.js · MockSocket.js · Protocol.js  (stubs)
-    ├── hooks/          UseAgentSocket.js  (stub)
+    ├── services/       Protocol.js · MockSocket.js · Socket.js (stub)
+    ├── hooks/          UseAgentSocket.js
     ├── components/
     │   ├── layout/     Sidebar · TopBar · ThemeToggle
-    │   ├── agents/     AgentList · AgentCard · MultiSelect (stub)
+    │   ├── agents/     AgentList · AgentCard · MultiSelect
     │   ├── livescreen/ GridView · FocusView · FrameCanvas
-    │   └── modules/    7 tab placeholder stubs
+    │   └── modules/    7 tab (hiện là placeholder stubs)
     ├── App.jsx
     └── index.css       Toàn bộ CSS của dự án
 ```
@@ -86,9 +76,19 @@ controller/
 
 ## Ghi chú Mock → Real
 
-App hiện render **mock data tĩnh** định nghĩa trong `AgentStore.js`.  
-Khi `MockSocket.js` và `UseAgentSocket` được implement, data sẽ đến từ mock Gateway giả lập.  
-Khi Gateway thật sẵn sàng, chỉ cần đổi **một import** từ `MockSocket` sang `Socket` — toàn bộ component không cần sửa vì chúng chỉ nói chuyện qua store/hook.
+App hiện chạy với **MockSocket.js** — giả lập Gateway và Agent ngay trong trình duyệt, không cần backend thật.
+
+Khi Gateway thật sẵn sàng, chỉ cần đổi **một dòng import** trong `src/hooks/UseAgentSocket.js`:
+
+```js
+// Đổi dòng này:
+import MockSocket from '../services/MockSocket'
+
+// Thành:
+import MockSocket from '../services/Socket'
+```
+
+Không cần sửa bất kỳ component hay store nào.
 
 ---
 

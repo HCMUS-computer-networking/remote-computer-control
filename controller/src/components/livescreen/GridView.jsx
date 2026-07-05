@@ -1,23 +1,22 @@
 /* GridView.jsx — overview grid of low-fps thumbnails for all online agents */
 import { Inbox, Expand } from 'lucide-react'
-import useAgentStore from '../../store/AgentStore'
-import useUiStore    from '../../store/UiStore'
+import useAgentStore  from '../../store/AgentStore'
+import useUiStore     from '../../store/UiStore'
 import useModuleStore from '../../store/ModuleStore'
-import FrameCanvas   from './FrameCanvas'
+import FrameCanvas    from './FrameCanvas'
 
 /* one tile in the grid — clicking opens focus mode for that agent */
 function AgentThumbnail({ agent })
 {
-  const { setSelectedAgent } = useAgentStore()
-  const { setViewMode }      = useUiStore()
-  const { data }             = useModuleStore()
-
-  const frame_buffer = data[agent.id]?.screen?.frame ?? null
+  const setFocused    = useAgentStore((s) => s.setFocused)
+  const setLayoutMode = useUiStore((s) => s.setLayoutMode)
+  // subscribe to only this agent's screen frame so other agents' updates don't re-render this tile
+  const frame_buffer  = useModuleStore((s) => s.data[agent.id]?.screen?.frame ?? null)
 
   function handleExpand()
   {
-    setSelectedAgent(agent.id)
-    setViewMode('focus')
+    setFocused(agent.id)
+    setLayoutMode('focus')
   }
 
   const dot_color = agent.online ? 'var(--success)' : 'var(--gray-400)'

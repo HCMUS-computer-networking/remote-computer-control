@@ -1,35 +1,49 @@
-/* UiStore.js — global UI state: theme, view mode, active tab, sidebar */
+// UiStore.js — global UI state: theme, layout mode, active module tab, sidebar.
 import { create } from 'zustand'
 
+// Valid tab IDs — used by setActiveTab to reject unknown values.
 const MODULE_TABS = ['application', 'process', 'screen', 'keylog', 'file', 'webcam', 'power']
 
 const useUiStore = create(function (set)
 {
-  return {
-    theme:        'light',       // 'light' | 'dark'
-    view_mode:    'grid',        // 'grid'  | 'focus'
-    active_tab:   'application', // one of MODULE_TABS
-    sidebar_open: true,          // controls mobile sidebar visibility
+    return {
+        theme        : 'light',         // 'light' | 'dark'
+        layout_mode  : 'grid',          // 'grid'  | 'focus'
+        active_tab   : 'application',   // one of MODULE_TABS
+        sidebar_open : true,            // controls mobile sidebar visibility
 
-    setTheme: (theme) => set({ theme }),
+        setTheme: (theme) =>
+        {
+            set({ theme });
+        },
 
-    toggleTheme: () => set(function (s)
-    {
-      return { theme: s.theme === 'light' ? 'dark' : 'light' }
-    }),
+        toggleTheme: () =>
+            set(function (s)
+            {
+                const next_theme = s.theme === 'light' ? 'dark' : 'light'
+                return { theme: next_theme }
+            }),
 
-    setViewMode: (view_mode) => set({ view_mode }),
+        setLayoutMode: (mode) =>
+        {
+            set({ layout_mode: mode });
+        },
 
-    setActiveTab: (tab) =>
-    {
-      if (MODULE_TABS.includes(tab))
-      {
-        set({ active_tab: tab, view_mode: 'focus' })
-      }
-    },
+        // Switching to a tab implies entering focus view for that agent.
+        setActiveTab: (tab) =>
+        {
+            if (MODULE_TABS.includes(tab))
+            {
+                set({ active_tab: tab, layout_mode: 'focus' })
+            }
+        },
 
-    toggleSidebar: () => set((s) => ({ sidebar_open: !s.sidebar_open })),
-  }
+        toggleSidebar: () =>
+            set(function (s)
+            {
+                return { sidebar_open: !s.sidebar_open }
+            }),
+    }
 })
 
 export { MODULE_TABS }

@@ -1,5 +1,5 @@
 /* Sidebar.jsx — left panel: logo, agent search, agent list, gateway status */
-import { Search }  from 'lucide-react'
+import { Search }         from 'lucide-react'
 import useAgentStore      from '../../store/AgentStore'
 import useConnectionStore from '../../store/ConnectionStore'
 import useUiStore         from '../../store/UiStore'
@@ -9,16 +9,16 @@ function GatewayStatus({ status })
 {
   /* pick dot colour based on connection state */
   const dot_style =
-    status === 'connected'
+    status === 'open'
       ? { background: 'var(--success)' }
       : status === 'connecting'
       ? { background: 'var(--warning)' }
-      : { background: 'var(--danger)' }
+      : { background: 'var(--danger)' }   // 'idle' or 'closed'
 
   const label =
-    status === 'connected'   ? 'Gateway: Connected'   :
-    status === 'connecting'  ? 'Gateway: Connecting…' :
-                               'Gateway: Disconnected'
+    status === 'open'       ? 'Gateway: Connected'   :
+    status === 'connecting' ? 'Gateway: Connecting…' :
+                              'Gateway: Disconnected'
 
   return (
     <footer className="sidebar__footer">
