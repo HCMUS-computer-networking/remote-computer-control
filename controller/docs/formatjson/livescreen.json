@@ -1,0 +1,74 @@
+{
+  "_comment": "Screenshot / Live Stream module messages — Controller <-> Gateway <-> Agent",
+  "_note_binary": "Image data is sent as TWO consecutive WebSocket messages: first a JSON 'frame_meta', then one BINARY message (raw JPEG bytes as ArrayBuffer). The receiver must pair them in order.",
+
+  "controller_to_gateway": {
+
+    "screenshot_once": {
+      "_desc": "Request a single screenshot from one or more agents",
+      "type": "request",
+      "module": "screenshot",
+      "params": {
+        "mode": "once"
+      },
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "stream_start": {
+      "_desc": "Start a continuous screen stream at the given FPS",
+      "type": "request",
+      "module": "screen_stream",
+      "params": {
+        "mode": "stream",
+        "fps": 24,
+        "quality": 70
+      },
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "stream_stop": {
+      "_desc": "Stop the ongoing screen stream",
+      "type": "request",
+      "module": "screen_stream_stop",
+      "params": {},
+      "target_agents": ["PC-Lab-01"]
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "frame_meta": {
+      "_desc": "Sent immediately BEFORE the binary JPEG frame. The next WebSocket message is the raw JPEG bytes.",
+      "type": "frame_meta",
+      "module": "screen",
+      "agent_id": "PC-Lab-01",
+      "w": 1920,
+      "h": 1080,
+      "len": 48320,
+      "seq": 42,
+      "timestamp_ms": 1720000000000
+    },
+
+    "binary_frame": {
+      "_desc": "Raw JPEG bytes (ArrayBuffer). Always follows a frame_meta with matching seq. Not JSON — shown here only for documentation.",
+      "format": "ArrayBuffer (raw JPEG bytes)",
+      "size_bytes": "matches frame_meta.len"
+    },
+
+    "stream_started": {
+      "_desc": "Agent confirms stream has started",
+      "type": "stream_started",
+      "agent_id": "PC-Lab-01",
+      "module": "screen"
+    },
+
+    "stream_stopped": {
+      "_desc": "Agent confirms stream has stopped",
+      "type": "stream_stopped",
+      "agent_id": "PC-Lab-01",
+      "module": "screen"
+    }
+
+  }
+}
