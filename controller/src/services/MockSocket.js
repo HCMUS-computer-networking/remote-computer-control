@@ -11,6 +11,12 @@ const REPLY_MIN_MS     = 400;   // minimum wait before a mock reply
 const REPLY_MAX_MS     = 800;   // maximum wait before a mock reply
 const STAGGER_MS       = 80;    // extra delay between each agent's reply
 
+// ─── Frame stream defaults ────────────────────────────────────────────────────
+
+const FRAME_W       = 320;      // simulated screen width (px)
+const FRAME_H       = 180;      // simulated screen height (px)
+const FRAME_QUALITY = 0.7;      // JPEG quality for canvas.toBlob
+
 // ─── Static fake data ─────────────────────────────────────────────────────────
 
 const FAKE_AGENTS =
@@ -20,8 +26,8 @@ const FAKE_AGENTS =
     { id: "agent-03", name: "PC-Lab-03", os: "Windows 10", ip: "192.168.1.103", online: false, in_session: false },
 ]
 
-// App list — format matches docs/formatjson/application.json → app_list_result
-const FAKE_APPS =
+// Template app list — cloned per agent into _app_state on first request.
+const INITIAL_APPS =
 [
     { name: "notepad",  display_name: "Notepad",          status: "stopped", cpu_percent: 0.0, ram_mb: 0,   in_whitelist: true  },
     { name: "calc",     display_name: "Calculator",        status: "running", cpu_percent: 0.1, ram_mb: 8,   in_whitelist: true  },
@@ -87,18 +93,37 @@ class MockSocket
 {
     constructor()
     {
-        this._on_message     = null;   // fired for every incoming message object
+        this._on_message     = null;   // fired for every incoming JSON message
+        this._on_binary      = null;   // fired for incoming binary (ArrayBuffer) data
         this._on_open        = null;   // fired once when the connection opens
         this._on_close       = null;   // fired when the connection closes
         this._on_error       = null;   // kept for API parity with real Socket (unused here)
         this._connected      = false;  // true after connect() fires _on_open
         this._connect_timer  = null;   // saved so close() can cancel it
+
+        // Per-agent mutable state so Start/Stop/Kill have visible effects.
+        // Keyed by agent_id. Lazily initialised on first request.
+        this._app_state      = {};   // { [agent_id]: [ ...app objects ] }
+        this._proc_state     = {};   // { [agent_id]: [ ...proc objects ] }
+
+        // Active frame streams keyed by "agentId:module" (e.g. "agent-01:screen").
+        // Each value is a setInterval ID. Cleared on stop or close.
+        this._streams        = {};
+
+        // Sequence counter per stream key. Increments with every frame.
+        this._seq_counters   = {};
+
+        // Shared off-screen canvas for generating fake JPEG frames.
+        // Created lazily by _getCanvas().
+        this._canvas         = null;
+        this._canvas_ctx     = null;
     }
 
     // ── Callback registration (mirror the real Socket API) ─────────────────
 
     onOpen(callback)    { this._on_open    = callback; }
     onMessage(callback) { this._on_message = callback; }
+    onBinary(callback)  { this._on_binary  = callback; }
     onClose(callback)   { this._on_close   = callback; }
     onError(callback)   { this._on_error   = callback; }
 
@@ -116,6 +141,15 @@ class MockSocket
     close()
     {
         clearTimeout(this._connect_timer);   // cancel pending connect timer if still waiting
+
+        // Stop all running frame streams to prevent leaked intervals
+        for (const key of Object.keys(this._streams))
+        {
+            clearInterval(this._streams[key]);
+        }
+        this._streams      = {};
+        this._seq_counters = {};
+
         this._connected = false;
         if (this._on_close) this._on_close();
     }
@@ -143,6 +177,28 @@ class MockSocket
         }
 
         this._dispatch(parsed);
+    }
+
+    // ── Per-agent state helpers ──────────────────────────────────────────
+
+    // Return (and lazily create) the mutable app list for one agent.
+    _getApps(agent_id)
+    {
+        if (!this._app_state[agent_id])
+        {
+            this._app_state[agent_id] = INITIAL_APPS.map((a) => ({ ...a }))
+        }
+        return this._app_state[agent_id]
+    }
+
+    // Return (and lazily create) the mutable process list for one agent.
+    _getProcs(agent_id)
+    {
+        if (!this._proc_state[agent_id])
+        {
+            this._proc_state[agent_id] = generateFakeProcs()
+        }
+        return this._proc_state[agent_id]
     }
 
     // ── Private: dispatch ──────────────────────────────────────────────────
@@ -179,74 +235,120 @@ class MockSocket
         {
             // ── Application (application.json) ─────────────────────────────
             case 'app_list':
-                this._replyPerAgent(msg.target_agents, (agent_id, i) =>
-                ({
-                    type     : 'app_list_result',
-                    agent_id,
-                    apps     : FAKE_APPS,
-                }),
+                this._replyPerAgent(msg.target_agents, (agent_id) =>
+                {
+                    // Return current stateful app list with fresh random CPU/RAM for running apps
+                    const apps = this._getApps(agent_id).map((a) =>
+                    ({
+                        ...a,
+                        cpu_percent : a.status === 'running' ? randomFloat(0.1, 15) : 0,
+                        ram_mb      : a.status === 'running' ? randomInt(5, 500)     : 0,
+                    }))
+                    return { type: 'app_list_result', agent_id, apps }
+                },
                 300);
                 break;
 
             case 'app_start':
             case 'app_stop':
-                this._replyPerAgent(msg.target_agents, (agent_id, i) =>
-                ({
-                    type    : 'app_action_result',
-                    agent_id,
-                    action  : msg.module,
-                    name    : msg.params?.name ?? '',
-                    success : true,
-                    message : msg.module === 'app_start' ? 'Application started successfully' : 'Application stopped successfully',
-                }),
+            {
+                const app_name   = msg.params?.name ?? ''
+                const new_status = msg.module === 'app_start' ? 'running' : 'stopped'
+
+                this._replyPerAgent(msg.target_agents, (agent_id) =>
+                {
+                    // Mutate the persistent app state so the next poll reflects the change
+                    const apps = this._getApps(agent_id)
+                    const target = apps.find((a) => a.name === app_name)
+                    if (target) target.status = new_status
+
+                    return {
+                        type    : 'app_action_result',
+                        agent_id,
+                        action  : msg.module,
+                        name    : app_name,
+                        success : true,
+                        message : msg.module === 'app_start'
+                            ? `${app_name} started successfully`
+                            : `${app_name} stopped successfully`,
+                    }
+                },
                 300);
                 break;
+            }
 
             // ── Process (process.json) ─────────────────────────────────────
             case 'proc_list':
-                this._replyPerAgent(msg.target_agents, (agent_id, i) =>
-                ({
-                    type      : 'proc_list_result',
-                    agent_id,
-                    processes : generateFakeProcs(),   // fresh random data each call
-                }),
+                this._replyPerAgent(msg.target_agents, (agent_id) =>
+                {
+                    // Return persistent list with fresh random CPU/RAM each poll
+                    const procs = this._getProcs(agent_id).map((p) =>
+                    ({
+                        ...p,
+                        cpu_percent : randomFloat(0, 25),
+                        ram_mb      : randomFloat(10, 512),
+                    }))
+                    return { type: 'proc_list_result', agent_id, processes: procs }
+                },
                 300);
                 break;
 
             case 'proc_kill':
-                this._replyPerAgent(msg.target_agents, (agent_id, i) =>
-                ({
-                    type    : 'proc_kill_result',
-                    agent_id,
-                    pid     : msg.params?.pid,
-                    success : true,
-                    message : 'Process terminated',
-                }),
+            {
+                const kill_pid = msg.params?.pid
+
+                this._replyPerAgent(msg.target_agents, (agent_id) =>
+                {
+                    // Remove the process from persistent state so it disappears on next poll
+                    const procs = this._getProcs(agent_id)
+                    const idx   = procs.findIndex((p) => p.pid === kill_pid)
+                    const name  = idx >= 0 ? procs[idx].name : `PID ${kill_pid}`
+                    if (idx >= 0) procs.splice(idx, 1)
+
+                    return {
+                        type    : 'proc_kill_result',
+                        agent_id,
+                        pid     : kill_pid,
+                        name,
+                        success : idx >= 0,
+                        message : idx >= 0 ? `${name} terminated` : `PID ${kill_pid} not found`,
+                    }
+                },
                 300);
                 break;
+            }
 
             // ── Screen (livescreen.json) ───────────────────────────────────
             case 'screenshot':
-            case 'screen_stream':
-                // Binary JPEG frames are handled separately by FrameCanvas.
-                // For now only acknowledge that the stream has started.
+                // Single capture: emit one frame_meta + binary pair per agent
                 this._replyPerAgent(msg.target_agents, (agent_id) =>
-                ({
-                    type     : 'stream_started',
-                    agent_id,
-                    module   : 'screen',
-                }),
-                400);
+                {
+                    this._emitSingleFrame(agent_id, 'screen');
+                    return null;   // _emitSingleFrame calls _reply itself
+                },
+                0);
+                break;
+
+            case 'screen_stream':
+                this._replyPerAgent(msg.target_agents, (agent_id) =>
+                {
+                    const fps = msg.params?.fps ?? 24;
+                    this._startFrameStream(agent_id, 'screen', fps);
+
+                    // Confirm stream started
+                    this._reply({ type: 'stream_started', agent_id, module: 'screen' }, 100);
+                    return null;
+                },
+                0);
                 break;
 
             case 'screen_stream_stop':
                 this._replyPerAgent(msg.target_agents, (agent_id) =>
-                ({
-                    type     : 'stream_stopped',
-                    agent_id,
-                    module   : 'screen',
-                }),
-                300);
+                {
+                    this._stopFrameStream(agent_id, 'screen');
+                    return { type: 'stream_stopped', agent_id, module: 'screen' };
+                },
+                200);
                 break;
 
             // ── Keylog (keylog.json) ───────────────────────────────────────
@@ -368,6 +470,144 @@ class MockSocket
             message   : `System action "${msg.action}" executed`,
         }),
         400);
+    }
+
+    // ── Private: frame stream engine ──────────────────────────────────────
+    //
+    // Simulates the Agent capturing its screen and sending JPEG frames.
+    // Uses an off-screen <canvas> to draw a numbered card with the agent id
+    // and a timestamp, then encodes it to a JPEG blob → ArrayBuffer.
+    // Each frame produces TWO messages in order (matching real protocol):
+    //   1) JSON   — frame_meta  (type, agent_id, module, w, h, len, seq, timestamp_ms)
+    //   2) Binary — raw JPEG bytes as ArrayBuffer
+
+    // Lazily create a shared off-screen canvas (no DOM attachment needed).
+    _getCanvas()
+    {
+        if (!this._canvas)
+        {
+            this._canvas     = document.createElement('canvas');
+            this._canvas.width  = FRAME_W;
+            this._canvas.height = FRAME_H;
+            this._canvas_ctx = this._canvas.getContext('2d');
+        }
+        return { canvas: this._canvas, ctx: this._canvas_ctx };
+    }
+
+    // Draw a visually distinct test card on the shared canvas.
+    // Each agent gets a different background hue so tiles are distinguishable.
+    _drawTestCard(agent_id, module, seq)
+    {
+        const { canvas, ctx } = this._getCanvas();
+
+        // Derive a stable hue from the agent_id string
+        let hash = 0;
+        for (let i = 0; i < agent_id.length; i++)
+        {
+            hash = agent_id.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash) % 360;
+
+        // Fill background with agent-specific colour
+        ctx.fillStyle = `hsl(${hue}, 40%, 25%)`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw agent name at top
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font      = 'bold 16px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(agent_id, canvas.width / 2, 40);
+
+        // Draw module label
+        ctx.font = '12px monospace';
+        ctx.fillText(module.toUpperCase(), canvas.width / 2, 65);
+
+        // Draw frame sequence number (large, centered)
+        ctx.font = 'bold 48px monospace';
+        ctx.fillText(`#${seq}`, canvas.width / 2, 120);
+
+        // Draw current timestamp at bottom
+        ctx.font = '11px monospace';
+        ctx.fillStyle = '#AAAAAA';
+        const time_str = new Date().toLocaleTimeString();
+        ctx.fillText(time_str, canvas.width / 2, 165);
+    }
+
+    // Emit a single frame_meta + binary JPEG pair for one agent.
+    // Used by both screenshot (one-shot) and stream (repeated).
+    _emitSingleFrame(agent_id, module)
+    {
+        const key = `${agent_id}:${module}`;
+        if (!this._seq_counters[key]) this._seq_counters[key] = 0;
+        const seq = ++this._seq_counters[key];
+
+        this._drawTestCard(agent_id, module, seq);
+
+        const { canvas } = this._getCanvas();
+
+        // Convert canvas to JPEG blob, then to ArrayBuffer
+        canvas.toBlob((blob) =>
+        {
+            if (!blob || !this._connected) return;
+
+            blob.arrayBuffer().then((buffer) =>
+            {
+                if (!this._connected) return;
+
+                // 1) Send frame_meta JSON (matches docs/formatjson/livescreen.json)
+                if (this._on_message)
+                {
+                    this._on_message(
+                    {
+                        type         : 'frame_meta',
+                        module,
+                        agent_id,
+                        w            : FRAME_W,
+                        h            : FRAME_H,
+                        len          : buffer.byteLength,
+                        seq,
+                        timestamp_ms : Date.now(),
+                    });
+                }
+
+                // 2) Send raw JPEG binary immediately after
+                if (this._on_binary)
+                {
+                    this._on_binary(buffer);
+                }
+            });
+        }, 'image/jpeg', FRAME_QUALITY);
+    }
+
+    // Start a repeating frame stream at the given fps.
+    // If a stream is already running for this agent+module, stop it first.
+    _startFrameStream(agent_id, module, fps)
+    {
+        const key = `${agent_id}:${module}`;
+
+        // Stop any existing stream for this key (prevents duplicate intervals)
+        if (this._streams[key])
+        {
+            clearInterval(this._streams[key]);
+        }
+
+        const interval_ms = Math.round(1000 / fps);
+
+        this._streams[key] = setInterval(() =>
+        {
+            this._emitSingleFrame(agent_id, module);
+        }, interval_ms);
+    }
+
+    // Stop a running frame stream for one agent+module.
+    _stopFrameStream(agent_id, module)
+    {
+        const key = `${agent_id}:${module}`;
+        if (this._streams[key])
+        {
+            clearInterval(this._streams[key]);
+            delete this._streams[key];
+        }
     }
 
     // ── Private: utilities ─────────────────────────────────────────────────

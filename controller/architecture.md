@@ -13,18 +13,22 @@ that will remain — it is written to stand alone without depending on this file
 
 | Layer | Status |
 |---|---|
-| App shell, global CSS, theme toggle | ✅ Complete |
+| App shell, global CSS, theme toggle, toast notifications | ✅ Complete |
 | 4 Zustand stores | ✅ Complete |
 | Layout components (Sidebar, TopBar, ThemeToggle) | ✅ Complete |
 | Agent components (AgentList, AgentCard, MultiSelect) | ✅ Complete |
-| Livescreen components (GridView, FocusView, FrameCanvas) | ✅ Complete |
+| Livescreen components (GridView, FocusView, FrameCanvas) | ✅ Complete — GridView starts 2 fps streams on connect, FrameCanvas with full memory management |
 | `Protocol.js` — message builders + type constants | ✅ Complete |
-| `MockSocket.js` — Gateway + Agent simulator | ✅ Complete |
-| `UseAgentSocket.js` hook — socket lifecycle + store dispatch | ✅ Complete (dispatch stubs for module-level replies) |
+| `MockSocket.js` — Gateway + Agent simulator | ✅ Complete — stateful per-agent app/process data, frame stream engine (canvas test card → JPEG → frame_meta + binary) |
+| `UseAgentSocket.js` hook — ref-count singleton + store dispatch | ✅ Complete — binary frame dispatch via onBinary + _pending_meta pairing, toast feedback for action results |
 | `Socket.js` — real WebSocket wrapper | ⏳ 1-line stub, not yet implemented |
-| 7 module tab components | ⏳ Placeholder stubs (icon + label + "coming soon") |
+| `ApplicationTab` | ✅ App list table, client-side sort, Start/Stop with WHITELISTED_APPS guard, 3s poll |
+| `ProcessTab` | ✅ Full process table, client-side sort, Kill action (removes from mock state), 3s poll |
+| `ScreenTab` | ✅ Screenshot once + 24 fps live stream, auto-stop on unmount/agent switch |
+| Remaining 4 module tab components | ⏳ Placeholder stubs (icon + label + "coming soon") |
 | Module-level active-state flags in ModuleStore | ⏳ Not yet added |
-| Binary frame dispatch (screen/webcam JPEG path) | ⏳ Not yet wired |
+| Binary frame dispatch (screen/webcam JPEG path) | ✅ Wired for screen module; webcam uses same path |
+| Toast notification system | ✅ Complete — UiStore manages toast queue, auto-dismiss 3s, slide-in animation |
 
 ---
 
@@ -79,12 +83,14 @@ controller/
     │                                   every component class (BEM-lite: block__element--modifier)
     │                                   Sections: CSS variables, base, app-shell layout,
     │                                   sidebar, topbar, agent-card, agent-list, multi-select-bar,
-    │                                   grid-view, focus-view, module-placeholder, utils
+    │                                   grid-view, focus-view, module-placeholder, utils,
+    │                                   module-table, action-btn, screen-tab, toast, responsive
     ├── App.css                         Empty — all styles live in index.css
     ├── App.jsx                         Root shell. Calls useAgentSocket() to open the socket
     │                                   on mount. Syncs data-theme attribute on <html> based on
     │                                   UiStore.theme. Renders <Sidebar> + <TopBar> + main area
     │                                   (<GridView> or <FocusView> depending on layout_mode).
+    │                                   Renders toast notification container from UiStore.toasts.
     │
     ├── store/
     │   ├── UiStore.js                  Global UI state — see State section below
@@ -96,15 +102,25 @@ controller/
     │   ├── Socket.js                   STUB — real WebSocket wrapper (not yet implemented)
     │   ├── MockSocket.js               Full Gateway + Agent simulator. Class with identical
     │   │                               API shape to Socket.js: connect(), close(), send(),
-    │   │                               onOpen(), onMessage(), onClose(), onError().
+    │   │                               onOpen(), onMessage(), onBinary(), onClose(), onError().
     │   │                               Dispatches on msg.type (list_agents / request / power).
     │   │                               Sub-dispatches on msg.module for all request commands.
     │   │                               Returns staggered per-agent replies (80 ms apart).
+    │   │                               STATEFUL PER-AGENT DATA:
+    │   │                                 _app_state[agent_id]  — mutable app list; app_start/
+    │   │                                   app_stop toggle status; CPU/RAM randomised each poll.
+    │   │                                 _proc_state[agent_id] — mutable process list; proc_kill
+    │   │                                   removes the process permanently; CPU/RAM randomised.
     │   │                               Simulates: agents_list, app_list_result, app_action_result,
     │   │                               proc_list_result, proc_kill_result, stream_started/stopped,
     │   │                               keylog_started + keylog batch, keylog_stopped,
     │   │                               fs_list_result, fs_get_result, fs_put_result,
     │   │                               webcam_started/stopped, power_result.
+    │   │                               FRAME STREAM ENGINE: _startFrameStream / _stopFrameStream
+    │   │                               use an off-screen canvas to draw agent-specific test cards,
+    │   │                               encode to JPEG blob → ArrayBuffer, emit frame_meta JSON
+    │   │                               via onMessage then raw bytes via onBinary. Streams keyed
+    │   │                               by "agentId:module"; all cleared on close().
     │   └── Protocol.js                 Pure builder/parser functions. No side effects.
     │                                   Exports: MSG_TYPE, MODULE, POWER_ACTION constants;
     │                                   buildMessage(), parseMessage();
@@ -117,11 +133,28 @@ controller/
     ├── hooks/
     │   └── UseAgentSocket.js           Sole glue layer between socket service and stores.
     │                                   Components NEVER import Socket/MockSocket directly.
-    │                                   On mount: creates MockSocket, registers all callbacks,
+    │                                   SINGLETON pattern: module-level _socket + _refcount so
+    │                                   multiple components can call this hook safely without
+    │                                   creating extra sockets. Socket created when refcount
+    │                                   goes 0→1; closed when refcount goes 1→0 (app teardown).
+    │                                   On first mount: creates MockSocket, wires all callbacks,
     │                                   calls connect(), sends list_agents immediately on open.
     │                                   dispatchMessage() routes every incoming message to the
     │                                   appropriate store action using MSG_TYPE constants.
-    │                                   Returns sendCommand(json_string) for modules to call.
+    │                                   Action results (app_action_result, proc_kill_result)
+    │                                   dispatch toast notifications via UiStore.addToast().
+    │                                   Store actions read via getState() (not hook selectors)
+    │                                   to keep hook count constant and avoid HMR issues.
+    │                                   BINARY FRAME DISPATCH: holds _pending_meta (module-level).
+    │                                   When frame_meta arrives it is saved; when onBinary fires
+    │                                   the buffer is paired with _pending_meta and pushed into
+    │                                   ModuleStore.data[agent_id][module] = {frame, meta}.
+    │                                   Returns three TX helpers:
+    │                                     sendCommand(json)   — raw send, no target injection
+    │                                     sendToFocused(json) — injects [focused_agent_id]
+    │                                     sendToSelected(json)— injects selected_agent_ids
+    │                                   Module tabs (ApplicationTab, ProcessTab) use sendToFocused
+    │                                   so they never need to thread agent.id into builders.
     │
     └── components/
         ├── layout/
@@ -135,6 +168,8 @@ controller/
         │   │                           agent has in_session=true in focus mode), Grid/Focus view
         │   │                           toggle buttons, ConnectionIndicator (Wifi/Loader2/WifiOff
         │   │                           icon + text), ThemeToggle, Admin button placeholder.
+        │   │                           Subscribes to focused_agent_id + agents (not getFocusedAgent)
+        │   │                           to correctly re-render when the focused agent changes.
         │   └── ThemeToggle.jsx         Sun/Moon icon button — calls UiStore.toggleTheme().
         │                               Renders Sun when dark, Moon when light.
         │
@@ -155,28 +190,51 @@ controller/
         │
         ├── livescreen/
         │   ├── GridView.jsx            Responsive grid of AgentThumbnail tiles (online agents
-        │   │                           only). Each tile: status dot, name, SESSION badge, Expand
-        │   │                           icon, feed area (FrameCanvas if frame_buffer is available,
-        │   │                           placeholder text otherwise). Clicking a tile: setFocused +
-        │   │                           setLayoutMode('focus'). Empty-state shown when no agents
-        │   │                           are online.
+        │   │                           only). On mount (when conn_status is 'open'), starts a
+        │   │                           2 fps / quality 50 stream for all online agents. On
+        │   │                           unmount, stops all grid streams. Each tile subscribes to
+        │   │                           its own agent's screen.frame slice via Zustand selector.
+        │   │                           Clicking a tile: setFocused + setLayoutMode('focus').
+        │   │                           Empty-state shown when no agents are online.
         │   ├── FocusView.jsx           Single-agent detail view. If no agent is focused: shows
         │   │                           a prompt. When focused: renders 7-tab navigation bar +
         │   │                           active module panel (TAB_PANELS map dispatches to the
-        │   │                           correct module component). Receives focused_agent object
-        │   │                           and passes it as prop to the active tab.
+        │   │                           correct module component). Uses key={focused_agent.id}
+        │   │                           on the active panel to force remount when the user
+        │   │                           switches agents. Subscribes to focused_agent_id + agents
+        │   │                           (not getFocusedAgent) to correctly re-render on agent change.
         │   └── FrameCanvas.jsx         <canvas> that decodes an ArrayBuffer JPEG via
         │                               createImageBitmap, draws it, then calls bitmap.close()
-        │                               to release GPU memory. Cleanup also closes the bitmap on
-        │                               unmount. Width/height accept CSS values (default 100%).
+        │                               to release GPU memory. Uses a "cancelled" flag to prevent
+        │                               stale async decode callbacks from overwriting newer
+        │                               frames. .catch() silently skips corrupted/invalid frames.
+        │                               Cleanup closes any pending bitmap on unmount.
+        │                               Width/height accept CSS values (default 100%).
         │
-        └── modules/                    All 7 tabs are placeholder stubs — icon + agent name +
-            ├── ApplicationTab/         "coming soon" text. Each receives { agent } prop.
-            │   └── index.jsx           Planned: whitelist app table, Start / Stop buttons.
+        └── modules/                    Each tab receives { agent } prop from FocusView.
+            ├── ApplicationTab/
+            │   └── index.jsx           App list table pulled from ModuleStore (agent.id slice).
+            │                           WHITELISTED_APPS Set declared at module scope (UPPER_SNAKE_CASE).
+            │                           Client-side sort: sort_col + sort_dir in component state.
+            │                           Click any COLUMNS header to sort; click again to flip dir.
+            │                           Polls every 3 s via setInterval in useEffect.
+            │                           Start/Stop buttons disabled for apps not in whitelist.
+            │                           Start/Stop mutate mock state — status changes on next poll.
+            │                           CSS: module-table + action-btn--start/stop classes.
             ├── ProcessTab/
-            │   └── index.jsx           Planned: all-process table, Kill action.
+            │   └── index.jsx           Full process list from ModuleStore; polls every 3 s.
+            │                           Client-side sort: sort_col + sort_dir in component state.
+            │                           Click any COLUMNS header to sort; click again to flip dir.
+            │                           Kill button on every row sends buildProcKill(pid).
+            │                           Kill removes process from mock state — disappears on next poll.
+            │                           CSS: module-table + action-btn--kill classes.
             ├── ScreenTab/
-            │   └── index.jsx           Planned: screenshot once + 24fps live stream.
+            │   └── index.jsx           Screenshot + live stream panel. "Chụp 1 lần" sends
+            │                           a single screenshot request. "Bắt đầu stream" starts
+            │                           a 24 fps / quality 70 continuous stream; "Dừng stream"
+            │                           stops it. Auto-stops on unmount or agent switch via
+            │                           useEffect cleanup (streaming_agent_ref). Shows LIVE
+            │                           badge with fps, resolution, and seq number from frame_meta.
             ├── KeylogTab/
             │   └── index.jsx           Planned: terminal-style keystroke log, consent indicator.
             ├── FileTab/
@@ -199,6 +257,7 @@ controller/
 | `layout_mode` | string | `'grid'` \| `'focus'` |
 | `active_tab` | string | one of `MODULE_TABS` |
 | `sidebar_open` | boolean | controls mobile sidebar visibility |
+| `toasts` | `Toast[]` | `[]` — array of `{ id, message, variant, timestamp }` |
 
 **Actions:**
 
@@ -209,6 +268,8 @@ controller/
 | `setLayoutMode(mode)` | Set layout_mode |
 | `setActiveTab(tab)` | Set active_tab; also sets layout_mode → `'focus'`. Silently ignores unknown tab IDs. |
 | `toggleSidebar()` | Flip sidebar_open |
+| `addToast(message, variant)` | Push a toast (`'success'` \| `'error'` \| `'info'`); auto-dismissed after 3 s |
+| `dismissToast(id)` | Remove a toast by id (click to dismiss) |
 
 **Exported constant:** `MODULE_TABS = ['application', 'process', 'screen', 'keylog', 'file', 'webcam', 'power']`
 
@@ -236,7 +297,7 @@ controller/
 | `clearSelection()` | Empty selected_agent_ids |
 | `setSearchQuery(q)` | Update the search query |
 | `getFilteredAgents()` | Derived — filters agents by name or IP against search_query |
-| `getFocusedAgent()` | Derived — returns the full agent object for focused_agent_id, or null |
+| `getFocusedAgent()` | Derived — returns the full agent object for focused_agent_id, or null. **Note**: components that need reactivity must subscribe to `focused_agent_id` + `agents` directly, not to this function reference. |
 
 ---
 
@@ -305,12 +366,17 @@ Top-level shape: `data: { [agent_id]: AgentModuleState }`
 │  TX path: sendCommand() → socket.send(json_string)      │
 │                                                         │
 │  RX path: socket.onMessage(msg) → dispatchMessage(msg)  │
-│    MSG_TYPE.AGENTS_LIST      → AgentStore.setAgents()   │
-│    MSG_TYPE.APP_LIST_RESULT  → ModuleStore.setModuleData│
-│    MSG_TYPE.PROC_LIST_RESULT → ModuleStore.setModuleData│
-│    MSG_TYPE.KEYLOG           → ModuleStore.appendKeylog │
-│    MSG_TYPE.FS_LIST_RESULT   → ModuleStore.setModuleData│
-│    all other RX types        → TODO stubs (no-op)       │
+│    MSG_TYPE.AGENTS_LIST       → AgentStore.setAgents()  │
+│    MSG_TYPE.APP_LIST_RESULT   → ModuleStore.setModuleData│
+│    MSG_TYPE.APP_ACTION_RESULT → UiStore.addToast()      │
+│    MSG_TYPE.PROC_LIST_RESULT  → ModuleStore.setModuleData│
+│    MSG_TYPE.PROC_KILL_RESULT  → UiStore.addToast()      │
+│    MSG_TYPE.KEYLOG            → ModuleStore.appendKeylog │
+│    MSG_TYPE.FRAME_META        → saved to _pending_meta  │
+│    onBinary(buffer)           → pair with _pending_meta →│
+│                                 ModuleStore.setModuleData│
+│    MSG_TYPE.FS_LIST_RESULT    → ModuleStore.setModuleData│
+│    all other RX types         → TODO stubs (no-op)      │
 └────────────┬──────────────────────────────┬─────────────┘
              │                              │
              ▼                              ▼
@@ -321,10 +387,13 @@ Top-level shape: `data: { [agent_id]: AgentModuleState }`
 │                        │    │  ModuleStore                │
 │  Simulates Gateway +   │    │                             │
 │  Agent; sends staggered│    │  Components subscribe to    │
-│  per-agent replies.    │    │  store slices via selectors;│
-└────────────────────────┘    │  re-render only when their  │
-                              │  slice changes.             │
-                              └─────────────────────────────┘
+│  per-agent replies.    │    │  store slices via selectors; │
+│  Keeps mutable per-    │    │  re-render only when their  │
+│  agent app/process     │    │  slice changes.             │
+│  state so Start/Stop/  │    └─────────────────────────────┘
+│  Kill have visible     │
+│  effects.              │
+└────────────────────────┘
 ```
 
 **Protocol.js** sits as a pure utility layer — `buildXxx()` functions produce the JSON strings that
@@ -334,6 +403,10 @@ internally and passes the object directly to the callback).
 ---
 
 ## JSON message types
+
+> **Nguồn chính thức duy nhất cho field names và ví dụ đầy đủ: [`docs/formatjson/`](docs/formatjson/)**
+> Thư mục `docs/` là tài liệu làm việc trong suốt quá trình làm đồ án.
+> Các bảng dưới đây chỉ là bảng index/tóm tắt — khi code hoặc kiểm tra message, **luôn tra file nguồn**.
 
 All Controller→Gateway module commands use `type:"request"` with a `module` field.
 Only `list_agents` and `power` have their own top-level `type`.
@@ -366,11 +439,11 @@ Only `list_agents` and `power` have their own top-level `type`.
 |---|---|---|
 | `agents_list` | `agents[]` | `AgentStore.setAgents()` |
 | `agent_status` | `agent_id`, `online` | TODO — update single agent online flag |
-| `frame_meta` + binary blob | `agent_id`, `module`, `width`, `height`, `fps` | TODO — binary frame dispatch |
+| `frame_meta` + binary blob | `agent_id`, `module`, `w`, `h`, `len`, `seq`, `timestamp_ms` | `_pending_meta` → paired with binary → `ModuleStore.setModuleData()` |
 | `app_list_result` | `agent_id`, `apps[]` | `ModuleStore.setModuleData(id, 'app', apps)` |
-| `app_action_result` | `agent_id`, `action`, `name`, `success`, `message` | TODO — surface in AppModule |
+| `app_action_result` | `agent_id`, `action`, `name`, `success`, `message` | `UiStore.addToast()` — success/error notification |
 | `proc_list_result` | `agent_id`, `processes[]` | `ModuleStore.setModuleData(id, 'process', processes)` |
-| `proc_kill_result` | `agent_id`, `pid`, `success`, `message` | TODO — surface in ProcessModule |
+| `proc_kill_result` | `agent_id`, `pid`, `name`, `success`, `message` | `UiStore.addToast()` — success/error notification |
 | `keylog` | `agent_id`, `events[]` | `ModuleStore.appendKeylog(id, events)` |
 | `keylog_started` | `agent_id` | TODO — update active-state flag |
 | `keylog_stopped` | `agent_id` | TODO — update active-state flag |
@@ -389,10 +462,24 @@ Only `list_agents` and `power` have their own top-level `type`.
 
 ### Binary frame transport
 
-Binary JPEG frames (screen/webcam) arrive as `ArrayBuffer` immediately after a `frame_meta` JSON
-message. The Controller must track the last `frame_meta` to know the dimensions and target agent.
-`FrameCanvas` reads from `ModuleStore.data[agent_id].screen.frame` or `.webcam.frame`.
-This path is not yet wired in UseAgentSocket.
+Binary JPEG frames (screen/webcam) arrive as two consecutive messages:
+1. **JSON** — `frame_meta` with `{type, module, agent_id, w, h, len, seq, timestamp_ms}`
+2. **Binary** — raw JPEG bytes as `ArrayBuffer`
+
+UseAgentSocket holds `_pending_meta` (module-level). When `frame_meta` arrives via `onMessage`,
+it is saved. When `onBinary(buffer)` fires immediately after, the buffer is paired with
+`_pending_meta` and pushed into `ModuleStore.data[agent_id][module] = { frame: buffer, meta }`.
+The `module` field ("screen" or "webcam") determines the store slot.
+
+MockSocket simulates this with an off-screen canvas test card → `toBlob('image/jpeg')` →
+`arrayBuffer()`, emitting the pair via `_on_message(frame_meta)` then `_on_binary(buffer)`.
+
+FrameCanvas decodes the ArrayBuffer via `createImageBitmap()`, draws it, and immediately
+calls `bitmap.close()` to release GPU memory. A `cancelled` flag prevents stale async
+decode callbacks from drawing over newer frames.
+
+GridView starts 2 fps streams on connect; ScreenTab starts 24 fps on "Bắt đầu stream".
+Both stop their streams on unmount via useEffect cleanup.
 
 ---
 
@@ -411,7 +498,7 @@ import MockSocket from '../services/Socket'
 
 No component, no store, no other file needs to change.
 Both classes expose the same API: `connect()`, `close()`, `send(jsonString)`,
-`onOpen(cb)`, `onMessage(cb)`, `onClose(cb)`, `onError(cb)`.
+`onOpen(cb)`, `onMessage(cb)`, `onBinary(cb)`, `onClose(cb)`, `onError(cb)`.
 
 The `onMessage` callback receives a **pre-parsed object** (not a raw JSON string) from both
 MockSocket and the real Socket wrapper, so `parseMessage()` from Protocol.js is not called
@@ -435,20 +522,22 @@ inside UseAgentSocket.
 | No agents online (grid) | Inbox icon + "No agents online" in GridView |
 | No agent selected (focus) | "Select an agent from the sidebar" prompt in FocusView |
 | Module placeholder | Lucide icon + module name + "coming soon" in each module tab |
+| Action feedback | Toast notification (bottom-right), auto-dismiss 3 s, click to dismiss early |
 
 ---
 
 ## CSS design tokens
 
-All defined in `src/index.css`. Every component style uses `var(--)` — no hardcoded colors anywhere.
+All defined in `src/index.css`. Every component style uses `var(--*)` — no hardcoded colours.
 
 | Group | Tokens |
 |---|---|
 | Grayscale | `--gray-0` … `--gray-900` |
 | Semantic (theme-aware) | `--bg`, `--bg-surface`, `--bg-elevated`, `--border`, `--text`, `--text-muted` |
-| Accent (blue) | `--accent`, `--accent-bg`, `--accent-border` |
+| Accent (blue) | `--accent`, `--accent-hover`, `--accent-bg`, `--accent-border` |
 | Status | `--success` / `-bg`, `--danger` / `-bg`, `--warning` / `-bg` |
-| Fixed dark surfaces | `--surface-feed`, `--border-feed`, `--text-feed`, `--surface-terminal`, `--text-terminal` |
+| Fixed dark surfaces | `--surface-feed`, `--border-feed`, `--text-feed`, `--text-feed-name`, `--surface-terminal`, `--text-terminal` |
+| Overlay | `--shadow-overlay`, `--bg-overlay` |
 
 Theme is toggled by setting / removing `data-theme="dark"` on `<html>` inside a `useEffect` in `App.jsx`.
 

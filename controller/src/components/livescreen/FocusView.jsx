@@ -37,10 +37,12 @@ const TAB_PANELS =
 
 function FocusView()
 {
-  const { active_tab, setActiveTab } = useUiStore()
-  const { getFocusedAgent }          = useAgentStore()
+  const active_tab        = useUiStore((s) => s.active_tab)
+  const setActiveTab      = useUiStore((s) => s.setActiveTab)
+  const focused_agent_id  = useAgentStore((s) => s.focused_agent_id)
+  const agents            = useAgentStore((s) => s.agents)
 
-  const focused_agent = getFocusedAgent()
+  const focused_agent = agents.find((a) => a.id === focused_agent_id) ?? null
 
   /* no agent focused yet — prompt the user */
   if (!focused_agent)
@@ -80,7 +82,7 @@ function FocusView()
 
       {/* active module panel */}
       <div className="focus-view__panel" role="tabpanel">
-        <ActivePanel agent={focused_agent} />
+        <ActivePanel key={focused_agent.id} agent={focused_agent} />
       </div>
     </div>
   )

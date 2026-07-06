@@ -9,7 +9,10 @@ import FocusView        from './components/livescreen/FocusView'
 
 function App()
 {
-    const { theme, layout_mode } = useUiStore()
+    const theme        = useUiStore((s) => s.theme)
+    const layout_mode  = useUiStore((s) => s.layout_mode)
+    const toasts       = useUiStore((s) => s.toasts)
+    const dismissToast = useUiStore((s) => s.dismissToast)
 
     // open the socket connection and start receiving data from MockSocket / Gateway
     useAgentSocket()
@@ -38,6 +41,25 @@ function App()
                     {layout_mode === 'grid' ? <GridView /> : <FocusView />}
                 </main>
             </div>
+
+            {/* ── Toast notifications ─────────────────────────── */}
+            {toasts.length > 0 && (
+                <div className="toast-container" aria-live="polite">
+                    {toasts.map(function (t)
+                    {
+                        return (
+                            <div
+                                key={t.id}
+                                className={`toast toast--${t.variant}`}
+                                onClick={() => dismissToast(t.id)}
+                                role="status"
+                            >
+                                {t.message}
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
         </div>
     )
 }

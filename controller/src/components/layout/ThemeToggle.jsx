@@ -4,7 +4,8 @@ import useUiStore from '../../store/UiStore'
 
 function ThemeToggle()
 {
-  const { theme, toggleTheme } = useUiStore()
+  const theme       = useUiStore((s) => s.theme)
+  const toggleTheme = useUiStore((s) => s.toggleTheme)
   const is_dark = theme === 'dark'
 
   return (

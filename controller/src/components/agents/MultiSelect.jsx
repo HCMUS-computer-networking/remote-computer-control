@@ -5,7 +5,10 @@ import useAgentStore from '../../store/AgentStore'
 
 function MultiSelect()
 {
-    const { agents, selected_agent_ids, setSelectedIds, clearSelection } = useAgentStore()
+    const agents             = useAgentStore((s) => s.agents)
+    const selected_agent_ids = useAgentStore((s) => s.selected_agent_ids)
+    const setSelectedIds     = useAgentStore((s) => s.setSelectedIds)
+    const clearSelection     = useAgentStore((s) => s.clearSelection)
 
     // only online agents can be targeted by multi-agent commands
     const online_ids     = agents.filter((a) => a.online).map((a) => a.id)

@@ -30,9 +30,10 @@ function GatewayStatus({ status })
 
 function Sidebar()
 {
-  const { search_query, setSearchQuery } = useAgentStore()
-  const { status }                       = useConnectionStore()
-  const { sidebar_open }                 = useUiStore()
+  const search_query  = useAgentStore((s) => s.search_query)
+  const setSearchQuery = useAgentStore((s) => s.setSearchQuery)
+  const status        = useConnectionStore((s) => s.status)
+  const sidebar_open  = useUiStore((s) => s.sidebar_open)
 
   return (
     <aside className={`sidebar${sidebar_open ? '' : ''}`} aria-label="Agent list">

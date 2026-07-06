@@ -29,6 +29,7 @@
 
   /* accent — blue */
   --accent:        #3B82F6;
+  --accent-hover:  #2563EB;
   --accent-bg:     #DBEAFE;
   --accent-border: #93C5FD;
 
@@ -81,6 +82,7 @@
   --text-muted:  var(--gray-500);
 
   --accent:        #60A5FA;
+  --accent-hover:  #3B82F6;
   --accent-bg:     rgba(96, 165, 250, 0.16);
   --accent-border: rgba(96, 165, 250, 0.4);
 
@@ -90,6 +92,9 @@
   --danger-bg:  rgba(248, 113, 113, 0.16);
   --warning:    #FBBF24;
   --warning-bg: rgba(251, 191, 36, 0.14);
+
+  --shadow-overlay: rgba(0, 0, 0, 0.2);
+  --bg-overlay:     rgba(0, 0, 0, 0.4);
 
   /* surface-feed and surface-terminal stay dark regardless of theme */
 }
@@ -658,7 +663,447 @@ input
   cursor: pointer;
 }
 
-/* ── 19. Responsive — collapse sidebar on narrow screens ─────────────── */
+/* ── 20. Module data table — ApplicationTab and ProcessTab ──────────────── */
+
+/*
+ * .module-table wraps the whole tab content area.
+ * .module-table__scroll is the actual overflow container so sticky
+ * <thead> cells work correctly (they stick to the scroll viewport).
+ */
+.module-table
+{
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 20px;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.module-table__toolbar
+{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.module-table__title
+{
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* pulsing "● Live" indicator shown while auto-polling is active */
+.module-table__poll-badge
+{
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--success-bg);
+  color: var(--success);
+  letter-spacing: 0.3px;
+}
+
+/* scrollable container — sticky <th> sticks to the top of this element */
+.module-table__scroll
+{
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  min-height: 0;    /* allow flex children to shrink below intrinsic size */
+}
+
+.module-table table
+{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.module-table__th
+{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* numeric and action columns — right-aligned headers */
+.module-table__th--num    { text-align: right; }
+.module-table__th--action { text-align: right; }
+
+/* sortable header — shows pointer cursor, highlights on hover */
+.module-table__th--sortable
+{
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.module-table__th--sortable:hover
+{
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/* currently active sort column */
+.module-table__th--active { color: var(--accent); }
+
+/* flex wrapper inside a <th> to place label and sort icon side by side */
+.module-table__th-inner
+{
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* right-align inner content for numeric / action header cells */
+.module-table__th--num .module-table__th-inner,
+.module-table__th--action .module-table__th-inner
+{
+  justify-content: flex-end;
+}
+
+.module-table__row
+{
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+.module-table__row:last-child { border-bottom: none; }
+
+.module-table__row:hover { background: var(--accent-bg); }
+
+.module-table__td
+{
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+/* name column — bold, truncated if too long */
+.module-table__td--name
+{
+  font-weight: 500;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* numeric columns — right-aligned, tabular figures */
+.module-table__td--num
+{
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* action column — right-aligned, no text wrap */
+.module-table__td--action
+{
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* status badge in the Status column (ApplicationTab) */
+.module-table__badge
+{
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+.module-table__badge--running
+{
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.module-table__badge--stopped
+{
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+/* shown when the data list is empty or still loading */
+.module-table__empty
+{
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ── 21. Action buttons — Start / Stop / Kill inside table rows ──────────── */
+
+.action-btn
+{
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.action-btn:disabled
+{
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Start — green */
+.action-btn--start
+{
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.action-btn--start:not(:disabled):hover
+{
+  background: var(--success);
+  color: var(--gray-0);
+}
+
+/* Stop — amber */
+.action-btn--stop
+{
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.action-btn--stop:not(:disabled):hover
+{
+  background: var(--warning);
+  color: var(--gray-0);
+}
+
+/* Kill — red */
+.action-btn--kill
+{
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.action-btn--kill:not(:disabled):hover
+{
+  background: var(--danger);
+  color: var(--gray-0);
+}
+
+/* ── 22. ScreenTab — screenshot + live stream panel ────────────────────── */
+
+.screen-tab
+{
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 20px;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+.screen-tab__toolbar
+{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.screen-tab__title
+{
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.screen-tab__actions
+{
+  display: flex;
+  gap: 8px;
+}
+
+.screen-tab__btn
+{
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.screen-tab__btn:disabled
+{
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.screen-tab__btn--primary
+{
+  background: var(--accent);
+  color: var(--gray-0);
+}
+
+.screen-tab__btn--primary:not(:disabled):hover
+{
+  background: var(--accent-hover);
+}
+
+.screen-tab__btn--secondary
+{
+  background: var(--bg-surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.screen-tab__btn--secondary:not(:disabled):hover
+{
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.screen-tab__btn--danger
+{
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.screen-tab__btn--danger:not(:disabled):hover
+{
+  background: var(--danger);
+  color: var(--gray-0);
+}
+
+.screen-tab__status
+{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.screen-tab__live-badge
+{
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  letter-spacing: 0.3px;
+  animation: pulse-badge 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-badge
+{
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+.screen-tab__resolution
+{
+  font-variant-numeric: tabular-nums;
+}
+
+/* Canvas wrapper fills remaining vertical space with dark background */
+.screen-tab__canvas-wrapper
+{
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-feed);
+  border: 1px solid var(--border-feed);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.screen-tab__placeholder
+{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-feed);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px;
+}
+
+/* ── 19. Toast notifications ────────────────────────────────────────── */
+.toast-container
+{
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast
+{
+  pointer-events: auto;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gray-0);
+  cursor: pointer;
+  box-shadow: 0 4px 12px var(--shadow-overlay);
+  animation: toast-slide-in 0.25s ease-out;
+}
+
+.toast--success { background: var(--success); color: var(--gray-900); }
+.toast--error   { background: var(--danger);  }
+.toast--info    { background: var(--accent);  color: var(--gray-900); }
+
+@keyframes toast-slide-in
+{
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* ── 20. Responsive — collapse sidebar on narrow screens ─────────────── */
 @media (max-width: 768px)
 {
   .app-shell
@@ -673,7 +1118,7 @@ input
     inset: 0 auto 0 0;
     z-index: 200;
     width: 220px;
-    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
+    box-shadow: 2px 0 12px var(--shadow-overlay);
   }
 
   /* shown when UiStore.sidebar_open is true */
@@ -687,7 +1132,7 @@ input
   {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--bg-overlay);
     z-index: 199;
   }
 }

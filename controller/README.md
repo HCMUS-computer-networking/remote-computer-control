@@ -37,15 +37,15 @@ npm run lint       # kiểm tra lint với oxlint
 
 ## 7 module quản trị
 
-| Tab | Tính năng |
-|---|---|
-| Application | Xem + Start/Stop ứng dụng trong whitelist |
-| Process | Xem toàn bộ tiến trình + Kill |
-| Screen | Chụp màn hình 1 lần + Live Stream 24fps |
-| Keylog | Xem keystroke log (có chỉ báo consent trực quan) |
-| File | Duyệt cây thư mục sandbox + Upload/Download |
-| Webcam | Xem live webcam (có chỉ báo consent trực quan) |
-| Power | Lock / Restart / Shutdown / Sleep (đếm ngược xác nhận) |
+| Tab | Tính năng | Trạng thái |
+|---|---|---|
+| Application | Bảng app list, sort, Start/Stop whitelist, poll 3s | ✅ |
+| Process | Bảng process list, sort, Kill, poll 3s | ✅ |
+| Screen | Chụp 1 lần + Live Stream 24fps + Grid 2fps | ✅ |
+| Keylog | Xem keystroke log (có chỉ báo consent trực quan) | ⏳ |
+| File | Duyệt cây thư mục sandbox + Upload/Download | ⏳ |
+| Webcam | Xem live webcam (có chỉ báo consent trực quan) | ⏳ |
+| Power | Lock / Restart / Shutdown / Sleep (đếm ngược xác nhận) | ⏳ |
 
 ---
 
@@ -67,7 +67,7 @@ controller/
     │   ├── layout/     Sidebar · TopBar · ThemeToggle
     │   ├── agents/     AgentList · AgentCard · MultiSelect
     │   ├── livescreen/ GridView · FocusView · FrameCanvas
-    │   └── modules/    7 tab (hiện là placeholder stubs)
+    │   └── modules/    7 tab (3 hoàn chỉnh, 4 placeholder)
     ├── App.jsx
     └── index.css       Toàn bộ CSS của dự án
 ```

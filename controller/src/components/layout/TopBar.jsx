@@ -37,11 +37,14 @@ function ConnectionIndicator({ status })
 
 function TopBar()
 {
-  const { layout_mode, active_tab, setLayoutMode } = useUiStore()
-  const { getFocusedAgent }                        = useAgentStore()
-  const { status }                                 = useConnectionStore()
+  const layout_mode      = useUiStore((s) => s.layout_mode)
+  const active_tab       = useUiStore((s) => s.active_tab)
+  const setLayoutMode    = useUiStore((s) => s.setLayoutMode)
+  const focused_agent_id = useAgentStore((s) => s.focused_agent_id)
+  const agents           = useAgentStore((s) => s.agents)
+  const status           = useConnectionStore((s) => s.status)
 
-  const focused_agent = getFocusedAgent()
+  const focused_agent = agents.find((a) => a.id === focused_agent_id) ?? null
 
   /* build the breadcrumb title shown in the header */
   let title = 'Grid View — All Agents'
