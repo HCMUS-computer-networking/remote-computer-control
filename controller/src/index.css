@@ -48,6 +48,11 @@
   --text-feed-name:    #FFFFFF;  /* agent name on dark feed header — always white */
   --surface-terminal:  #0B1220;  /* keylogger terminal bg */
   --text-terminal:     #4ADE80;  /* keylogger text (green) */
+  --text-terminal-dim: #4A5568;  /* dim timestamp on terminal bg */
+
+  /* misc UI tokens */
+  --text-on-accent:    #FFFFFF;              /* text sitting on --accent surfaces */
+  --shadow-notice:     0 2px 8px rgba(0, 0, 0, 0.35);   /* floating pill shadow */
 
   /* typography */
   --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -1101,6 +1106,470 @@ input
 {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* ── 19b. action-btn--neutral (Clear / Export style) ─────────────────── */
+.action-btn--neutral
+{
+  background   : var(--bg-elevated);
+  color        : var(--text-muted);
+  border-color : var(--border);
+}
+
+.action-btn--neutral:not(:disabled):hover
+{
+  background   : var(--bg-surface);
+  color        : var(--text);
+  border-color : var(--gray-400);
+}
+
+/* ── 19c. Keylog tab ──────────────────────────────────────────────────── */
+.keylog-tab
+{
+  display        : flex;
+  flex-direction : column;
+  height         : 100%;
+  overflow       : hidden;
+  position       : relative;   /* anchor for .keylog-tab__scroll-notice */
+  background     : var(--bg-surface);
+}
+
+.keylog-tab__toolbar
+{
+  display         : flex;
+  align-items     : center;
+  justify-content : space-between;
+  gap             : 10px;
+  padding         : 10px 14px;
+  border-bottom   : 1px solid var(--border);
+  flex-shrink     : 0;
+}
+
+.keylog-tab__title-group
+{
+  display     : flex;
+  align-items : center;
+  gap         : 10px;
+}
+
+.keylog-tab__title
+{
+  font-weight : 600;
+  font-size   : 13px;
+  color       : var(--text);
+}
+
+/* Consent indicator badge — always visible so observers can see module state */
+.keylog-tab__indicator
+{
+  display        : inline-flex;
+  align-items    : center;
+  gap            : 5px;
+  font-size      : 11px;
+  font-weight    : 700;
+  letter-spacing : 0.05em;
+  padding        : 2px 8px;
+  border-radius  : 99px;
+  background     : var(--bg-elevated);
+  border         : 1px solid var(--border);
+  color          : var(--text-muted);
+  transition     : color 0.2s, background 0.2s, border-color 0.2s;
+}
+
+.keylog-tab__indicator--live
+{
+  background   : var(--danger-bg);
+  border-color : var(--danger);
+  color        : var(--danger);
+  animation    : keylog-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes keylog-pulse
+{
+  0%, 100% { opacity: 1;   }
+  50%      { opacity: 0.55; }
+}
+
+.keylog-tab__actions
+{
+  display     : flex;
+  align-items : center;
+  gap         : 6px;
+}
+
+/* Dark terminal area — matches --surface-terminal and --text-terminal tokens */
+.keylog-tab__log
+{
+  flex        : 1;
+  overflow-y  : auto;
+  background  : var(--surface-terminal);
+  font-family : var(--font-mono);
+  font-size   : 12px;
+  padding     : 10px 14px;
+}
+
+/* Empty state shown before any events arrive */
+.keylog-tab__empty
+{
+  display         : flex;
+  flex-direction  : column;
+  align-items     : center;
+  justify-content : center;
+  gap             : 12px;
+  height          : 100%;
+  min-height      : 160px;
+  color           : var(--text-feed);
+  font-family     : var(--font-sans);
+  font-size       : 13px;
+}
+
+/* One event row: timestamp on the left, key combo on the right */
+.keylog-tab__row
+{
+  display     : flex;
+  gap         : 16px;
+  padding     : 1px 0;
+  line-height : 1.65;
+  color       : var(--text-terminal);
+}
+
+.keylog-tab__time
+{
+  flex-shrink : 0;
+  width       : 72px;
+  color       : var(--text-terminal-dim);   /* dimmer than key text so timestamps recede */
+}
+
+.keylog-tab__key { word-break: break-all; }
+
+/* Pill shown when user scrolled up; click jumps back to the latest entry */
+.keylog-tab__scroll-notice
+{
+  position      : absolute;
+  bottom        : 14px;
+  left          : 50%;
+  transform     : translateX(-50%);
+  background    : var(--accent);
+  color         : var(--text-on-accent);
+  font-size     : 11px;
+  font-weight   : 600;
+  padding       : 4px 14px;
+  border-radius : 99px;
+  border        : none;
+  cursor        : pointer;
+  box-shadow    : var(--shadow-notice);
+  white-space   : nowrap;
+  z-index       : 10;
+  transition    : opacity 0.15s;
+}
+
+.keylog-tab__scroll-notice:hover { opacity: 0.85; }
+
+/* ── 19d. File tab ────────────────────────────────────────────────────── */
+.file-tab
+{
+  display        : flex;
+  flex-direction : column;
+  height         : 100%;
+  overflow       : hidden;
+  background     : var(--bg-surface);
+}
+
+.file-tab__toolbar
+{
+  display         : flex;
+  align-items     : center;
+  gap             : 10px;
+  padding         : 10px 14px;
+  border-bottom   : 1px solid var(--border);
+  flex-shrink     : 0;
+}
+
+.file-tab__title
+{
+  font-weight  : 600;
+  font-size    : 13px;
+  color        : var(--text);
+  margin-right : auto;   /* push sandbox badge + button to the right */
+}
+
+/* Small "sandbox only" pill — reminds operators that path access is restricted */
+.file-tab__sandbox-badge
+{
+  display        : inline-flex;
+  align-items    : center;
+  gap            : 4px;
+  font-size      : 10px;
+  font-weight    : 600;
+  letter-spacing : 0.04em;
+  padding        : 2px 8px;
+  border-radius  : 99px;
+  background     : var(--warning-bg);
+  border         : 1px solid var(--warning);
+  color          : var(--warning);
+}
+
+/* Scrollable tree area */
+.file-tab__tree
+{
+  flex       : 1;
+  overflow-y : auto;
+  padding    : 6px 0;
+}
+
+/* Empty / loading state (centered content) */
+.file-tab__empty
+{
+  display         : flex;
+  flex-direction  : column;
+  align-items     : center;
+  justify-content : center;
+  gap             : 10px;
+  height          : 100%;
+  min-height      : 140px;
+  color           : var(--text-muted);
+  font-size       : 13px;
+}
+
+/* Shared row base — both dirs and files */
+.file-tab__row
+{
+  display     : flex;
+  align-items : center;
+  gap         : 6px;
+  width       : 100%;
+  min-height  : 30px;
+  padding-top    : 2px;
+  padding-bottom : 2px;
+  padding-right  : 10px;
+  font-size   : 13px;
+  line-height : 1.4;
+  border      : none;
+  background  : none;
+  text-align  : left;
+  cursor      : default;
+  color       : var(--text);
+}
+
+.file-tab__row--dir
+{
+  cursor      : pointer;
+  font-weight : 500;
+  color       : var(--text);
+}
+
+.file-tab__row--dir:hover { background: var(--accent-bg); }
+
+.file-tab__row--file:hover { background: var(--bg-elevated); }
+
+/* Leading icon — folder or file */
+.file-tab__icon        { flex-shrink: 0; color: var(--accent);     }
+.file-tab__icon--file  { color: var(--text-muted);                  }
+
+/* Entry name — fills available space and truncates if too long */
+.file-tab__name
+{
+  flex     : 1;
+  overflow : hidden;
+  white-space   : nowrap;
+  text-overflow : ellipsis;
+}
+
+/* File size — muted, right of the name */
+.file-tab__size
+{
+  flex-shrink : 0;
+  font-size   : 11px;
+  color       : var(--text-muted);
+  min-width   : 52px;
+  text-align  : right;
+}
+
+/* Expand/collapse chevron on dir rows */
+.file-tab__chevron { flex-shrink: 0; color: var(--text-muted); }
+
+/* Compact download button on file rows */
+.file-tab__dl-btn
+{
+  flex-shrink  : 0;
+  padding      : 3px 8px;
+  font-size    : 11px;
+  display      : flex;
+  align-items  : center;
+  gap          : 4px;
+}
+
+/* Spinning loader animation — used by Loader2 icon */
+.file-tab__spin
+{
+  flex-shrink : 0;
+  animation   : file-tab-spin 0.9s linear infinite;
+  color       : var(--accent);
+}
+
+@keyframes file-tab-spin
+{
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── 19e. File tab — upload drop zone ─────────────────────────────────── */
+
+.file-tab__drop-zone
+{
+  display         : flex;
+  align-items     : center;
+  justify-content : center;
+  gap             : 8px;
+  flex-shrink     : 0;
+  margin          : 10px 14px 0;
+  padding         : 14px;
+  border          : 1px dashed var(--border);
+  border-radius   : 8px;
+  color           : var(--text-muted);
+  font-size       : 12px;
+  cursor          : pointer;
+  background      : var(--bg-elevated);
+  transition      : border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.file-tab__drop-zone:hover { border-color: var(--accent); color: var(--text); }
+
+.file-tab__drop-zone--over
+{
+  border-color : var(--accent);
+  background   : var(--accent-bg);
+  color        : var(--accent);
+}
+
+.file-tab__drop-icon { flex-shrink: 0; }
+
+.file-tab__drop-label code
+{
+  font-size  : 11px;
+  padding    : 1px 5px;
+  border-radius : 4px;
+  background : var(--bg-surface);
+}
+
+/* ── 19f. File tab — upload progress list ─────────────────────────────── */
+
+.file-tab__upload-list
+{
+  flex-shrink    : 0;
+  max-height     : 180px;
+  overflow-y     : auto;
+  margin         : 10px 14px 0;
+  padding        : 8px 10px;
+  border         : 1px solid var(--border);
+  border-radius  : 8px;
+  background     : var(--bg-elevated);
+  display        : flex;
+  flex-direction : column;
+  gap            : 8px;
+}
+
+.file-tab__upload-list-header
+{
+  display         : flex;
+  align-items     : center;
+  justify-content : space-between;
+}
+
+.file-tab__upload-list-title
+{
+  font-size      : 11px;
+  font-weight    : 600;
+  letter-spacing : 0.04em;
+  text-transform : uppercase;
+  color          : var(--text-muted);
+}
+
+.file-tab__clear-done
+{
+  padding     : 2px 7px;
+  font-size   : 10px;
+  display     : flex;
+  align-items : center;
+  gap         : 3px;
+}
+
+.file-tab__upload-job
+{
+  display        : flex;
+  flex-direction : column;
+  gap            : 4px;
+}
+
+.file-tab__upload-info
+{
+  display     : flex;
+  align-items : center;
+  gap         : 6px;
+  font-size   : 12px;
+}
+
+.file-tab__upload-icon              { flex-shrink: 0; color: var(--accent);  }
+.file-tab__upload-icon--done        { color: var(--success);                }
+.file-tab__upload-icon--error       { color: var(--danger);                 }
+
+/* File name — fills available space and truncates if too long */
+.file-tab__upload-name
+{
+  flex          : 1;
+  overflow      : hidden;
+  white-space   : nowrap;
+  text-overflow : ellipsis;
+  color         : var(--text);
+}
+
+.file-tab__upload-pct
+{
+  flex-shrink : 0;
+  font-size   : 11px;
+  font-weight : 600;
+  min-width   : 34px;
+  text-align  : right;
+  color       : var(--text-muted);
+}
+
+.file-tab__upload-pct--done  { color: var(--success); }
+.file-tab__upload-pct--error { color: var(--danger);  }
+
+.file-tab__upload-size
+{
+  flex-shrink : 0;
+  font-size   : 11px;
+  color       : var(--text-muted);
+  min-width   : 48px;
+  text-align  : right;
+}
+
+/* Progress bar track + animated fill */
+.file-tab__progress-track
+{
+  width         : 100%;
+  height        : 5px;
+  border-radius : 99px;
+  background    : var(--bg-surface);
+  overflow      : hidden;
+}
+
+.file-tab__progress-fill
+{
+  height        : 100%;
+  border-radius : 99px;
+  background    : var(--accent);
+  transition    : width 0.2s ease-out;
+}
+
+.file-tab__progress-fill--done  { background: var(--success); }
+.file-tab__progress-fill--error { background: var(--danger);  }
+
+.file-tab__upload-error
+{
+  font-size : 11px;
+  color     : var(--danger);
 }
 
 /* ── 20. Responsive — collapse sidebar on narrow screens ─────────────── */

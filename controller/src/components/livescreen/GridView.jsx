@@ -84,22 +84,26 @@ function GridView()
 
     const online_agents = agents.filter((a) => a.online)
 
+    // Stable signature of the online agent id set — sorted + joined so the string
+    // changes whenever the SET changes (not just the count). This catches the
+    // simultaneous swap case where one agent goes offline and another comes
+    // online in the same tick: length stays the same but the set is different.
+    const online_ids_key = online_agents.map((a) => a.id).sort().join(',')
+
     // Start low-fps streams once the socket is connected and agents are known.
     // Depends on conn_status so the effect waits until the socket is actually
     // open before sending any commands (the socket has a 300 ms connect delay).
-    // Also re-runs when the online agent count changes.
+    // Also re-runs when the online agent SET changes (via online_ids_key).
     // On unmount (user leaves grid view), cleanup stops all streams.
     useEffect(function ()
     {
         if (conn_status !== 'open') return
+        if (online_ids_key === '') return
 
-        const online_ids = online_agents.map((a) => a.id)
+        const online_ids = online_ids_key.split(',')
 
-        if (online_ids.length > 0)
-        {
-            sendCommand(buildStreamStart(GRID_FPS, GRID_QUALITY, online_ids))
-            streaming_ids_ref.current = online_ids
-        }
+        sendCommand(buildStreamStart(GRID_FPS, GRID_QUALITY, online_ids))
+        streaming_ids_ref.current = online_ids
 
         // Cleanup: stop every stream we started when leaving the grid view
         // or when the online agent set changes. This prevents frames from
@@ -113,7 +117,7 @@ function GridView()
                 streaming_ids_ref.current = []
             }
         }
-    }, [conn_status, online_agents.length])
+    }, [conn_status, online_ids_key])
 
     return (
         <div className="grid-view">

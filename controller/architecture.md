@@ -11,24 +11,29 @@ that will remain — it is written to stand alone without depending on this file
 
 ## Completion status
 
+Reflects the code state at the end of Playbook Week 3 (Keylog + File finished).
+
 | Layer | Status |
 |---|---|
 | App shell, global CSS, theme toggle, toast notifications | ✅ Complete |
-| 4 Zustand stores | ✅ Complete |
+| 4 Zustand stores (UiStore, AgentStore, ConnectionStore, ModuleStore) | ✅ Complete |
 | Layout components (Sidebar, TopBar, ThemeToggle) | ✅ Complete |
 | Agent components (AgentList, AgentCard, MultiSelect) | ✅ Complete |
-| Livescreen components (GridView, FocusView, FrameCanvas) | ✅ Complete — GridView starts 2 fps streams on connect, FrameCanvas with full memory management |
+| Livescreen components (GridView, FocusView, FrameCanvas) | ✅ Complete — GridView starts 2 fps streams on connect, keyed on the sorted online-id set so an A↔B swap is detected; FrameCanvas has full ImageBitmap memory management |
 | `Protocol.js` — message builders + type constants | ✅ Complete |
-| `MockSocket.js` — Gateway + Agent simulator | ✅ Complete — stateful per-agent app/process data, frame stream engine (canvas test card → JPEG → frame_meta + binary) |
-| `UseAgentSocket.js` hook — ref-count singleton + store dispatch | ✅ Complete — binary frame dispatch via onBinary + _pending_meta pairing, toast feedback for action results |
-| `Socket.js` — real WebSocket wrapper | ⏳ 1-line stub, not yet implemented |
-| `ApplicationTab` | ✅ App list table, client-side sort, Start/Stop with WHITELISTED_APPS guard, 3s poll |
-| `ProcessTab` | ✅ Full process table, client-side sort, Kill action (removes from mock state), 3s poll |
-| `ScreenTab` | ✅ Screenshot once + 24 fps live stream, auto-stop on unmount/agent switch |
-| Remaining 4 module tab components | ⏳ Placeholder stubs (icon + label + "coming soon") |
-| Module-level active-state flags in ModuleStore | ⏳ Not yet added |
-| Binary frame dispatch (screen/webcam JPEG path) | ✅ Wired for screen module; webcam uses same path |
-| Toast notification system | ✅ Complete — UiStore manages toast queue, auto-dismiss 3s, slide-in animation |
+| `MockSocket.js` — Gateway + Agent simulator | ✅ Complete — 7 fake agents (5 online, 2 offline; Windows / Ubuntu / macOS), OS-specific app + process pools, consent-denied agent (agent-06 → keylog_denied / webcam_denied), stateful per-agent app/process, uploaded-file persistence, frame stream engine (canvas test card → JPEG → frame_meta + binary) |
+| `UseAgentSocket.js` hook — ref-count singleton + store dispatch | ✅ Complete — binary frame dispatch via onBinary + _pending_meta pairing, toast on app_action / proc_kill / keylog_denied / webcam_denied / fs_error |
+| `Socket.js` — real WebSocket wrapper | ⏳ 1-line stub, planned for Playbook Week 5 |
+| `ApplicationTab` | ✅ App list table, client-side sort, Start/Stop with WHITELISTED_APPS guard, 3 s poll |
+| `ProcessTab` | ✅ Full process table, client-side sort, Kill action (removes from mock state), 3 s poll |
+| `ScreenTab` | ✅ Screenshot once + 24 fps live stream, auto-stop on unmount / agent switch |
+| `KeylogTab` | ✅ Terminal log, consent indicator, auto-scroll / pause, Start / Stop / Clear / Export |
+| `FileTab` | ✅ Sandbox file tree (accordion), per-path fetch, Download with chunk assembly, Drag & Drop Upload with per-file progress bars; uploaded files persist in MockSocket and appear on Refresh |
+| `WebcamTab`, `PowerTab` | ⏳ Placeholder stubs (Playbook Week 4) |
+| Module-level active-state flags in ModuleStore | ⏳ `keylog_active` per agent done; `screen_active` / `webcam_active` still TODO (Week 4) |
+| Binary frame dispatch (screen / webcam JPEG path) | ✅ Wired for screen; webcam uses same code path when Week 4 lands |
+| Toast notification system | ✅ Complete — UiStore manages toast queue, auto-dismiss 3 s, slide-in animation |
+| Multi-agent target injection helpers | ✅ `sendToFocused` + `sendToSelected`; UI wiring for multi-agent commands lands in Week 4 |
 
 ---
 
@@ -106,16 +111,31 @@ controller/
     │   │                               Dispatches on msg.type (list_agents / request / power).
     │   │                               Sub-dispatches on msg.module for all request commands.
     │   │                               Returns staggered per-agent replies (80 ms apart).
+    │   │                               FAKE_AGENTS: 7 agents — 5 online, 2 offline; mix of
+    │   │                                 Windows 10/11, Ubuntu 22.04, macOS 14. Two agents
+    │   │                                 (agent-02, agent-06) start with in_session=true.
+    │   │                               DENIED_AGENTS = {"agent-06"}: this agent replies
+    │   │                                 keylog_denied / webcam_denied instead of _started,
+    │   │                                 to exercise the consent-denied UX flow.
+    │   │                               OS-SPECIFIC POOLS:
+    │   │                                 INITIAL_APPS_BY_OS   — windows / linux / macos app
+    │   │                                   templates (whitelisted apps only per OS).
+    │   │                                 PROC_NAME_POOL_BY_OS — realistic process names per OS
+    │   │                                   (svchost.exe / systemd / kernel_task etc.).
+    │   │                                 getOsFamily(agent_id) picks the right pool.
     │   │                               STATEFUL PER-AGENT DATA:
     │   │                                 _app_state[agent_id]  — mutable app list; app_start/
     │   │                                   app_stop toggle status; CPU/RAM randomised each poll.
     │   │                                 _proc_state[agent_id] — mutable process list; proc_kill
     │   │                                   removes the process permanently; CPU/RAM randomised.
+    │   │                                 _uploaded_files[agent_id][parent_path] — files persisted
+    │   │                                   by fs_put; merged with FAKE_FS_TREE on fs_list so
+    │   │                                   uploaded files reappear on Refresh (dedup by name).
     │   │                               Simulates: agents_list, app_list_result, app_action_result,
     │   │                               proc_list_result, proc_kill_result, stream_started/stopped,
-    │   │                               keylog_started + keylog batch, keylog_stopped,
-    │   │                               fs_list_result, fs_get_result, fs_put_result,
-    │   │                               webcam_started/stopped, power_result.
+    │   │                               keylog_started + keylog batch, keylog_stopped, keylog_denied,
+    │   │                               fs_list_result, fs_get_result, fs_put_result, fs_put_complete,
+    │   │                               webcam_started/stopped, webcam_denied, power_result.
     │   │                               FRAME STREAM ENGINE: _startFrameStream / _stopFrameStream
     │   │                               use an off-screen canvas to draw agent-specific test cards,
     │   │                               encode to JPEG blob → ArrayBuffer, emit frame_meta JSON
@@ -194,6 +214,9 @@ controller/
         │   │                           2 fps / quality 50 stream for all online agents. On
         │   │                           unmount, stops all grid streams. Each tile subscribes to
         │   │                           its own agent's screen.frame slice via Zustand selector.
+        │   │                           Effect deps use online_ids_key (sorted + joined id set)
+        │   │                           so an A-offline/B-online swap in the same tick still
+        │   │                           re-runs the effect — length alone would miss that case.
         │   │                           Clicking a tile: setFocused + setLayoutMode('focus').
         │   │                           Empty-state shown when no agents are online.
         │   ├── FocusView.jsx           Single-agent detail view. If no agent is focused: shows
@@ -236,9 +259,36 @@ controller/
             │                           useEffect cleanup (streaming_agent_ref). Shows LIVE
             │                           badge with fps, resolution, and seq number from frame_meta.
             ├── KeylogTab/
-            │   └── index.jsx           Planned: terminal-style keystroke log, consent indicator.
+            │   └── index.jsx           Terminal-style keystroke log from ModuleStore keylog slice.
+            │                           Toolbar: IDLE/LIVE consent indicator (pulses red when active),
+            │                           Start/Stop toggle (sends buildKeylogStart/Stop via sendToFocused),
+            │                           Clear (clears keylog buffer in store), Export (download .txt).
+            │                           Auto-scroll: scrolls to latest row on each new event unless
+            │                           user has scrolled up; a "↓ Scroll to latest" pill resumes it.
+            │                           Scroll detection via onScroll + SCROLL_THRESHOLD (60 px).
+            │                           formatEvent() renders "Ctrl+C", "Alt+Tab", "h", etc.
+            │                           formatTime() renders HH:MM:SS from event.timestamp_ms.
             ├── FileTab/
-            │   └── index.jsx           Planned: sandbox file tree, chunked upload/download.
+            │   └── index.jsx           Sandbox file tree with read, download, and upload.
+            │                           Toolbar: title, "sandbox only" warning badge, Refresh.
+            │                           Tree: accordion expand/collapse; dirs fetched on first open
+            │                           via sendToFocused(buildFsList(path)); results cached in
+            │                           ModuleStore file.tree[path]. File rows show size + Download
+            │                           button; click sends buildFsGet(path) → fs_get_result arrives
+            │                           in file_download slot → useEffect assembles chunks and calls
+            │                           triggerBlobDownload (atob → Blob → anchor click).
+            │                           Refresh clears file.tree and re-fetches root.
+            │                           Upload: drag & drop zone (+ click-to-browse fallback input)
+            │                           reads each dropped File via arrayBuffer(), splits into
+            │                           CHUNK_SIZE_BYTES (32 KB) base64 chunks, sends first chunk via
+            │                           buildFsPut(dest_path, chunk_info) to "/uploads/<filename>".
+            │                           Each job renders a progress-bar row (sending/done/error).
+            │                           Ack arrives in file_put_ack slot → useEffect advances the
+            │                           progress counter and sends the next chunk; fs_put_complete
+            │                           marks the job done. Multiple files upload independently and
+            │                           concurrently since jobs are keyed by dest_path.
+            │                           CSS: file-tab, file-tab__row--dir/file, file-tab__sandbox-badge,
+            │                           file-tab__drop-zone, file-tab__upload-list, file-tab__progress-*.
             ├── WebcamTab/
             │   └── index.jsx           Planned: live webcam feed, consent indicator.
             └── PowerTab/
@@ -279,7 +329,7 @@ controller/
 
 | Field | Type | Initial value |
 |---|---|---|
-| `agents` | `Agent[]` | 3 scaffold agents matching MockSocket FAKE_AGENTS (replaced by real data after `agents_list` arrives) |
+| `agents` | `Agent[]` | 7 scaffold agents matching MockSocket FAKE_AGENTS (replaced by real data after `agents_list` arrives) |
 | `selected_agent_ids` | `string[]` | `[]` — IDs checked for multi-agent commands |
 | `focused_agent_id` | `string \| null` | `null` — agent currently open in FocusView |
 | `search_query` | string | `''` — text in the sidebar search box |
@@ -333,17 +383,23 @@ Top-level shape: `data: { [agent_id]: AgentModuleState }`
 |---|---|---|
 | `app` | `object[]` | app_list_result: array of app objects |
 | `process` | `object[]` | proc_list_result: array of process objects |
-| `keylog` | `object[]` | accumulated keystroke event objects (ring buffer) |
+| `keylog` | `object[]` | accumulated keystroke event objects (ring buffer, max 1000) |
+| `keylog_active` | boolean | true while Agent is actively sending keylog data |
 | `screen` | `{ frame, meta }` | latest screen JPEG (ArrayBuffer) + frame_meta object |
 | `webcam` | `{ frame, meta }` | latest webcam JPEG (ArrayBuffer) + frame_meta object |
-| `file` | `{ entries, path }` | fs_list_result: folder contents + current directory path |
+| `file` | `{ tree, path }` | `tree`: `{ [path]: entry[] }` — cached per-path listings; `path`: last fetched |
+| `file_download` | `object \| null` | latest `fs_get_result` + monotonic `_seq`; FileTab watches and triggers download |
 
 **Actions:**
 
 | Action | Behaviour |
 |---|---|
 | `setModuleData(agent_id, module, payload)` | Write payload into data[agent_id][module]; creates agent slot if not present |
-| `appendKeylog(agent_id, events)` | Append events to keylog buffer; trims oldest entries to stay within MAX_KEYLOG_EVENTS (500) |
+| `appendKeylog(agent_id, events)` | Append events to keylog buffer; trims oldest entries to stay within MAX_KEYLOG_EVENTS (1000) |
+| `setKeylogActive(agent_id, active)` | Set `keylog_active` boolean for one agent (true on `keylog_started`, false on `keylog_stopped`/`keylog_denied`) |
+| `setFsEntries(agent_id, path, entries)` | Merge a directory listing into `file.tree[path]` (called on `fs_list_result`) |
+| `setFileDownload(agent_id, result)` | Store `fs_get_result` + monotonic `_seq` in `file_download` (FileTab watches this) |
+| `clearFileDownload(agent_id)` | Null out `file_download` after the component has consumed it |
 | `clearModule(agent_id, module)` | Reset one module slot to its default empty value |
 | `clearAgent(agent_id)` | Remove all module data for one agent |
 
@@ -445,20 +501,20 @@ Only `list_agents` and `power` have their own top-level `type`.
 | `proc_list_result` | `agent_id`, `processes[]` | `ModuleStore.setModuleData(id, 'process', processes)` |
 | `proc_kill_result` | `agent_id`, `pid`, `name`, `success`, `message` | `UiStore.addToast()` — success/error notification |
 | `keylog` | `agent_id`, `events[]` | `ModuleStore.appendKeylog(id, events)` |
-| `keylog_started` | `agent_id` | TODO — update active-state flag |
-| `keylog_stopped` | `agent_id` | TODO — update active-state flag |
-| `keylog_denied` | `agent_id` | TODO — show consent-denied notice |
-| `stream_started` | `agent_id`, `module:"screen"` | TODO — update active-state flag |
-| `stream_stopped` | `agent_id`, `module:"screen"` | TODO — update active-state flag |
-| `webcam_started` | `agent_id` | TODO — update active-state flag |
-| `webcam_stopped` | `agent_id` | TODO — update active-state flag |
-| `webcam_denied` | `agent_id` | TODO — show consent-denied notice |
-| `fs_list_result` | `agent_id`, `path`, `entries[]` | `ModuleStore.setModuleData(id, 'file', {entries,path})` |
-| `fs_get_result` | `agent_id`, `path`, `chunk_index`, `total_chunks`, `data_base64` | TODO — forward to FileModule |
-| `fs_put_result` | `agent_id`, `path`, `chunk_index`, `success` | TODO — forward to FileModule |
-| `fs_put_complete` | `agent_id`, `path` | TODO — notify FileModule upload done |
-| `fs_error` | `agent_id`, `path`, `message` | TODO — surface error in FileModule |
-| `power_result` | `agent_id`, `action`, `confirmed`, `message` | TODO — surface in PowerModule |
+| `keylog_started` | `agent_id` | `ModuleStore.setKeylogActive(id, true)` |
+| `keylog_stopped` | `agent_id` | `ModuleStore.setKeylogActive(id, false)` |
+| `keylog_denied` | `agent_id`, `reason` | `setKeylogActive(id, false)` + `UiStore.addToast()` (error) |
+| `stream_started` | `agent_id`, `module:"screen"` | TODO — update active-state flag (Week 4) |
+| `stream_stopped` | `agent_id`, `module:"screen"` | TODO — update active-state flag (Week 4) |
+| `webcam_started` | `agent_id` | TODO — update active-state flag (Week 4) |
+| `webcam_stopped` | `agent_id` | TODO — update active-state flag (Week 4) |
+| `webcam_denied` | `agent_id`, `reason` | `UiStore.addToast()` (error) |
+| `fs_list_result` | `agent_id`, `path`, `entries[]` | `ModuleStore.setFsEntries(id, path, entries)` |
+| `fs_get_result` | `agent_id`, `path`, `chunk_index`, `total_chunks`, `data_base64` | `ModuleStore.setFileDownload(id, msg)` — FileTab watches, assembles chunks, triggers browser download |
+| `fs_put_result` | `agent_id`, `path`, `chunk_index`, `success` | `ModuleStore.setFilePutAck(id, {...msg, complete:false})` — FileTab advances progress, sends next chunk |
+| `fs_put_complete` | `agent_id`, `path` | `ModuleStore.setFilePutAck(id, {...msg, complete:true})` — FileTab marks upload done |
+| `fs_error` | `agent_id`, `path`, `message` | `UiStore.addToast()` (error) |
+| `power_result` | `agent_id`, `action`, `confirmed`, `message` | TODO — surface in PowerTab (Week 4) |
 
 ### Binary frame transport
 
@@ -536,7 +592,8 @@ All defined in `src/index.css`. Every component style uses `var(--*)` — no har
 | Semantic (theme-aware) | `--bg`, `--bg-surface`, `--bg-elevated`, `--border`, `--text`, `--text-muted` |
 | Accent (blue) | `--accent`, `--accent-hover`, `--accent-bg`, `--accent-border` |
 | Status | `--success` / `-bg`, `--danger` / `-bg`, `--warning` / `-bg` |
-| Fixed dark surfaces | `--surface-feed`, `--border-feed`, `--text-feed`, `--text-feed-name`, `--surface-terminal`, `--text-terminal` |
+| Fixed dark surfaces | `--surface-feed`, `--border-feed`, `--text-feed`, `--text-feed-name`, `--surface-terminal`, `--text-terminal`, `--text-terminal-dim` |
+| Misc UI tokens | `--text-on-accent`, `--shadow-notice` |
 | Overlay | `--shadow-overlay`, `--bg-overlay` |
 
 Theme is toggled by setting / removing `data-theme="dark"` on `<html>` inside a `useEffect` in `App.jsx`.

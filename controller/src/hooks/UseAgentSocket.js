@@ -49,11 +49,15 @@ export default function useAgentSocket()
     // socket callbacks which run outside the React render cycle anyway.
     // This also keeps the hook count constant (only 1 useEffect below),
     // which avoids HMR hook-order mismatches during development.
-    const setStatus     = useConnectionStore.getState().setStatus
-    const setAgents     = useAgentStore.getState().setAgents
-    const setModuleData = useModuleStore.getState().setModuleData
-    const appendKeylog  = useModuleStore.getState().appendKeylog
-    const addToast      = useUiStore.getState().addToast
+    const setStatus        = useConnectionStore.getState().setStatus
+    const setAgents        = useAgentStore.getState().setAgents
+    const setModuleData    = useModuleStore.getState().setModuleData
+    const appendKeylog     = useModuleStore.getState().appendKeylog
+    const setKeylogActive   = useModuleStore.getState().setKeylogActive
+    const setFsEntries      = useModuleStore.getState().setFsEntries
+    const setFileDownload   = useModuleStore.getState().setFileDownload
+    const setFilePutAck     = useModuleStore.getState().setFilePutAck
+    const addToast          = useUiStore.getState().addToast
 
     // ── Lifecycle: create / destroy the shared socket ─────────────────────
     useEffect(function ()
@@ -74,7 +78,7 @@ export default function useAgentSocket()
 
             socket.onMessage(function (msg)
             {
-                dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, addToast })
+                dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setFsEntries, setFileDownload, setFilePutAck, addToast })
             })
 
             // Binary callback — pair incoming ArrayBuffer with the pending frame_meta.
@@ -209,7 +213,7 @@ function sendWithTargets(json_string, target_ids)
 //   fs_error           → (TODO) surface file error in FileModule
 //   power_result       → (TODO) surface in PowerModule
 
-function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, addToast })
+function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setFsEntries, setFileDownload, setFilePutAck, addToast })
 {
     switch (msg.type)
     {
@@ -256,9 +260,16 @@ function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylo
             break
 
         case MSG_TYPE.KEYLOG_STARTED:
+            setKeylogActive(msg.agent_id, true)
+            break
+
         case MSG_TYPE.KEYLOG_STOPPED:
+            setKeylogActive(msg.agent_id, false)
+            break
+
         case MSG_TYPE.KEYLOG_DENIED:
-            // TODO: update keylog active-state flag in ModuleStore
+            setKeylogActive(msg.agent_id, false)
+            addToast(`Keylog denied on ${msg.agent_id}: ${msg.reason ?? 'user declined'}`, 'error')
             break
 
         // ── Screen / Webcam binary frames ─────────────────────────────────
@@ -277,26 +288,37 @@ function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylo
         // ── Webcam ────────────────────────────────────────────────────────
         case MSG_TYPE.WEBCAM_STARTED:
         case MSG_TYPE.WEBCAM_STOPPED:
-        case MSG_TYPE.WEBCAM_DENIED:
             // TODO: update webcam active-state flag in ModuleStore
+            break
+
+        case MSG_TYPE.WEBCAM_DENIED:
+            addToast(`Webcam denied on ${msg.agent_id}: ${msg.reason ?? 'user declined'}`, 'error')
             break
 
         // ── File ──────────────────────────────────────────────────────────
         case MSG_TYPE.FS_LIST_RESULT:
-            setModuleData(msg.agent_id, 'file', { entries: msg.entries, path: msg.path })
+            // Merge this directory's entries into the per-agent file tree (sandbox only).
+            setFsEntries(msg.agent_id, msg.path, msg.entries)
             break
 
         case MSG_TYPE.FS_GET_RESULT:
-            // TODO: forward to FileModule download handler
+            // Store the result; FileTab watches this slot and triggers a browser download.
+            setFileDownload(msg.agent_id, msg)
             break
 
         case MSG_TYPE.FS_PUT_RESULT:
+            // Per-chunk ack — FileTab advances the progress bar when this arrives.
+            setFilePutAck(msg.agent_id, { ...msg, complete: false })
+            break
+
         case MSG_TYPE.FS_PUT_COMPLETE:
-            // TODO: forward upload progress to FileModule
+            // Final ack — all chunks received by the Agent; FileTab marks upload as done.
+            setFilePutAck(msg.agent_id, { ...msg, complete: true })
             break
 
         case MSG_TYPE.FS_ERROR:
-            // TODO: surface file error in FileModule
+            // Surface sandbox path errors as toast notifications.
+            addToast(`File error on ${msg.agent_id}: ${msg.message}`, 'error')
             break
 
         // ── Power ─────────────────────────────────────────────────────────
