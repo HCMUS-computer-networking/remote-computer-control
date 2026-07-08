@@ -1,0 +1,29 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "headerText": "Dự án C# Agent - Mã nguồn và Tài liệu Kỹ thuật",
+    "removeComments": false,
+    "removeEmptyLines": true,
+    "showLineNumbers": true
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "LICENSE",
+      "repomix-output.xml",
+      "repomix.config.json",
+      "bin/**",
+      "obj/**",
+      ".vs/**",
+      ".git/**",
+      ".vscode/**",
+      "*.user",
+      "*.suo",
+      "*.dll",
+      "*.exe",
+      "*.pdb"
+    ]
+  }
+}
