@@ -3,7 +3,7 @@
 Remote administration console frontend (React + Vite, JavaScript, no TypeScript).
 Connects to a Gateway over WebSocket; renders data voluntarily sent by Agents after user consent.
 
-**Note**: `architecture.md` and `docs/` are supporting documents during the build phase.
+**Note**: `Architecture.md` and `docs/` are supporting documents during the build phase.
 Once the project is complete they will be deleted. `README.md` is the only official documentation
 that will remain — it is written to stand alone without depending on this file.
 
@@ -41,7 +41,7 @@ Reflects the code state at the end of Playbook Week 3 (Keylog + File finished).
 
 ```
 controller/
-├── architecture.md                     This file — current code map (always up to date)
+├── Architecture.md                     This file — current code map (always up to date)
 ├── README.md                           Setup, run instructions, project overview
 ├── package.json                        react 19.2, react-dom 19.2, zustand 5.0,
 │                                       lucide-react 1.23 (prod)
@@ -52,31 +52,34 @@ controller/
 │
 ├── docs/
 │   ├── wireframe/
-│   │   ├── color-palette.md            CSS variable token definitions (light + dark)
-│   │   ├── icons.md                    Icon usage rules (lucide-react)
-│   │   └── controller-wireframes.drawio Full UI wireframe — 4 pages
+│   │   ├── ColorPalette.md            CSS variable token definitions (light + dark)
+│   │   ├── Icons.md                    Icon usage rules (lucide-react)
+│   │   └── ControllerWireframes.drawio Full UI wireframe — 4 pages
 │   │
 │   ├── formatjson/                     Draft JSON protocol templates (not yet
-│   │   ├── instruction.md              confirmed with Gateway/Agent team)
-│   │   ├── connection.json             list_agents, agents_list, agent_status
-│   │   ├── application.json            app_list, app_start, app_stop + results
-│   │   ├── process.json                proc_list, proc_kill + results
-│   │   ├── livescreen.json             screenshot / stream + frame_meta / binary JPEG
-│   │   ├── keylog.json                 keylog events + consent flow
-│   │   ├── file.json                   fs_list, fs_get, fs_put (sandbox only)
-│   │   ├── webcam.json                 frame_meta (module=webcam) + binary JPEG + consent
-│   │   └── power.json                  lock / restart / shutdown / sleep
+│   │   ├── Instruction.md              confirmed with Gateway/Agent team)
+│   │   ├── Connection.json             list_agents, agents_list, agent_status
+│   │   ├── Application.json            app_list, app_start, app_stop + results
+│   │   ├── Process.json                proc_list, proc_kill + results
+│   │   ├── Livescreen.json             screenshot / stream + frame_meta / binary JPEG
+│   │   ├── Keylog.json                 keylog events + consent flow
+│   │   ├── File.json                   fs_list, fs_get, fs_put (sandbox only)
+│   │   ├── Webcam.json                 frame_meta (module=webcam) + binary JPEG + consent
+│   │   ├── Power.json                  lock / restart / shutdown / sleep
+│   │   └── PolicyUpdate.json          Controller pushes app_whitelist + sandbox_path to
+│   │                                   agents on connect; agent overrides local config in RAM
+│   │                                   and replies policy_update_result
 │   │
 │   ├── technical_explanation/          Short academic notes on tech decisions (Vietnamese)
-│   │   ├── 01_zustand_vs_redux_context.md
-│   │   ├── 02_websocket_qua_gateway.md
-│   │   ├── 03_json_lenh_binary_anh.md
-│   │   ├── 04_tach_store_va_mock_pattern.md
-│   │   └── 05_grid_fps_thap_focus_24fps.md
+│   │   ├── 01_ZustandVsReduxContext.md
+│   │   ├── 02_WebsocketQuaGateway.md
+│   │   ├── 03_JsonLenhBinaryAnh.md
+│   │   ├── 04_TachStoreVaMockPattern.md
+│   │   └── 05_GridFpsThapFocus24fps.md
 │   │
 │   └── screenshot/wireframe_UI/
-│       ├── darktheme.png
-│       └── lighttheme.png
+│       ├── DarkTheme.png
+│       └── LightTheme.png
 │
 ├── public/
 │   ├── favicon.svg
@@ -488,6 +491,7 @@ Only `list_agents` and `power` have their own top-level `type`.
 | `request` | `webcam_start` | `fps`, `quality`, `target_agents[]` | Start webcam stream (Agent consent required) |
 | `request` | `webcam_stop` | `target_agents[]` | Stop webcam stream |
 | `power` | — | `action` (lock\|restart\|shutdown\|sleep), `target_agents[]` | Power action |
+| `policy_update` | — | `app_whitelist[]`, `sandbox_path`, `target_agents[]` | Push security policy (whitelist + sandbox path). Agent applies to RAM immediately, overriding local config |
 
 ### RX (Gateway / Agent → Controller)
 
@@ -515,6 +519,7 @@ Only `list_agents` and `power` have their own top-level `type`.
 | `fs_put_complete` | `agent_id`, `path` | `ModuleStore.setFilePutAck(id, {...msg, complete:true})` — FileTab marks upload done |
 | `fs_error` | `agent_id`, `path`, `message` | `UiStore.addToast()` (error) |
 | `power_result` | `agent_id`, `action`, `confirmed`, `message` | TODO — surface in PowerTab (Week 4) |
+| `policy_update_result` | `agent_id`, `success`, `message` | Confirms agent has applied the pushed whitelist + sandbox path |
 
 ### Binary frame transport
 

@@ -7,20 +7,20 @@
 
 | File | Module | Ghi chú |
 |---|---|---|
-| `connection.json` | Kết nối & danh sách Agent | `list_agents`, `agents_list`, `agent_status` |
-| `application.json` | Application | `app_list`, `app_start`, `app_stop` + kết quả |
-| `process.json` | Process | `proc_list`, `proc_kill` + kết quả |
-| `livescreen.json` | Screenshot / Live Stream | `frame_meta` + binary JPEG |
-| `keylog.json` | Input Activity (Keylog) | `keylog`, consent flow |
-| `file.json` | File (sandbox) | `fs_list`, `fs_get`, `fs_put` |
-| `webcam.json` | Webcam | `frame_meta` (module=webcam) + binary JPEG |
-| `power.json` | Power | `lock`, `restart`, `shutdown`, `sleep` |
+| `Connection.json` | Kết nối & danh sách Agent | `list_agents`, `agents_list`, `agent_status` |
+| `Application.json` | Application | `app_list`, `app_start`, `app_stop` + kết quả |
+| `Process.json` | Process | `proc_list`, `proc_kill` + kết quả |
+| `Livescreen.json` | Screenshot / Live Stream | `frame_meta` + binary JPEG |
+| `Keylog.json` | Input Activity (Keylog) | `keylog`, consent flow |
+| `File.json` | File (sandbox) | `fs_list`, `fs_get`, `fs_put` |
+| `Webcam.json` | Webcam | `frame_meta` (module=webcam) + binary JPEG |
+| `Power.json` | Power | `lock`, `restart`, `shutdown`, `sleep` |
 
 ## Quy ước chung
 
 - **`type`** — tên loại message, bắt buộc trong mọi gói tin JSON.
 - **`agent_id`** — id của agent gửi kết quả về (phía Gateway→Controller).
-- **`target_agents`** — mảng id agent mà lệnh sẽ được gửi tới (phía Controller→Gateway). Cần xác nhận Gateway có relay field này không (xem `TODO` trong `file.json`).
+- **`target_agents`** — mảng id agent mà lệnh sẽ được gửi tới (phía Controller→Gateway). Cần xác nhận Gateway có relay field này không (xem `TODO` trong `File.json`).
 - **Frame ảnh (screen / webcam):** luôn gồm 2 message liên tiếp — JSON `frame_meta` rồi BINARY JPEG. Controller đặt `binaryType = "arraybuffer"` và ghép cặp theo thứ tự nhận.
 - **Consent:** các module nhạy cảm (keylog, webcam) có thêm message `*_denied` khi người dùng từ chối.
 

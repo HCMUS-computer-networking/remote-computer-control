@@ -134,5 +134,5 @@ không đổi theo theme để tránh chói mắt khi xem live:
 
 ## Ghi chú
 
-- Đây là màu **tạm** dùng cho wireframe (khớp với [controller-wireframes.drawio](wireframes/controller-wireframes.drawio)). Khi nhóm chốt bảng màu chính thức, chỉ cần sửa giá trị hex trong 2 khối CSS ở trên và copy vào `src/index.css` — tên biến giữ nguyên nên không phải sửa component nào khác.
+- Đây là màu **tạm** dùng cho wireframe (khớp với [ControllerWireframes.drawio](wireframes/ControllerWireframes.drawio)). Khi nhóm chốt bảng màu chính thức, chỉ cần sửa giá trị hex trong 2 khối CSS ở trên và copy vào `src/index.css` — tên biến giữ nguyên nên không phải sửa component nào khác.
 - Hiện `src/index.css` đang là theme mặc định của Vite starter (tím `--accent: #aa3bff`), chưa áp bảng màu này — cần thay khi bắt đầu code layout thật (tuần 1, mục 13 của Playbook).

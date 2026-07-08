@@ -104,5 +104,5 @@ Quy ước chung: `size={18}` cho icon trong sidebar/tab, `size={16}` cho icon t
 
 ## Ghi chú
 
-- Danh sách map 1-1 với các trang trong [controller-wireframes.drawio](wireframes/controller-wireframes.drawio) và bảng màu ở [color-palette.md](color-palette.md) — icon trạng thái dùng chung màu `--success` / `--danger` / `--warning` / `--gray-400` đã định nghĩa ở đó.
+- Danh sách map 1-1 với các trang trong [ControllerWireframes.drawio](wireframes/ControllerWireframes.drawio) và bảng màu ở [ColorPalette.md](ColorPalette.md) — icon trạng thái dùng chung màu `--success` / `--danger` / `--warning` / `--gray-400` đã định nghĩa ở đó.
 - Nếu team muốn "0 phụ thuộc" (không thêm package) như mục 13 gợi ý, có thể thay bảng này bằng emoji/ký tự tương ứng đã ghi ở cột đầu — không cần đổi vị trí sử dụng.

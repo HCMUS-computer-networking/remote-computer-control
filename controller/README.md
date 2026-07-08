@@ -55,7 +55,7 @@ npm run lint       # kiểm tra lint với oxlint
 controller/
 ├── docs/
 │   ├── wireframe/              Wireframe drawio + bảng màu + icon guide
-│   ├── formatjson/             Draft JSON protocol 7 module
+│   ├── formatjson/             Draft JSON protocol 7 module + policy_update (whitelist/sandbox push)
 │   ├── technical_explanation/  Giải thích kỹ thuật cho báo cáo (tiếng Việt)
 │   └── screenshot/wireframe_UI/ Ảnh chụp wireframe light/dark
 │
@@ -100,4 +100,4 @@ Không cần sửa bất kỳ component hay store nào.
 
 ---
 
-_Xem chi tiết kiến trúc code tại [architecture.md](architecture.md)._
+_Xem chi tiết kiến trúc code tại [Architecture.md](Architecture.md)._
