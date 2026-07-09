@@ -37,8 +37,13 @@ namespace AgentSystem.Managers
                     using (var form = new ConsentForm(moduleName, timeoutMs))
                     {
                         form.ShowDialog();
-                        tcs.SetResult(form.IsApproved);
+                        tcs.TrySetResult(form.IsApproved);
                     }
+                }
+                catch (Exception ex)
+                {
+                    // CHỮA LỖI: Cảnh báo ngược cho luồng Task thay vì làm ngầm lỗi (chặn "treo await vĩnh viễn")
+                    tcs.TrySetException(ex); 
                 }
                 finally
                 {

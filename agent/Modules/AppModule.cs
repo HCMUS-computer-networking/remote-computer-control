@@ -20,7 +20,7 @@ namespace AgentSystem.Modules
             {
                 if (action == "app_list")
                 {
-                    GetRunningApps(commandId);
+                    await Task.Run(() => GetRunningApps(commandId));
                 }
                 else if (action == "app_start" || action == "app_stop")
                 {
@@ -106,6 +106,10 @@ namespace AgentSystem.Modules
                 catch
                 {
                     // Bỏ qua các tiến trình gặp lỗi đọc thông tin hoặc vừa bị đóng trong lúc vòng lặp chạy
+                }
+                finally
+                {
+                    p.Dispose(); // CHỮA LỖI: Chống tràn Handle (Handle Leak)
                 }
             }
 

