@@ -20,21 +20,24 @@ namespace AgentSystem.Modules
         private bool isCapturing = false;
         private int currentSequence = 0;
         private int currentQuality = 60;
-        private readonly object captureLock = new object();
         private int currentFps = 15;
+        
+        // Cải tiến sử dụng SemaphoreSlim thay thế lock để có thể dùng với async/await
+        private readonly SemaphoreSlim captureSemaphore = new SemaphoreSlim(1, 1);
+        private CancellationTokenSource webcamCts;
 
         public override string[] SupportedCommands => new[] { "webcam_start", "webcam_stop" };
 
         public WebcamModule(IAgentContext context, SecurityManager security, UIManager ui) 
             : base(context, security, ui) { }
 
-        public override void Execute(string action, JsonElement parameters, string commandId)
+        public override async Task ExecuteAsync(string action, JsonElement parameters, string commandId)
         {
             if (action == "webcam_start")
             {
                 currentQuality = parameters.TryGetProperty("quality", out var qProp) ? qProp.GetInt32() : 60;
-                currentFps = parameters.TryGetProperty("fps", out var fpsProp) ? fpsProp.GetInt32() : 15; // Đọc FPS
-                StartWebcamWithConsent(commandId);
+                currentFps = parameters.TryGetProperty("fps", out var fpsProp) ? fpsProp.GetInt32() : 15;
+                await StartWebcamWithConsentAsync(commandId);
             }
             else if (action == "webcam_stop")
             {
@@ -42,14 +45,11 @@ namespace AgentSystem.Modules
             }
         }
 
-        // 1. SỬA: Thêm từ khóa 'async' để cho phép dùng 'await Task.Delay'
-        private async void StartWebcamWithConsent(string commandId)
+        private async Task StartWebcamWithConsentAsync(string commandId)
         {
-            // 1. Xin quyền Consent
-            bool isApproved = ui.ShowConsentPopup("webcam", 30000);
+            bool isApproved = await ui.ShowConsentPopupAsync("webcam", 30000);
             if (!isApproved)
             {
-                // 2. SỬA: Bổ sung agent_id vào phản hồi
                 context.SendResponse(new 
                 { 
                     type = "webcam_denied", 
@@ -60,12 +60,10 @@ namespace AgentSystem.Modules
                 return;
             }
 
-            // 2. Minh bạch: Đếm ngược 10 giây bất đồng bộ
             ui.ShowWebcamCountdown(10);
             await Task.Delay(10000);
 
-            // Kích hoạt phần cứng bằng OpenCV
-            capture = new VideoCapture(0); // Mở camera mặc định (index 0)
+            capture = new VideoCapture(0); 
             if (!capture.IsOpened())
             {
                 context.SendResponse(new 
@@ -77,6 +75,7 @@ namespace AgentSystem.Modules
                 });
                 return;
             }
+            
             double currentWidth = capture.Get(VideoCaptureProperties.FrameWidth);
             double currentHeight = capture.Get(VideoCaptureProperties.FrameHeight);
 
@@ -86,19 +85,16 @@ namespace AgentSystem.Modules
                 capture.Set(VideoCaptureProperties.FrameHeight, 720);
                 Log.Information("Đã giảm độ phân giải Webcam từ {W}x{H} xuống 1280x720", currentWidth, currentHeight);
             }
-            else
-            {
-                Log.Information("Độ phân giải Webcam hiện tại: {W}x{H}", currentWidth, currentHeight);
-            }
 
-            // Hiển thị overlay cảnh báo
             ui.ShowRedDotOverlay();
 
             isCapturing = true;
             currentSequence = 1;
+            
+            webcamCts = new CancellationTokenSource();
 
-            // Bắt đầu vòng lặp đọc khung hình ở background thread
-            _ = Task.Run(CaptureLoop); //chu dong chay ngam
+            // Khởi động luồng chạy ngầm OpenCV (Vẫn dùng Task.Run vì capture.Read() có thể block)
+            _ = Task.Run(() => CaptureLoopAsync(webcamCts.Token));
 
             context.SendResponse(new 
             { 
@@ -108,21 +104,29 @@ namespace AgentSystem.Modules
             });
         }
 
-        private void CaptureLoop()
+        private async Task CaptureLoopAsync(CancellationToken token)
         {
             try
             {
                 using (Mat frame = new Mat())
                 {
-                    while (isCapturing && capture != null && !capture.IsDisposed)
+                    while (isCapturing && capture != null && !capture.IsDisposed && !token.IsCancellationRequested)
                     {
                         if (capture.Read(frame) && !frame.Empty())
-                            ProcessAndSendFrame(frame);
+                        {
+                            await ProcessAndSendFrameAsync(frame);
+                        }
 
                         int sleepMs = 1000 / (currentFps > 0 ? currentFps : 15);
-                        Thread.Sleep(sleepMs);
+                        
+                        // Thay thế Thread.Sleep bằng Delay bất đồng bộ
+                        await Task.Delay(sleepMs, token);
                     }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Ngắt mượt mà khi huỷ Token
             }
             catch (Exception ex)
             {
@@ -130,7 +134,6 @@ namespace AgentSystem.Modules
             }
             finally
             {
-                // 3. SỬA: An toàn giải phóng phần cứng và giao diện khi ngắt luồng
                 isCapturing = false;
 
                 if (capture != null)
@@ -148,10 +151,9 @@ namespace AgentSystem.Modules
             }
         }
 
-        private void ProcessAndSendFrame(Mat frame)
+        private async Task ProcessAndSendFrameAsync(Mat frame)
         {
-            bool lockTaken = false;
-            Monitor.TryEnter(captureLock, ref lockTaken);
+            bool lockTaken = await captureSemaphore.WaitAsync(0);
             if (!lockTaken) return;
 
             try
@@ -181,15 +183,18 @@ namespace AgentSystem.Modules
             }
             finally
             {
-                if (lockTaken) Monitor.Exit(captureLock);
+                captureSemaphore.Release();
             }
         }
 
         private void StopWebcam(string commandId)
         {
-            // 4. SỬA: Chỉ cần hạ cờ isCapturing. CaptureLoop sẽ thoát vòng lặp 
-            // và tự động giải phóng 'capture' + ẩn Red Dot trong khối finally một cách an toàn.
             isCapturing = false;
+            
+            // Ra lệnh ngừng delay ngay lập tức
+            webcamCts?.Cancel();
+            webcamCts?.Dispose();
+            webcamCts = null;
 
             context.SendResponse(new 
             { 

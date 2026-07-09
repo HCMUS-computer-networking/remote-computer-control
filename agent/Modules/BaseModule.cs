@@ -1,5 +1,7 @@
 using AgentSystem.Core;
 using AgentSystem.Managers;
+using System.Threading.Tasks;
+using System.Text.Json;
 
 namespace AgentSystem.Modules
 {
@@ -17,7 +19,6 @@ namespace AgentSystem.Modules
             this.security = security;
             this.ui = ui;
         }
-
-        public abstract void Execute(string action, System.Text.Json.JsonElement parameters, string commandId);
-    }
+        
+        public abstract Task ExecuteAsync(string action, JsonElement parameters, string commandId);    }
 }

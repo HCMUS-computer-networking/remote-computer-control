@@ -14,7 +14,7 @@ namespace AgentSystem.Modules
         public AppModule(IAgentContext context, SecurityManager security, UIManager ui) 
             : base(context, security, ui) { }
 
-        public override void Execute(string action, JsonElement parameters, string commandId)
+        public override async Task ExecuteAsync(string action, JsonElement parameters, string commandId)
         {
             try
             {
@@ -46,6 +46,7 @@ namespace AgentSystem.Modules
                     if (action == "app_start") StartApp(appName, commandId);
                     else StopApp(appName, commandId);
                 }
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {

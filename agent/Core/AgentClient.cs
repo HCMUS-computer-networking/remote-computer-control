@@ -62,14 +62,14 @@ namespace AgentSystem.Core
 
             // SỬA: Định tuyến thông minh, gộp chung xử lý cho mọi module kể cả Power
             string routingKey = packet.Module ?? packet.Type; 
-
             if (routingKey != null && _moduleRegistry.TryGetValue(routingKey, out BaseModule module))
             {
-                System.Threading.Tasks.Task.Run(() =>
+                // Sử dụng Fire-and-Forget Task với async/await
+                _ = Task.Run(async () =>
                 {
                     try
                     {
-                        module.Execute(packet.Action ?? routingKey, packet.Params, packet.CommandId);
+                        await module.ExecuteAsync(packet.Action ?? routingKey, packet.Params, packet.CommandId);
                     }
                     catch (Exception ex)
                     {

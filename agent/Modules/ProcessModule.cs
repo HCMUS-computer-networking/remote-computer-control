@@ -7,32 +7,34 @@ using System.Linq;
 using System.Text.Json;
 using AgentSystem.Core;
 using System.Threading.Tasks;
+using System.Threading;
 using AgentSystem.Managers;
 
 namespace AgentSystem.Modules
 {
     public class ProcessModule : BaseModule
     {
-        // 1. SỬA: Đổi sang ConcurrentDictionary để đảm bảo an toàn Thread-safe khi chạy đa luồng
         private readonly ConcurrentDictionary<int, (TimeSpan CpuTime, DateTime LastCheck)> cpuHistory = new ConcurrentDictionary<int, (TimeSpan, DateTime)>();
 
         public override string[] SupportedCommands => new[] { "proc_list", "proc_kill" };
+        
         public ProcessModule(IAgentContext context, SecurityManager security, UIManager ui) 
             : base(context, security, ui) { }
 
-        public override void Execute(string action, JsonElement parameters, string commandId)
+        public override async Task ExecuteAsync(string action, JsonElement parameters, string commandId)
         {
             try
             {
                 if (action == "proc_list")
                 {
-                    GetProcessList(commandId);
+                    // Chạy ngầm thao tác liệt kê để không block luồng xử lý gói tin WebSocket
+                    await Task.Run(() => GetProcessList(commandId));
                 }
                 else if (action == "proc_kill")
                 {
                     if (parameters.TryGetProperty("pid", out JsonElement pidElement) && pidElement.TryGetInt32(out int pid))
                     {
-                        KillProcess(pid, commandId);
+                        await KillProcessAsync(pid, commandId);
                     }
                     else
                     {
@@ -60,12 +62,10 @@ namespace AgentSystem.Modules
 
         private void GetProcessList(string commandId)
         {
-            // 2. SỬA: Dùng ConcurrentBag thay cho List để Add phần tử an toàn từ nhiều luồng
             var processList = new ConcurrentBag<object>();
             var processes = Process.GetProcesses();
             var currentTime = DateTime.UtcNow;
 
-            // 3. TỐI ƯU: Quét danh sách song song trên nhiều nhân CPU thay vì vòng lặp đồng bộ
             Parallel.ForEach(processes, p =>
             {
                 try
@@ -75,7 +75,6 @@ namespace AgentSystem.Modules
 
                     try
                     {
-                        // Phương pháp Non-blocking tính toán CPU Delta
                         TimeSpan currentCpuTime = p.TotalProcessorTime;
                         
                         if (cpuHistory.TryGetValue(p.Id, out var history))
@@ -85,22 +84,14 @@ namespace AgentSystem.Modules
                             
                             if (msPassed > 0)
                             {
-                                // Công thức tính % CPU đa luồng
                                 cpuPercent = Math.Round((cpuMsPassed / msPassed) / Environment.ProcessorCount * 100, 2);
                             }
                         }
                         
-                        // Cập nhật lại lịch sử cho lần quét sau
                         cpuHistory[p.Id] = (currentCpuTime, currentTime);
                     }
-                    catch (Win32Exception) 
-                    { 
-                        // Truy cập bị từ chối với các System Process
-                    }
-                    catch (InvalidOperationException) 
-                    { 
-                        // Tiến trình vừa bị đóng trong lúc quét
-                    }
+                    catch (Win32Exception) { }
+                    catch (InvalidOperationException) { }
 
                     processList.Add(new
                     {
@@ -110,24 +101,18 @@ namespace AgentSystem.Modules
                         ram_mb = ramMb
                     });
                 }
-                catch 
-                { 
-                    // Bỏ qua các lỗi vặt khác 
-                }
+                catch { }
                 finally
                 {
-                    // 4. QUAN TRỌNG: Giải phóng Handle của hệ điều hành (Fix Memory/Handle Leak)
                     p.Dispose();
                 }
             });
 
-            // Dọn dẹp cache cho những tiến trình đã tắt để chống tràn RAM
             var currentPids = processes.Select(p => p.Id).ToHashSet();
             var pidsToRemove = cpuHistory.Keys.Where(pid => !currentPids.Contains(pid)).ToList();
             
             foreach (var pid in pidsToRemove) 
             {
-                // Dùng TryRemove cho ConcurrentDictionary
                 cpuHistory.TryRemove(pid, out _); 
             }
 
@@ -135,18 +120,29 @@ namespace AgentSystem.Modules
             {
                 type = "proc_list_result",
                 command_id = commandId,
-                processes = processList.ToList() // Convert lại thành List khi gửi JSON
+                processes = processList.ToList() 
             });
         }
 
-        private void KillProcess(int pid, string commandId)
+        private async Task KillProcessAsync(int pid, string commandId)
         {
             try
             {
                 var process = Process.GetProcessById(pid);
                 process.Kill();
-                // Chờ tối đa 2 giây để xác nhận tiến trình đã bị đóng
-                process.WaitForExit(2000);
+                
+                // Đợi bất đồng bộ với Timeout 2 giây thay vì chặn luồng như WaitForExit()
+                using (var cts = new CancellationTokenSource(2000))
+                {
+                    try
+                    {
+                        await process.WaitForExitAsync(cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Tiến trình chưa thoát hẳn sau 2s, bỏ qua
+                    }
+                }
                 
                 context.SendResponse(new
                 {
@@ -159,7 +155,6 @@ namespace AgentSystem.Modules
             }
             catch (ArgumentException)
             {
-                // Bắt lỗi khi không tìm thấy PID
                 context.SendResponse(new
                 {
                     type = "proc_kill_result",
@@ -171,7 +166,6 @@ namespace AgentSystem.Modules
             }
             catch (Exception ex)
             {
-                // Bắt lỗi khi thiếu quyền quản trị (Access Denied)
                 context.SendResponse(new
                 {
                     type = "proc_kill_result",

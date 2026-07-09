@@ -14,15 +14,14 @@ namespace AgentSystem.Managers
         private static readonly object _lock = new object();
         
         // 1. Popup Xin Quyền (Chặn luồng và chờ kết quả)
-        public bool ShowConsentPopup(string moduleName, int timeoutMs)
-        {
+        public Task<bool> ShowConsentPopupAsync(string moduleName, int timeoutMs)        {
             lock (_lock)
             {
                 // Nếu đang có popup của module này hiển thị -> Tự động Từ chối (Reject) ngay lập tức
                 if (_activePermissionPopups.Contains(moduleName))
                 {
                     Console.WriteLine($"[UIManager] Request xin quyền module '{moduleName}' bị từ chối do popup cũ chưa đóng (Anti-DoS).");
-                    return false; 
+                    return Task.FromResult(false);  
                 }
 
                 // Đánh dấu module này đang hiện popup
@@ -54,7 +53,7 @@ namespace AgentSystem.Managers
             uiThread.Start();
 
             // Chờ kết quả đồng bộ mà không làm chết Thread
-            return tcs.Task.Result; 
+            return tcs.Task; 
         }
 
         // 2. Giao diện đếm ngược (Dùng cho Webcam)

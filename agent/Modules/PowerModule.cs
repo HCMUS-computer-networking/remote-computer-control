@@ -12,7 +12,7 @@ namespace AgentSystem.Modules
         public override string[] SupportedCommands => new[] { "power" };
         public PowerModule(IAgentContext context, SecurityManager security, UIManager ui) : base(context, security, ui) { }
 
-        public override void Execute(string action, JsonElement parameters, string commandId)
+        public override async Task ExecuteAsync(string action, JsonElement parameters, string commandId)
         {
             try
             {
@@ -23,7 +23,7 @@ namespace AgentSystem.Modules
                 if (safeAction == "shutdown" || safeAction == "restart" || safeAction == "sleep")
                 {
                     // Hiển thị popup chờ tối đa 30 giây (30000ms)
-                    bool isApproved = ui.ShowConsentPopup("power", 30000);
+                    bool isApproved = await ui.ShowConsentPopupAsync("power", 30000);
 
                     if (!isApproved)
                     {

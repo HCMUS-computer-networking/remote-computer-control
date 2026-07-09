@@ -4,9 +4,9 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using AgentSystem.Core;
-using Timer = System.Threading.Timer;
 using Serilog;
 using AgentSystem.Utils;
 using AgentSystem.Managers;
@@ -24,18 +24,23 @@ namespace AgentSystem.Modules
         
         private bool isStreaming = false;
         private string streamCommandId = string.Empty;
-        private Timer streamTimer;
+        
+        // Quản lý luồng Stream bằng PeriodicTimer và CancellationToken
+        private CancellationTokenSource streamCts;
+        private Task streamTask;
+        
         private int currentSequence = 0;
         private int currentQuality = 70;
         
-        // Khóa đồng bộ đa luồng để tránh nghẽn
-        private readonly object captureLock = new object();
+        // Sử dụng SemaphoreSlim thay cho 'lock' truyền thống để hỗ trợ async/await
+        private readonly SemaphoreSlim captureSemaphore = new SemaphoreSlim(1, 1);
 
         public override string[] SupportedCommands => new[] { "screenshot", "screen_stream", "screen_stream_stop" };
+        
         public StreamModule(IAgentContext context, SecurityManager security, UIManager ui) 
             : base(context, security, ui) { }
 
-        public override void Execute(string action, JsonElement parameters, string commandId)
+        public override async Task ExecuteAsync(string action, JsonElement parameters, string commandId)
         {
             try
             {
@@ -43,7 +48,7 @@ namespace AgentSystem.Modules
                 {
                     int fps = parameters.TryGetProperty("fps", out var fpsProp) ? fpsProp.GetInt32() : 24;
                     int quality = parameters.TryGetProperty("quality", out var qProp) ? qProp.GetInt32() : 70;
-                    StartStream(fps, quality, commandId);
+                    await StartStreamAsync(fps, quality, commandId);
                 }
                 else if (action == "screen_stream_stop")
                 {
@@ -52,7 +57,7 @@ namespace AgentSystem.Modules
                 else if (action == "screenshot")
                 {
                     int quality = parameters.TryGetProperty("quality", out var qProp) ? qProp.GetInt32() : 90;
-                    TakeSingleScreenshot(quality, commandId);
+                    await TakeSingleScreenshotAsync(quality, commandId);
                 }
             }
             catch (Exception ex)
@@ -67,7 +72,7 @@ namespace AgentSystem.Modules
             }
         }
 
-        private void StartStream(int fps, int quality, string commandId)
+        private async Task StartStreamAsync(int fps, int quality, string commandId)
         {
             int safeFps = fps > 0 ? fps : 24;
             int intervalMs = 1000 / safeFps;
@@ -75,12 +80,13 @@ namespace AgentSystem.Modules
 
             if (isStreaming)
             {
-                streamTimer?.Change(0, intervalMs); // Đổi chu kỳ phát ảnh lập tức
+                // Nếu đang stream, khởi động lại luồng với cấu hình mới
+                StopStream(commandId);
                 Log.Information("Đã điều chỉnh luồng Stream sang FPS: {Fps}, Quality: {Quality}", safeFps, quality);
-                return;
             }
 
-            bool isApproved = ui.ShowConsentPopup("screen_stream", 30000);
+            // Gọi Popup bất đồng bộ, không chặn Thread
+            bool isApproved = await ui.ShowConsentPopupAsync("screen_stream", 30000);
             if (!isApproved)
             {
                 context.SendResponse(new { type = "stream_denied", command_id = commandId, module = "screen", reason = "User declined permission" });
@@ -88,14 +94,37 @@ namespace AgentSystem.Modules
             }
 
             isStreaming = true;
-            streamCommandId = commandId; // Lưu commandId của luồng stream
+            streamCommandId = commandId;
             currentSequence = 1;
             currentQuality = quality;
 
             context.SendResponse(new { type = "stream_started", command_id = commandId, module = "screen" });
             
-            // Truyền cờ isFromStream = true để phân biệt đây là ảnh từ luồng liên tục
-            streamTimer = new Timer(state => CaptureAndSend(streamCommandId, currentQuality, true), null, 0, intervalMs);
+            // Khởi tạo và chạy vòng lặp Stream ngầm
+            streamCts = new CancellationTokenSource();
+            streamTask = StreamLoopAsync(intervalMs, streamCts.Token);
+        }
+
+        private async Task StreamLoopAsync(int intervalMs, CancellationToken token)
+        {
+            // Sử dụng PeriodicTimer giúp tối ưu CPU và tránh nghẽn vòng lặp
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(intervalMs));
+            
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    await CaptureAndSendAsync(streamCommandId, currentQuality, true);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Luồng stream bị hủy chủ động
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Lỗi nghiêm trọng trong vòng lặp Stream: {ErrorMessage}", ex.Message);
+            }
         }
 
         private void StopStream(string commandId)
@@ -103,10 +132,14 @@ namespace AgentSystem.Modules
             if (!isStreaming) return;
             isStreaming = false;
             
-            streamTimer?.Dispose();
-            streamTimer = null;
+            // Hủy luồng PeriodicTimer an toàn
+            streamCts?.Cancel();
+            streamCts?.Dispose();
+            streamCts = null;
 
-            lock (captureLock)
+            // Chặn tạm thời để dọn dẹp GDI+ an toàn
+            captureSemaphore.Wait();
+            try
             {
                 captureGraphics?.Dispose();
                 captureGraphics = null;
@@ -118,48 +151,47 @@ namespace AgentSystem.Modules
                 scaledBitmap = null;
                 lastScreenSize = Size.Empty;
             }
+            finally
+            {
+                captureSemaphore.Release();
+            }
 
             context.SendResponse(new { type = "stream_stopped", command_id = commandId, module = "screen" });
         }
 
-        private void TakeSingleScreenshot(int quality, string commandId)
+        private async Task TakeSingleScreenshotAsync(int quality, string commandId)
         {
-             bool isApproved = ui.ShowConsentPopup("screenshot", 30000);
+             bool isApproved = await ui.ShowConsentPopupAsync("screenshot", 30000);
              if (!isApproved)
              {
                  context.SendResponse(new { type = "stream_denied", command_id = commandId, module = "screen" });
                  return;
              }
              
-             // Gọi hàm capture với cờ isFromStream = false cho lệnh đơn lẻ
-             CaptureAndSend(commandId, quality, false);
+             await CaptureAndSendAsync(commandId, quality, false);
         }
 
-        // HÀM ĐÃ ĐƯỢC CẢI TIẾN ĐỂ FIX LỖI "SILENT FAILURE"
-        private void CaptureAndSend(string commandId, int quality, bool isFromStream)
+        private async Task CaptureAndSendAsync(string commandId, int quality, bool isFromStream)
         {
-            bool lockTaken = false;
+            // Chờ tối đa 1000ms để vào vùng Critical Section (thay thế cho TryEnter)
+            bool lockTaken = await captureSemaphore.WaitAsync(1000);
+            
+            if (!lockTaken)
+            {
+                if (isFromStream) return; // Rớt 1 frame stream thì bỏ qua
+                
+                context.SendResponse(new
+                {
+                    type = "ERROR",
+                    command_id = commandId,
+                    module = "screen",
+                    message = "Hệ thống đang bận xử lý luồng ảnh khác, không thể chụp màn hình lúc này."
+                });
+                return; 
+            }
+
             try
             {
-                // Thay vì TryEnter ngay lập tức (0ms), cho phép chờ tối đa 1000ms
-                Monitor.TryEnter(captureLock, 1000, ref lockTaken);
-                
-                if (!lockTaken)
-                {
-                    // Nếu Timer Stream rớt 1 frame (do đang kẹt xử lý lệnh khác) -> Bỏ qua, không sao
-                    if (isFromStream) return;
-                    
-                    // Nếu là lệnh chụp đơn lẻ bị kẹt -> BẮT BUỘC BÁO LỖI VỀ CONTROLLER
-                    context.SendResponse(new
-                    {
-                        type = "ERROR",
-                        command_id = commandId,
-                        module = "screen",
-                        message = "Hệ thống đang bận xử lý luồng ảnh khác, không thể chụp màn hình lúc này."
-                    });
-                    return; 
-                }
-
                 Rectangle bounds = Screen.PrimaryScreen.Bounds;
                 
                 if (captureBitmap == null || lastScreenSize != bounds.Size)
@@ -179,6 +211,7 @@ namespace AgentSystem.Modules
                     lastScreenSize = bounds.Size;
                 }
 
+                // Thực hiện copy pixel từ màn hình
                 captureGraphics.CopyFromScreen(Point.Empty, Point.Empty, bounds.Size);
                 scaledGraphics.DrawImage(captureBitmap, new Rectangle(0, 0, TargetSize.Width, TargetSize.Height));
                 
@@ -193,7 +226,7 @@ namespace AgentSystem.Modules
                     w = TargetSize.Width,
                     h = TargetSize.Height,
                     len = imageBytes.Length,
-                    seq = isFromStream ? currentSequence++ : 0, // Ảnh đơn lẻ không cần đếm sequence
+                    seq = isFromStream ? currentSequence++ : 0, 
                     timestamp_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 });
                 
@@ -203,7 +236,6 @@ namespace AgentSystem.Modules
             {
                 Log.Error(ex, "Lỗi quá trình chụp và scale ảnh: {ErrorMessage}", ex.Message);
                 
-                // Báo lỗi về nếu là ảnh chụp đơn lẻ
                 if (!isFromStream)
                 {
                     context.SendResponse(new { type = "ERROR", command_id = commandId, module = "screen", message = $"Lỗi chụp ảnh: {ex.Message}" });
@@ -215,7 +247,8 @@ namespace AgentSystem.Modules
             }
             finally
             {
-                if (lockTaken) Monitor.Exit(captureLock);
+                // Giải phóng Semaphore
+                captureSemaphore.Release();
             }
         }
     }

