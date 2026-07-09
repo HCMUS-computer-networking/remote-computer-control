@@ -14,18 +14,26 @@ namespace AgentSystem.Managers
 
         public void UpdatePolicy(List<string> newWhitelist, string newSandboxPath)
         {
+            bool isChanged = false;
+
             if (newWhitelist != null)
             {
-                // Xóa danh sách cũ, nạp danh sách chuẩn từ Server vào RAM
                 this.appWhitelist = new List<string>(newWhitelist.Select(x => x.ToLower()));
+                isChanged = true;
             }
-
+            
             if (!string.IsNullOrEmpty(newSandboxPath))
             {
                 this.sandboxRootPath = newSandboxPath;
+                isChanged = true;
             }
 
-            Log.Information("Đã cập nhật chính sách bảo mật từ Server vào RAM thành công!");
+            if (isChanged)
+            {
+                // Audit log chuẩn: Ghi rõ số lượng ứng dụng và đường dẫn Sandbox đang áp dụng
+                Log.Information("[SecurityPolicy] Cập nhật Policy thành công (In-Memory). Whitelist: {AppCount} apps, Sandbox: '{SandboxPath}'", 
+                    this.appWhitelist.Count, this.sandboxRootPath);
+            }
         }
         public SecurityManager()
         {

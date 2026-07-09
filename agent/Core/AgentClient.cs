@@ -74,9 +74,48 @@ namespace AgentSystem.Core
         {
             if (packet.Type == "policy_update")
             {
-                var whitelist = JsonSerializer.Deserialize<List<string>>(packet.Params.GetProperty("app_whitelist").GetRawText());
-                var sandbox = packet.Params.GetProperty("sandbox_path").GetString();
-                SecurityManager.UpdatePolicy(whitelist, sandbox);
+                try
+                {
+                    List<string> whitelist = null;
+                    string sandbox = null;
+
+                    // Xử lý an toàn: Có biến nào thì đọc biến đó (Hỗ trợ Update từng phần)
+                    if (packet.Params.TryGetProperty("app_whitelist", out var wlProp) && wlProp.ValueKind != JsonValueKind.Null)
+                    {
+                        whitelist = JsonSerializer.Deserialize<List<string>>(wlProp.GetRawText());
+                    }
+
+                    if (packet.Params.TryGetProperty("sandbox_path", out var sbProp) && sbProp.ValueKind != JsonValueKind.Null)
+                    {
+                        sandbox = sbProp.GetString();
+                    }
+
+                    SecurityManager.UpdatePolicy(whitelist, sandbox);
+
+                    // Gửi xác nhận thành công về cho Gateway
+                    SendResponse(new 
+                    {
+                        type = "policy_update_result",
+                        agent_id = AgentId,
+                        command_id = packet.CommandId,
+                        success = true,
+                        message = "Policy updated successfully in RAM."
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "[AgentClient] Lỗi khi giải mã tham số policy_update");
+                    
+                    // Gửi báo cáo lỗi về cho Gateway
+                    SendResponse(new 
+                    {
+                        type = "policy_update_result",
+                        agent_id = AgentId,
+                        command_id = packet.CommandId,
+                        success = false,
+                        message = $"Failed to parse policy data: {ex.Message}"
+                    });
+                }
                 return;
             }
 
