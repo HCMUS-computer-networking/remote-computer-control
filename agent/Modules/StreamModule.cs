@@ -170,7 +170,14 @@ namespace AgentSystem.Modules
              
              await CaptureAndSendAsync(commandId, quality, false);
         }
-
+        public override void OnDisconnected()
+        {
+            if (isStreaming)
+            {
+                Log.Warning("[StreamModule] Phát hiện mất kết nối mạng. Đang tự động ngắt quay màn hình...");
+                StopStream("auto_disconnect"); 
+            }
+        }
         private async Task CaptureAndSendAsync(string commandId, int quality, bool isFromStream)
         {
             // Chờ tối đa 1000ms để vào vùng Critical Section (thay thế cho TryEnter)

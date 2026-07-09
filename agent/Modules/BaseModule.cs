@@ -19,6 +19,13 @@ namespace AgentSystem.Modules
             this.security = security;
             this.ui = ui;
         }
+        public abstract Task ExecuteAsync(string action, JsonElement parameters, string commandId);
+
+        // THÊM HÀM NÀY: Để các module con ghi đè khi cần
+        public virtual void OnDisconnected() 
+        { 
+            // Mặc định không làm gì cả
+        }
+    }
         
-        public abstract Task ExecuteAsync(string action, JsonElement parameters, string commandId);    }
 }

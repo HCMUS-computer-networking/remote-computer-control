@@ -34,6 +34,8 @@ namespace AgentSystem.Core
             Dispatcher = new MessageDispatcher(this);
             wsClient = new WebSocketClient(this, gatewayUrl);
 
+            wsClient.OnDisconnectedEvent += HandleAgentDisconnected;
+
             // Tự động map các Module dựa trên SupportedCommands
             _moduleRegistry = new Dictionary<string, BaseModule>();
             foreach (var module in injectedModules)
@@ -41,6 +43,23 @@ namespace AgentSystem.Core
                 foreach (var cmd in module.SupportedCommands)
                 {
                     _moduleRegistry[cmd] = module;
+                }
+            }
+        }
+
+        private void HandleAgentDisconnected()
+        {
+            Console.WriteLine("[AgentClient] Mất kết nối! Đang yêu cầu các module dọn dẹp tài nguyên...");
+            
+            foreach (var module in _moduleRegistry.Values)
+            {
+                try
+                {
+                    module.OnDisconnected(); 
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[AgentClient] Lỗi dọn dẹp module: {ex.Message}");
                 }
             }
         }

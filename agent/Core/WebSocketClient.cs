@@ -12,6 +12,7 @@ namespace AgentSystem.Core
 {
     public class WebSocketClient
     {
+        public event Action OnDisconnectedEvent;
         private readonly AgentClient context;
         private readonly string url;
         
@@ -150,6 +151,7 @@ namespace AgentSystem.Core
                             if (result.MessageType == WebSocketMessageType.Close)
                             {
                                 Console.WriteLine("[WebSocket] Server chủ động ngắt kết nối.");
+                                OnDisconnectedEvent?.Invoke();
                                 _ = HandleReconnectAsync();
                                 return;
                             }
@@ -183,6 +185,7 @@ namespace AgentSystem.Core
             catch (Exception ex)
             {
                 Console.WriteLine($"[WebSocket RX Lỗi] Vòng lặp nhận dữ liệu bị ngắt: {ex.Message}");
+                OnDisconnectedEvent?.Invoke();
                 _ = HandleReconnectAsync();
             }
         }

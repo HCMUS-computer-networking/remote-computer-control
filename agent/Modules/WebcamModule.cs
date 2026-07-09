@@ -45,6 +45,15 @@ namespace AgentSystem.Modules
             }
         }
 
+        public override void OnDisconnected()
+        {
+            if (isCapturing)
+            {
+                Log.Warning("[WebcamModule] Phát hiện mất kết nối mạng. Đang tự động tắt Webcam...");
+                StopWebcam("auto_disconnect");
+            }
+        }
+
         private async Task StartWebcamWithConsentAsync(string commandId)
         {
             if (isCapturing)
