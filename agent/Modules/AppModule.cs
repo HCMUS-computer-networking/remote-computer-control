@@ -4,12 +4,15 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using AgentSystem.Core;
+using AgentSystem.Managers; 
 
 namespace AgentSystem.Modules
 {
     public class AppModule : BaseModule
     {
-        public AppModule(AgentClient context) : base(context) { }
+        public override string[] SupportedCommands => new[] { "app_start", "app_stop", "app_list" };
+        public AppModule(IAgentContext context, SecurityManager security, UIManager ui) 
+            : base(context, security, ui) { }
 
         public override void Execute(string action, JsonElement parameters, string commandId)
         {

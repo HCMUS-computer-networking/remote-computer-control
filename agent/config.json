@@ -1,0 +1,11 @@
+{
+  "agent_id": "DUY-5BCD",
+  "gateway_url": "wss://localhost:8080",
+  "app_whitelist": [
+    "notepad",
+    "calc",
+    "chrome",
+    "winword"
+  ],
+  "sandbox_root_path": "C:\\AgentSandbox\\"
+}

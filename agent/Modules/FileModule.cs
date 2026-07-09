@@ -4,15 +4,19 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using AgentSystem.Core;
+using AgentSystem.Managers;
 
 namespace AgentSystem.Modules
 {
     public class FileModule : BaseModule
     {
+        
         private readonly object _chunkLock = new object();
         private Dictionary<string, int> expectedChunks = new Dictionary<string, int>();
 
-        public FileModule(AgentClient context) : base(context) { }
+        public override string[] SupportedCommands => new[] { "fs_list", "fs_get", "fs_put" };
+        public FileModule(IAgentContext context, SecurityManager security, UIManager ui) 
+            : base(context, security, ui) { }
 
         public override void Execute(string action, JsonElement parameters, string commandId)
         {

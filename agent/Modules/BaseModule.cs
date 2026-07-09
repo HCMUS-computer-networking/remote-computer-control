@@ -5,15 +5,17 @@ namespace AgentSystem.Modules
 {
     public abstract class BaseModule
     {
-        protected AgentClient context;
+        protected IAgentContext context;
         protected SecurityManager security;
         protected UIManager ui;
 
-        protected BaseModule(AgentClient context)
+        public abstract string[] SupportedCommands { get; }
+
+        protected BaseModule(IAgentContext context, SecurityManager security, UIManager ui)
         {
             this.context = context;
-            this.security = context.SecurityManager;
-            this.ui = context.UIManager;
+            this.security = security;
+            this.ui = ui;
         }
 
         public abstract void Execute(string action, System.Text.Json.JsonElement parameters, string commandId);

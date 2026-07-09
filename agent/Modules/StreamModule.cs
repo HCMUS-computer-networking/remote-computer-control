@@ -9,6 +9,7 @@ using AgentSystem.Core;
 using Timer = System.Threading.Timer;
 using Serilog;
 using AgentSystem.Utils;
+using AgentSystem.Managers;
 
 namespace AgentSystem.Modules
 {
@@ -30,7 +31,9 @@ namespace AgentSystem.Modules
         // Khóa đồng bộ đa luồng để tránh nghẽn
         private readonly object captureLock = new object();
 
-        public StreamModule(AgentClient context) : base(context) { }
+        public override string[] SupportedCommands => new[] { "screenshot", "screen_stream", "screen_stream_stop" };
+        public StreamModule(IAgentContext context, SecurityManager security, UIManager ui) 
+            : base(context, security, ui) { }
 
         public override void Execute(string action, JsonElement parameters, string commandId)
         {

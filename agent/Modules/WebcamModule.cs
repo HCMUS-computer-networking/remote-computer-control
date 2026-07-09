@@ -10,7 +10,7 @@ using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using Serilog;
 using AgentSystem.Utils;
-
+using AgentSystem.Managers;
 
 namespace AgentSystem.Modules
 {
@@ -23,7 +23,10 @@ namespace AgentSystem.Modules
         private readonly object captureLock = new object();
         private int currentFps = 15;
 
-        public WebcamModule(AgentClient context) : base(context) { }
+        public override string[] SupportedCommands => new[] { "webcam_start", "webcam_stop" };
+
+        public WebcamModule(IAgentContext context, SecurityManager security, UIManager ui) 
+            : base(context, security, ui) { }
 
         public override void Execute(string action, JsonElement parameters, string commandId)
         {

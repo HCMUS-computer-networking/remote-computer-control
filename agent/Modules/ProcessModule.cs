@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.Json;
 using AgentSystem.Core;
 using System.Threading.Tasks;
+using AgentSystem.Managers;
 
 namespace AgentSystem.Modules
 {
@@ -15,7 +16,9 @@ namespace AgentSystem.Modules
         // 1. SỬA: Đổi sang ConcurrentDictionary để đảm bảo an toàn Thread-safe khi chạy đa luồng
         private readonly ConcurrentDictionary<int, (TimeSpan CpuTime, DateTime LastCheck)> cpuHistory = new ConcurrentDictionary<int, (TimeSpan, DateTime)>();
 
-        public ProcessModule(AgentClient context) : base(context) { }
+        public override string[] SupportedCommands => new[] { "proc_list", "proc_kill" };
+        public ProcessModule(IAgentContext context, SecurityManager security, UIManager ui) 
+            : base(context, security, ui) { }
 
         public override void Execute(string action, JsonElement parameters, string commandId)
         {

@@ -3,12 +3,14 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Threading;
 using AgentSystem.Core;
+using AgentSystem.Managers;
 
 namespace AgentSystem.Modules
 {
     public class PowerModule : BaseModule
     {
-        public PowerModule(AgentClient context) : base(context) { }
+        public override string[] SupportedCommands => new[] { "power" };
+        public PowerModule(IAgentContext context, SecurityManager security, UIManager ui) : base(context, security, ui) { }
 
         public override void Execute(string action, JsonElement parameters, string commandId)
         {

