@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using AgentSystem.Core;
 using AgentSystem.Managers;
+using System.Security.Cryptography;
 
 namespace AgentSystem.Modules
 {
@@ -105,6 +106,10 @@ namespace AgentSystem.Modules
                 if (chunkIndex == totalChunks - 1)
                 {
                     expectedChunks.Remove(fullPath);
+                    
+                    // TÍNH MÃ BĂM SAU KHI ĐÃ GHI XONG TOÀN BỘ FILE XUỐNG ĐĨA
+                    string fileHash = ComputeFileSHA256(fullPath);
+
                     context.SendResponse(new
                     {
                         type = "fs_put_complete",
@@ -112,6 +117,7 @@ namespace AgentSystem.Modules
                         command_id = commandId,
                         path = relativePath,
                         success = true,
+                        sha256 = fileHash, // BỔ SUNG TRƯỜNG NÀY ĐỂ SERVER KIỂM TRA
                         message = "File saved successfully"
                     });
                 }
@@ -162,9 +168,11 @@ namespace AgentSystem.Modules
                 return;
             }
 
-            // Đọc file bất đồng bộ
             byte[] fileBytes = await File.ReadAllBytesAsync(fullPath);
             string base64String = Convert.ToBase64String(fileBytes);
+            
+            // TÍNH MÃ BÂM SHA256
+            string fileHash = ComputeSHA256(fileBytes);
 
             context.SendResponse(new
             {
@@ -173,7 +181,8 @@ namespace AgentSystem.Modules
                 command_id = commandId,
                 success = true,
                 path = relativePath,
-                content = base64String
+                content = base64String,
+                sha256 = fileHash // BỔ SUNG TRƯỜNG NÀY ĐỂ SERVER ĐỐI CHIẾU
             });
         }
 
@@ -188,6 +197,25 @@ namespace AgentSystem.Modules
                 path = path,
                 message = message
             });
+        }
+    
+        private string ComputeSHA256(byte[] data)
+        {
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                byte[] hashBytes = sha256.ComputeHash(data);
+                return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+            }
+        }
+
+        private string ComputeFileSHA256(string filePath)
+        {
+            using (SHA256 sha256 = SHA256.Create())
+            using (FileStream stream = File.OpenRead(filePath))
+            {
+                byte[] hashBytes = sha256.ComputeHash(stream);
+                return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+            }
         }
     }
 }

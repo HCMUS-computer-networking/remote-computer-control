@@ -47,6 +47,13 @@ namespace AgentSystem.Modules
 
         private async Task StartWebcamWithConsentAsync(string commandId)
         {
+            if (isCapturing)
+            {
+                Log.Information("Đã điều chỉnh Webcam sang FPS: {Fps}, Quality: {Quality}", currentFps, currentQuality);
+                context.SendResponse(new { type = "webcam_updated", agent_id = context.AgentId, command_id = commandId });
+                return;
+            }
+
             bool isApproved = await ui.ShowConsentPopupAsync("webcam", 30000);
             if (!isApproved)
             {
