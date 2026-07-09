@@ -10,19 +10,44 @@ namespace AgentSystem.Managers
     {
         private OverlayForm currentOverlay;
         private Thread overlayThread;
-
+        private static HashSet<string> _activePermissionPopups = new HashSet<string>();
+        private static readonly object _lock = new object();
+        
         // 1. Popup Xin Quyền (Chặn luồng và chờ kết quả)
         public bool ShowConsentPopup(string moduleName, int timeoutMs)
         {
+            lock (_lock)
+            {
+                // Nếu đang có popup của module này hiển thị -> Tự động Từ chối (Reject) ngay lập tức
+                if (_activePermissionPopups.Contains(moduleName))
+                {
+                    Console.WriteLine($"[UIManager] Request xin quyền module '{moduleName}' bị từ chối do popup cũ chưa đóng (Anti-DoS).");
+                    return false; 
+                }
+
+                // Đánh dấu module này đang hiện popup
+                _activePermissionPopups.Add(moduleName);
+            }
             // bool isApproved = false;
             var tcs = new TaskCompletionSource<bool>(); // Sử dụng TCS để báo trạng thái
 
             Thread uiThread = new Thread(() =>
             {
-                using (var form = new ConsentForm(moduleName, timeoutMs))
+                try
                 {
-                    form.ShowDialog();
-                    tcs.SetResult(form.IsApproved);
+                    using (var form = new ConsentForm(moduleName, timeoutMs))
+                    {
+                        form.ShowDialog();
+                        tcs.SetResult(form.IsApproved);
+                    }
+                }
+                finally
+                {
+                    // === [GIẢI PHÓNG MODULE KHỎI HASHSET KHI POPUP ĐÓNG] ===
+                    lock (_lock)
+                    {
+                        _activePermissionPopups.Remove(moduleName);
+                    }
                 }
             });
             uiThread.SetApartmentState(ApartmentState.STA);
@@ -254,6 +279,8 @@ namespace AgentSystem.Managers
             }
         }
     }
+
+    
 
     #endregion
 }
