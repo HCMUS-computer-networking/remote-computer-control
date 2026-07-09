@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using AgentSystem.Core;
 using Timer = System.Threading.Timer;
 using Serilog;
+using AgentSystem.Utils;
 
 namespace AgentSystem.Modules
 {
@@ -178,7 +179,7 @@ namespace AgentSystem.Modules
                 captureGraphics.CopyFromScreen(Point.Empty, Point.Empty, bounds.Size);
                 scaledGraphics.DrawImage(captureBitmap, new Rectangle(0, 0, TargetSize.Width, TargetSize.Height));
                 
-                byte[] imageBytes = CompressImageToJpeg(scaledBitmap, quality);
+                byte[] imageBytes = ImageUtils.CompressImageToJpeg(scaledBitmap, quality);
                 
                 context.SendResponse(new
                 {
@@ -213,29 +214,6 @@ namespace AgentSystem.Modules
             {
                 if (lockTaken) Monitor.Exit(captureLock);
             }
-        }
-
-        private byte[] CompressImageToJpeg(Bitmap bmp, int quality)
-        {
-            ImageCodecInfo jpegEncoder = GetEncoder(ImageFormat.Jpeg);
-            using (var encoderParameters = new EncoderParameters(1))
-            using (var memoryStream = new MemoryStream())
-            {
-                var encoderParameter = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)quality);
-                encoderParameters.Param[0] = encoderParameter;
-                bmp.Save(memoryStream, jpegEncoder, encoderParameters);
-                return memoryStream.ToArray();
-            }
-        }
-
-        private ImageCodecInfo GetEncoder(ImageFormat format)
-        {
-            ImageCodecInfo[] codecs = ImageCodecInfo.GetImageDecoders();
-            foreach (ImageCodecInfo codec in codecs)
-            {
-                if (codec.FormatID == format.Guid) return codec;
-            }
-            return null;
         }
     }
 }

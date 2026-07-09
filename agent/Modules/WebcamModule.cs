@@ -9,6 +9,7 @@ using AgentSystem.Core;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using Serilog;
+using AgentSystem.Utils;
 
 
 namespace AgentSystem.Modules
@@ -154,7 +155,7 @@ namespace AgentSystem.Modules
             {
                 using (Bitmap bitmap = frame.ToBitmap())
                 {
-                    byte[] frameBytes = CompressImageToJpeg(bitmap, currentQuality);
+                    byte[] frameBytes = ImageUtils.CompressImageToJpeg(bitmap, currentQuality);
 
                     context.SendResponse(new
                     {
@@ -193,25 +194,6 @@ namespace AgentSystem.Modules
                 agent_id = context.AgentId,
                 command_id = commandId 
             });
-        }
-
-        private byte[] CompressImageToJpeg(Bitmap bmp, int quality)
-        {
-            var jpegEncoder = GetEncoder(ImageFormat.Jpeg);
-            using (var encoderParameters = new EncoderParameters(1))
-            using (var memoryStream = new MemoryStream())
-            {
-                encoderParameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)quality);
-                bmp.Save(memoryStream, jpegEncoder, encoderParameters);
-                return memoryStream.ToArray();
-            }
-        }
-
-        private ImageCodecInfo GetEncoder(ImageFormat format)
-        {
-            foreach (var codec in ImageCodecInfo.GetImageDecoders())
-                if (codec.FormatID == format.Guid) return codec;
-            return null;
         }
     }
 }
