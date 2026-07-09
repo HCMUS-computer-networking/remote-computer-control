@@ -4,6 +4,7 @@ using System.Text.Json;
 using AgentSystem.Managers;
 using AgentSystem.Models;
 using AgentSystem.Modules;
+using Serilog;
 
 namespace AgentSystem.Core
 {
@@ -49,7 +50,7 @@ namespace AgentSystem.Core
 
         private void HandleAgentDisconnected()
         {
-            Console.WriteLine("[AgentClient] Mất kết nối! Đang yêu cầu các module dọn dẹp tài nguyên...");
+            Log.Information("[AgentClient] Mất kết nối! Đang yêu cầu các module dọn dẹp tài nguyên...");
             
             foreach (var module in _moduleRegistry.Values)
             {
@@ -59,7 +60,7 @@ namespace AgentSystem.Core
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[AgentClient] Lỗi dọn dẹp module: {ex.Message}");
+                    Log.Error(ex, "[AgentClient] Lỗi dọn dẹp module: {Message}", ex.Message);
                 }
             }
         }

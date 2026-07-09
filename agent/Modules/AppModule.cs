@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using AgentSystem.Core;
 using AgentSystem.Managers; 
+using Serilog;
 
 namespace AgentSystem.Modules
 {
@@ -126,6 +127,7 @@ namespace AgentSystem.Modules
         {
             try
             {
+                Log.Information("[AppModule] Đang khởi chạy ứng dụng: {AppName}", name);
                 Process.Start(name);
                 context.SendResponse(new
                 {
@@ -140,6 +142,7 @@ namespace AgentSystem.Modules
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[AppModule] Lỗi khi khởi chạy ứng dụng {AppName}", name);
                 context.SendResponse(new
                 {
                     type = "app_action_result",
@@ -174,6 +177,7 @@ namespace AgentSystem.Modules
                     return;
                 }
 
+                Log.Information("[AppModule] Đang tắt ứng dụng: {AppName}", name);
                 foreach (var process in processes)
                 {
                     process.Kill();
@@ -193,6 +197,7 @@ namespace AgentSystem.Modules
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[AppModule] Lỗi khi quản lý ứng dụng {AppName}", name);
                 context.SendResponse(new
                 {
                     type = "app_action_result",

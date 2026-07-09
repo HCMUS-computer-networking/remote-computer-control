@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading;
 using AgentSystem.Core;
 using AgentSystem.Managers;
+using Serilog;
 
 namespace AgentSystem.Modules
 {
@@ -63,6 +64,7 @@ namespace AgentSystem.Modules
                         message = $"Unknown power action: {action}";
                         break;
                 }
+                Log.Information("[PowerModule] Thực thi lệnh nguồn '{Action}' từ Gateway...", safeAction);
 
                 // 3. Trả về kết quả
                 context.SendResponse(new
@@ -76,6 +78,7 @@ namespace AgentSystem.Modules
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[PowerModule] Lỗi khi thực thi lệnh nguồn '{Action}'", action);
                 context.SendResponse(new
                 {
                     type = "power_result",

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Timer = System.Threading.Timer;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using Serilog;
 
 namespace AgentSystem.Core
 {
@@ -46,7 +47,7 @@ namespace AgentSystem.Core
                 // 1. Kiểm tra bắt buộc phải dùng WSS
                 if (!url.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
                 {
-                    Console.WriteLine("[CẢNH BÁO] Hệ thống đang yêu cầu chạy WSS, nhưng cấu hình là WS. Cố gắng kết nối không an toàn...");
+                    Log.Warning("[CẢNH BÁO] Hệ thống đang yêu cầu chạy WSS, nhưng cấu hình là WS. Cố gắng kết nối không an toàn...");
                 }
 
                 cts = new CancellationTokenSource();
@@ -65,9 +66,9 @@ namespace AgentSystem.Core
                     return true; 
                 };
 
-                Console.WriteLine($"[WebSocket] Đang kết nối bảo mật (TLS) tới {url}...");
+                Log.Information("[WebSocket] Đang kết nối bảo mật (TLS) tới {url}...", url);
                 await webSocket.ConnectAsync(new Uri(url), cts.Token);
-                Console.WriteLine("[WebSocket] KẾT NỐI BẢO MẬT WSS THÀNH CÔNG!");
+                Log.Information("[WebSocket] KẾT NỐI BẢO MẬT WSS THÀNH CÔNG!");
                 
                 isReconnecting = false;
                 context.SendResponse(new { type = "REGISTER", agent_id = context.AgentId });
@@ -76,7 +77,7 @@ namespace AgentSystem.Core
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WebSocket Lỗi] Không thể kết nối: {ex.Message}");
+                Log.Error(ex, "[WebSocket Lỗi] Không thể kết nối tới Gateway");
                 _ = HandleReconnectAsync();
             }
         }
@@ -95,11 +96,11 @@ namespace AgentSystem.Core
                 }
                 
                 webSocket?.Dispose();
-                Console.WriteLine("[WebSocket] Đã ngắt kết nối.");
+                Log.Information("[WebSocket] Đã ngắt kết nối.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WebSocket] Lỗi khi ngắt kết nối: {ex.Message}");
+                Log.Error(ex, "[WebSocket] Lỗi khi ngắt kết nối: {Message}", ex.Message );
             }
         }
 
@@ -124,7 +125,7 @@ namespace AgentSystem.Core
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WebSocket TX Lỗi] {ex.Message}");
+                Log.Error(ex, "[WebSocket TX Lỗi] {Message}", ex.Message);
                 _ = HandleReconnectAsync();
             }
             finally
@@ -150,7 +151,7 @@ namespace AgentSystem.Core
                             
                             if (result.MessageType == WebSocketMessageType.Close)
                             {
-                                Console.WriteLine("[WebSocket] Server chủ động ngắt kết nối.");
+                                Log.Information("[WebSocket] Server chủ động ngắt kết nối.");
                                 OnDisconnectedEvent?.Invoke();
                                 _ = HandleReconnectAsync();
                                 return;
@@ -184,7 +185,7 @@ namespace AgentSystem.Core
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WebSocket RX Lỗi] Vòng lặp nhận dữ liệu bị ngắt: {ex.Message}");
+                Log.Error(ex, "[WebSocket RX Lỗi] Vòng lặp nhận dữ liệu bị ngắt: {Message}", ex.Message);
                 OnDisconnectedEvent?.Invoke();
                 _ = HandleReconnectAsync();
             }
@@ -209,7 +210,7 @@ namespace AgentSystem.Core
             if (isReconnecting || (cts != null && cts.IsCancellationRequested)) return;
             isReconnecting = true;
 
-            Console.WriteLine("[WebSocket] Bắt đầu tiến trình tự động kết nối lại (Reconnect)...");
+            Log.Information("[WebSocket] Bắt đầu tiến trình tự động kết nối lại (Reconnect)...");
             heartbeatTimer?.Dispose();
             webSocket?.Dispose();
 
@@ -217,13 +218,13 @@ namespace AgentSystem.Core
             while (isReconnecting && !cts.IsCancellationRequested)
             {
                 await Task.Delay(5000);
-                Console.WriteLine("[WebSocket] Đang thử kết nối lại...");
+                Log.Information("[WebSocket] Đang thử kết nối lại...");
                 try
                 {
                     webSocket = new ClientWebSocket();
                     await webSocket.ConnectAsync(new Uri(url), cts.Token);
                     
-                    Console.WriteLine("[WebSocket] TÁI KẾT NỐI THÀNH CÔNG!");
+                    Log.Information("[WebSocket] TÁI KẾT NỐI THÀNH CÔNG!");
                     isReconnecting = false;
                     
                     // Gửi lại gói đăng ký AgentId sau khi có kết nối mới

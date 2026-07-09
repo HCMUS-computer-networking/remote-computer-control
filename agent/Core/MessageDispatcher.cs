@@ -1,6 +1,7 @@
 using System;
 using System.Text.Json;
 using AgentSystem.Models;
+using Serilog;
 
 namespace AgentSystem.Core
 {
@@ -27,7 +28,7 @@ namespace AgentSystem.Core
             catch (JsonException ex)
             {
                 // Bắt lỗi khi cấu trúc JSON bị sai (thiếu ngoặc, sai kiểu dữ liệu...)
-                Console.WriteLine($"[Dispatcher] Lỗi định dạng JSON từ Server: {ex.Message}");
+                Log.Error(ex, "[Dispatcher] Lỗi định dạng JSON từ Server: {Message}", ex.Message);
                 context.SendResponse(new
                 {
                     type = "ERROR",
@@ -39,7 +40,7 @@ namespace AgentSystem.Core
             catch (Exception ex)
             {
                 // Bắt mọi rủi ro ngoại lệ khác có thể xảy ra trong khối lệnh
-                Console.WriteLine($"[Dispatcher] Lỗi điều phối lệnh: {ex.Message}");
+                Log.Error(ex, "[Dispatcher] Lỗi điều phối lệnh: {Message}", ex.Message);
                 context.SendResponse(new
                 {
                     type = "ERROR",

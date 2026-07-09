@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
 using Timer = System.Windows.Forms.Timer;
+using Serilog;
 
 namespace AgentSystem.Managers
 {
@@ -20,7 +21,7 @@ namespace AgentSystem.Managers
                 // Nếu đang có popup của module này hiển thị -> Tự động Từ chối (Reject) ngay lập tức
                 if (_activePermissionPopups.Contains(moduleName))
                 {
-                    Console.WriteLine($"[UIManager] Request xin quyền module '{moduleName}' bị từ chối do popup cũ chưa đóng (Anti-DoS).");
+                    Log.Information("[UIManager] Request xin quyền module '{moduleName}' bị từ chối do popup cũ chưa đóng (Anti-DoS).", moduleName);
                     return Task.FromResult(false);  
                 }
 
@@ -147,7 +148,12 @@ namespace AgentSystem.Managers
                 Size = new Size(120, 40),
                 BackColor = Color.LightGreen
             };
-            btnAccept.Click += (s, e) => { IsApproved = true; this.Close(); };
+            btnAccept.Click += (s, e) => 
+            { 
+                IsApproved = true;
+                Log.Information("[Security] Người dùng ĐÃ ĐỒNG Ý cấp quyền cho module: {ModuleName}", moduleName);
+                this.Close(); 
+            };
             this.Controls.Add(btnAccept);
 
             // Nút Từ chối
@@ -158,7 +164,12 @@ namespace AgentSystem.Managers
                 Size = new Size(120, 40),
                 BackColor = Color.LightCoral
             };
-            btnReject.Click += (s, e) => { IsApproved = false; this.Close(); };
+            btnReject.Click += (s, e) => 
+            { 
+                IsApproved = false; 
+                Log.Information("[Security] Người dùng ĐÃ TỪ CHỐI cấp quyền cho module: {ModuleName}", moduleName);
+                this.Close(); 
+            };
             this.Controls.Add(btnReject);
 
             // Bộ đếm thời gian
