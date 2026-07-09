@@ -15,6 +15,10 @@ namespace AgentSystem.Modules
         // Trạng thái hoạt động
         private bool isLogging = false;
         private string activeCommandId = string.Empty;
+        private Thread hookThread; 
+        // Thêm khóa an toàn đa luồng cho trạng thái module
+        private readonly object _stateLock = new object();
+
 
         // Quản lý Buffer & Đa luồng
         private readonly List<object> keyBuffer = new List<object>();
@@ -63,42 +67,73 @@ namespace AgentSystem.Modules
                 StopLogging(commandId);
             }
         }
-        private Thread hookThread; // Thêm biến toàn cục trong class
-
         private void StartLogging(string commandId)
         {
-            if (isLogging) return;
-            bool isApproved = ui.ShowConsentPopup("keylogger", 30000); 
-            if (!isApproved) { /* Xử lý denied */ return; }
-
-            activeCommandId = commandId;
-            isLogging = true;
-
-            // Khởi tạo Hook trong một luồng STA riêng biệt có Message Loop
-            hookThread = new Thread(() =>
+            // 1. Kiểm tra nhanh (Khóa luồng đọc)
+            lock (_stateLock)
             {
-                hookId = SetHook(hookProc);
-                Application.Run(); // Bắt buộc: Giữ luồng sống để bắt sự kiện phím
-            });
-            hookThread.SetApartmentState(ApartmentState.STA);
-            hookThread.Start();
+                if (isLogging) return;
+            }
 
-            context.SendResponse(new { type = "keylog_started", agent_id = context.AgentId, command_id = commandId });
-            flushTimer = new System.Threading.Timer(FlushBuffer, null, 3000, 3000);
+            // 2. Xin quyền Consent (Tuyệt đối KHÔNG đặt trong lock vì hàm này chặn luồng chờ User bấm)
+            bool isApproved = ui.ShowConsentPopup("keylogger", 30000); 
+            if (!isApproved) 
+            {
+                context.SendResponse(new { type = "keylog_denied", agent_id = context.AgentId, command_id = commandId, reason = "User declined permission" });
+                return; 
+            }
+
+            // 3. Double-Check: Khóa lại và kiểm tra trạng thái thực sự sau khi được cấp quyền
+            // (Đề phòng trong lúc chờ Popup 30s, đã có lệnh start khác chạy xong)
+            lock (_stateLock)
+            {
+                if (isLogging) return; 
+
+                activeCommandId = commandId;
+                isLogging = true;
+
+                // Khởi tạo Hook trong một luồng STA riêng biệt có Message Loop
+                hookThread = new Thread(() =>
+                {
+                    hookId = SetHook(hookProc);
+                    Application.Run(); // Bắt buộc: Giữ luồng sống để bắt sự kiện phím
+                });
+                
+                hookThread.SetApartmentState(ApartmentState.STA);
+                
+                // QUAN TRỌNG: Đặt IsBackground = true để luồng này tự chết khi ứng dụng tắt
+                // Ngăn chặn lỗi "treo tiến trình ngầm" (Zombie Process) khi đóng Agent
+                hookThread.IsBackground = true; 
+                hookThread.Start();
+
+                context.SendResponse(new { type = "keylog_started", agent_id = context.AgentId, command_id = commandId });
+                flushTimer = new System.Threading.Timer(FlushBuffer, null, 3000, 3000);
+            }
         }
 
         private void StopLogging(string commandId)
         {
-            if (!isLogging) return;
-            flushTimer?.Dispose();
-            UnhookWindowsHookEx(hookId);
+            lock (_stateLock)
+            {
+                if (!isLogging) return;
+                
+                flushTimer?.Dispose();
+                
+                // Gỡ Hook khỏi hệ điều hành
+                if (hookId != IntPtr.Zero)
+                {
+                    UnhookWindowsHookEx(hookId);
+                    hookId = IntPtr.Zero;
+                }
 
-            // Tắt Message Loop của luồng Hook
-            Application.ExitThread(); 
-
-            isLogging = false;
-            FlushBuffer(null);
-            context.SendResponse(new { type = "keylog_stopped", agent_id = context.AgentId, command_id = commandId });
+                // Xóa tham chiếu luồng cũ (IsBackground = true sẽ lo phần dọn dẹp)
+                hookThread = null; 
+                
+                isLogging = false;
+                FlushBuffer(null);
+                
+                context.SendResponse(new { type = "keylog_stopped", agent_id = context.AgentId, command_id = commandId });
+            }
         }
 
         private IntPtr SetHook(LowLevelKeyboardProc proc)
