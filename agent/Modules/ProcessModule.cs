@@ -1,15 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using AgentSystem.Core;
+using System.Threading.Tasks;
 
 namespace AgentSystem.Modules
 {
     public class ProcessModule : BaseModule
     {
-        private readonly Dictionary<int, (TimeSpan CpuTime, DateTime LastCheck)> cpuHistory = new Dictionary<int, (TimeSpan, DateTime)>();
+        // 1. SỬA: Đổi sang ConcurrentDictionary để đảm bảo an toàn Thread-safe khi chạy đa luồng
+        private readonly ConcurrentDictionary<int, (TimeSpan CpuTime, DateTime LastCheck)> cpuHistory = new ConcurrentDictionary<int, (TimeSpan, DateTime)>();
+
         public ProcessModule(AgentClient context) : base(context) { }
 
         public override void Execute(string action, JsonElement parameters, string commandId)
@@ -52,11 +57,13 @@ namespace AgentSystem.Modules
 
         private void GetProcessList(string commandId)
         {
-            var processList = new List<object>();
+            // 2. SỬA: Dùng ConcurrentBag thay cho List để Add phần tử an toàn từ nhiều luồng
+            var processList = new ConcurrentBag<object>();
             var processes = Process.GetProcesses();
             var currentTime = DateTime.UtcNow;
 
-            foreach (var p in processes)
+            // 3. TỐI ƯU: Quét danh sách song song trên nhiều nhân CPU thay vì vòng lặp đồng bộ
+            Parallel.ForEach(processes, p =>
             {
                 try
                 {
@@ -67,12 +74,12 @@ namespace AgentSystem.Modules
                     {
                         // Phương pháp Non-blocking tính toán CPU Delta
                         TimeSpan currentCpuTime = p.TotalProcessorTime;
-
+                        
                         if (cpuHistory.TryGetValue(p.Id, out var history))
                         {
                             double msPassed = (currentTime - history.LastCheck).TotalMilliseconds;
                             double cpuMsPassed = (currentCpuTime - history.CpuTime).TotalMilliseconds;
-
+                            
                             if (msPassed > 0)
                             {
                                 // Công thức tính % CPU đa luồng
@@ -83,9 +90,13 @@ namespace AgentSystem.Modules
                         // Cập nhật lại lịch sử cho lần quét sau
                         cpuHistory[p.Id] = (currentCpuTime, currentTime);
                     }
-                    catch 
+                    catch (Win32Exception) 
                     { 
-                        // Truy cập bị từ chối với các System Process (Nếu Agent không chạy bằng quyền Admin) 
+                        // Truy cập bị từ chối với các System Process
+                    }
+                    catch (InvalidOperationException) 
+                    { 
+                        // Tiến trình vừa bị đóng trong lúc quét
                     }
 
                     processList.Add(new
@@ -96,19 +107,32 @@ namespace AgentSystem.Modules
                         ram_mb = ramMb
                     });
                 }
-                catch { /* Bỏ qua tiến trình lỗi/vừa đóng */ }
-            }
+                catch 
+                { 
+                    // Bỏ qua các lỗi vặt khác 
+                }
+                finally
+                {
+                    // 4. QUAN TRỌNG: Giải phóng Handle của hệ điều hành (Fix Memory/Handle Leak)
+                    p.Dispose();
+                }
+            });
 
             // Dọn dẹp cache cho những tiến trình đã tắt để chống tràn RAM
             var currentPids = processes.Select(p => p.Id).ToHashSet();
             var pidsToRemove = cpuHistory.Keys.Where(pid => !currentPids.Contains(pid)).ToList();
-            foreach (var pid in pidsToRemove) cpuHistory.Remove(pid);
+            
+            foreach (var pid in pidsToRemove) 
+            {
+                // Dùng TryRemove cho ConcurrentDictionary
+                cpuHistory.TryRemove(pid, out _); 
+            }
 
             context.SendResponse(new
             {
                 type = "proc_list_result",
                 command_id = commandId,
-                processes = processList
+                processes = processList.ToList() // Convert lại thành List khi gửi JSON
             });
         }
 
@@ -118,10 +142,9 @@ namespace AgentSystem.Modules
             {
                 var process = Process.GetProcessById(pid);
                 process.Kill();
-
                 // Chờ tối đa 2 giây để xác nhận tiến trình đã bị đóng
                 process.WaitForExit(2000);
-
+                
                 context.SendResponse(new
                 {
                     type = "proc_kill_result",
