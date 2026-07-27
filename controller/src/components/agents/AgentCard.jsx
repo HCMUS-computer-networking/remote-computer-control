@@ -2,6 +2,7 @@
 // Left checkbox: toggles multi-select. Clicking the card body: opens focus view.
 import useAgentStore from '../../store/AgentStore'
 import useUiStore    from '../../store/UiStore'
+import useModuleStore from '../../store/ModuleStore'
 
 /*
   Props:
@@ -15,6 +16,15 @@ function AgentCard({ agent })
     const setFocused   = useAgentStore((s) => s.setFocused)
     const toggleSelect = useAgentStore((s) => s.toggleSelect)
     const setLayoutMode = useUiStore((s) => s.setLayoutMode)
+
+    // Transparency red-dot — visible whenever any sensitive module is active on
+    // this agent, OR the agent is being remotely controlled (in_session).
+    // Sensitive modules: Live Screen stream, Webcam feed, Input Activity (keylog).
+    // The dot must ALWAYS reflect reality — never hide it behind a toggle.
+    const screen_active = useModuleStore((s) => s.data[agent.id]?.screen_stream_active ?? false)
+    const webcam_active = useModuleStore((s) => s.data[agent.id]?.webcam_active        ?? false)
+    const keylog_active = useModuleStore((s) => s.data[agent.id]?.keylog_active        ?? false)
+    const sensitive_on  = screen_active || webcam_active || keylog_active || agent.in_session
     const dot_class    = agent.online
         ? 'status-dot status-dot--online'
         : 'status-dot status-dot--offline'
@@ -48,6 +58,24 @@ function AgentCard({ agent })
             <div className="agent-card__row">
                 {/* status dot */}
                 <span className={dot_class} aria-hidden="true" />
+
+                {/* Red transparency dot — one glance tells the operator this
+                    agent is currently under a sensitive activity (screen /
+                    webcam / keylog / in_session). Placed next to the online
+                    dot on purpose so it can never be missed. */}
+                {sensitive_on && (
+                    <span
+                        aria-label="Sensitive module active"
+                        title="Sensitive module active on this agent (screen, webcam, keylog, or session)"
+                        style={{
+                            display: 'inline-block',
+                            width: 8, height: 8, borderRadius: '50%',
+                            background: '#e53935',
+                            boxShadow: '0 0 6px 2px rgba(229,57,53,0.55)',
+                            animation: 'keylog-pulse 1.4s ease-in-out infinite',
+                        }}
+                    />
+                )}
 
                 {/* agent name — takes remaining space */}
                 <span className="agent-card__name">{agent.name}</span>

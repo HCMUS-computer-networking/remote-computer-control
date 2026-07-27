@@ -27,7 +27,19 @@
 import { useEffect } from 'react'
 
 import MockSocket                        from '../services/MockSocket'   // TODO: swap to Socket.js when backend is ready
-import { buildListAgents, MSG_TYPE }     from '../services/Protocol'
+import { buildListAgents, MSG_TYPE, MODULE } from '../services/Protocol'
+
+// Modules that only make sense against ONE agent at a time (the operator is
+// watching a single feed). sendCommand routes these to focused_agent_id even
+// when a multi-select set is present, so a Live-Screen click never floods
+// every selected agent with a stream request.
+const FRAME_FOCUS_MODULES = new Set([
+    MODULE.SCREENSHOT,
+    MODULE.SCREEN_STREAM,
+    MODULE.SCREEN_STREAM_STOP,
+    MODULE.WEBCAM_START,
+    MODULE.WEBCAM_STOP,
+])
 import useConnectionStore                from '../store/ConnectionStore'
 import useAgentStore                     from '../store/AgentStore'
 import useModuleStore                    from '../store/ModuleStore'
@@ -54,6 +66,8 @@ export default function useAgentSocket()
     const setModuleData    = useModuleStore.getState().setModuleData
     const appendKeylog     = useModuleStore.getState().appendKeylog
     const setKeylogActive   = useModuleStore.getState().setKeylogActive
+    const setWebcamActive   = useModuleStore.getState().setWebcamActive
+    const setScreenStreamActive = useModuleStore.getState().setScreenStreamActive
     const setFsEntries      = useModuleStore.getState().setFsEntries
     const setFileDownload   = useModuleStore.getState().setFileDownload
     const setFilePutAck     = useModuleStore.getState().setFilePutAck
@@ -78,7 +92,7 @@ export default function useAgentSocket()
 
             socket.onMessage(function (msg)
             {
-                dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setFsEntries, setFileDownload, setFilePutAck, addToast })
+                dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, setFileDownload, setFilePutAck, addToast })
             })
 
             // Binary callback — pair incoming ArrayBuffer with the pending frame_meta.
@@ -120,19 +134,80 @@ export default function useAgentSocket()
 
     // ── TX helpers ────────────────────────────────────────────────────────
 
-    // Send a pre-built JSON string exactly as-is.
-    // Use this for messages that already have the correct target_agents
-    // or for top-level types that do not need targeting (list_agents, power).
+    // Send a JSON string. If the caller already put a non-empty target_agents
+    // in the payload, we respect it and send unchanged. Otherwise we auto-fill
+    // target_agents based on the module and the current UI selection:
+    //
+    //   - "Frame focus" modules (screenshot / screen_stream / webcam) look at
+    //     a single agent at a time → use focused_agent_id.
+    //   - Every other module command → use selected_agent_ids so ONE click can
+    //     drive many agents in parallel (e.g. proc_list, app_start, keylog_start,
+    //     power). If nothing is selected we fall back to focused_agent_id.
+    //
+    // NOTE: the top-level "list_agents" message and any type without a
+    // target_agents field (e.g. hypothetical future admin pings) are sent as-is.
+    //
+    // TODO (protocol): confirm with the Gateway team that a "request"/"power"
+    // message with target_agents = [id1, id2, ...] is fan-out to every listed
+    // agent. Our docs/formatjson/*.json samples only show single-agent examples;
+    // the multi-agent semantics need explicit confirmation before real backend.
     function sendCommand(json_string)
     {
-        if (_socket)
-        {
-            _socket.send(json_string)
-        }
-        else
+        if (!_socket)
         {
             console.warn('[useAgentSocket] sendCommand called before socket is ready')
+            return
         }
+
+        // Fast path: not JSON we understand — just pass through.
+        let msg
+        try { msg = JSON.parse(json_string) }
+        catch { _socket.send(json_string); return }
+
+        // Respect explicit targeting from the caller.
+        if (Array.isArray(msg.target_agents) && msg.target_agents.length > 0)
+        {
+            _socket.send(json_string)
+            return
+        }
+
+        // Only "request" and "power" carry target_agents. Anything else
+        // (list_agents, etc.) is sent unchanged.
+        if (msg.type !== MSG_TYPE.REQUEST && msg.type !== MSG_TYPE.POWER)
+        {
+            _socket.send(json_string)
+            return
+        }
+
+        // Frame-focus modules always target ONE agent = the focused one.
+        const focused_id = useAgentStore.getState().focused_agent_id
+        if (FRAME_FOCUS_MODULES.has(msg.module))
+        {
+            if (!focused_id)
+            {
+                console.warn('[useAgentSocket] frame command dropped — no focused agent')
+                return
+            }
+            msg.target_agents = [focused_id]
+            _socket.send(JSON.stringify(msg))
+            return
+        }
+
+        // Broadcast-capable command: prefer the multi-select set; otherwise fall
+        // back to the focused agent so one-off actions in FocusView still work.
+        const selected_ids = useAgentStore.getState().selected_agent_ids
+        const targets = (selected_ids && selected_ids.length > 0)
+            ? selected_ids
+            : (focused_id ? [focused_id] : [])
+
+        if (targets.length === 0)
+        {
+            console.warn('[useAgentSocket] command dropped — no selection and no focused agent')
+            return
+        }
+
+        msg.target_agents = targets
+        _socket.send(JSON.stringify(msg))
     }
 
     // Parse the JSON, overwrite target_agents with [focused_agent_id], re-send.
@@ -213,7 +288,7 @@ function sendWithTargets(json_string, target_ids)
 //   fs_error           → (TODO) surface file error in FileModule
 //   power_result       → (TODO) surface in PowerModule
 
-function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setFsEntries, setFileDownload, setFilePutAck, addToast })
+function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, setFileDownload, setFilePutAck, addToast })
 {
     switch (msg.type)
     {
@@ -274,8 +349,13 @@ function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylo
 
         // ── Screen / Webcam binary frames ─────────────────────────────────
         case MSG_TYPE.STREAM_STARTED:
+            // Flip the transparency flag so AgentCard / TopBar light the red
+            // dot — Live Screen is a sensitive module and must be visible.
+            setScreenStreamActive(msg.agent_id, true)
+            break
+
         case MSG_TYPE.STREAM_STOPPED:
-            // TODO: update screen streaming flag in ModuleStore
+            setScreenStreamActive(msg.agent_id, false)
             break
 
         case MSG_TYPE.FRAME_META:
@@ -287,11 +367,17 @@ function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylo
 
         // ── Webcam ────────────────────────────────────────────────────────
         case MSG_TYPE.WEBCAM_STARTED:
+            // Agent granted consent — flip the flag so WebcamTab lights up
+            // the visible consent indicator ("Camera đang bật").
+            setWebcamActive(msg.agent_id, true)
+            break
+
         case MSG_TYPE.WEBCAM_STOPPED:
-            // TODO: update webcam active-state flag in ModuleStore
+            setWebcamActive(msg.agent_id, false)
             break
 
         case MSG_TYPE.WEBCAM_DENIED:
+            setWebcamActive(msg.agent_id, false)
             addToast(`Webcam denied on ${msg.agent_id}: ${msg.reason ?? 'user declined'}`, 'error')
             break
 
@@ -323,7 +409,13 @@ function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylo
 
         // ── Power ─────────────────────────────────────────────────────────
         case MSG_TYPE.POWER_RESULT:
-            // TODO: surface power action result in PowerModule
+            // Show a toast so the operator sees the Agent's confirmation.
+            addToast(
+                msg.confirmed
+                    ? `${msg.agent_id}: ${msg.action} confirmed`
+                    : `${msg.agent_id}: ${msg.action} cancelled`,
+                msg.confirmed ? 'success' : 'error'
+            )
             break
 
         // ── Catch-all ─────────────────────────────────────────────────────

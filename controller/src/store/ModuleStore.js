@@ -15,6 +15,8 @@ function createAgentModuleState()
         keylog_active : false,                      // true while Agent is sending keylog data
         screen        : { frame: null, meta: null },// latest screen JPEG (ArrayBuffer) + frame_meta
         webcam        : { frame: null, meta: null },// latest webcam JPEG (ArrayBuffer) + frame_meta
+        webcam_active : false,                      // true after Agent confirmed webcam_started (consent granted)
+        screen_stream_active : false,               // true while Agent is streaming its screen (Livescreen)
         // file.tree caches directory listings keyed by path (sandbox only).
         // file_download holds the latest fs_get_result so FileTab can trigger a download.
         // file_put_ack holds the latest fs_put_result / fs_put_complete so FileTab
@@ -60,6 +62,34 @@ const useModuleStore = create(function (set)
                     data: {
                         ...s.data,
                         [agent_id]: { ...agent_data, keylog: trimmed },
+                    },
+                }
+            }),
+
+        // Set the screen-stream active flag for one agent (true = Agent is sending frames).
+        // Drives the red transparency indicator on AgentCard / TopBar.
+        setScreenStreamActive: (agent_id, active) =>
+            set(function (s)
+            {
+                const agent_data = s.data[agent_id] ?? createAgentModuleState()
+                return {
+                    data: {
+                        ...s.data,
+                        [agent_id]: { ...agent_data, screen_stream_active: active },
+                    },
+                }
+            }),
+
+        // Set the webcam active flag for one agent (true = Agent granted consent + is streaming).
+        // Drives the visible consent indicator in WebcamTab.
+        setWebcamActive: (agent_id, active) =>
+            set(function (s)
+            {
+                const agent_data = s.data[agent_id] ?? createAgentModuleState()
+                return {
+                    data: {
+                        ...s.data,
+                        [agent_id]: { ...agent_data, webcam_active: active },
                     },
                 }
             }),

@@ -666,27 +666,44 @@ class MockSocket
             }
 
             // ── Webcam (webcam.json) ───────────────────────────────────────
+            // Reuses the SAME frame stream engine as screen — the only
+            // difference is frame_meta.module = "webcam". This mirrors the
+            // Controller side, where FrameCanvas is shared between Livescreen
+            // and WebcamTab so both modules go through one decode/render path.
             case 'webcam_start':
-                this._replyPerAgent(msg.target_agents, (agent_id) =>
+                this._replyPerAgent(msg.target_agents, (agent_id, i) =>
                 {
+                    const base = 400 + i * STAGGER_MS;
+
                     // Agents in DENIED_AGENTS refuse consent — reply webcam_denied
                     // instead of webcam_started so the Controller can display the
                     // consent-denied UX (toast + no camera feed).
                     if (DENIED_AGENTS.has(agent_id))
                     {
-                        return { type: 'webcam_denied', agent_id, reason: 'User declined on Agent machine' }
+                        this._reply({ type: 'webcam_denied', agent_id, reason: 'User declined on Agent machine' }, base);
+                        return null;
                     }
-                    return { type: 'webcam_started', agent_id }
+
+                    // 1) Confirm webcam started (simulates Agent consent granted)
+                    this._reply({ type: 'webcam_started', agent_id }, base);
+
+                    // 2) Begin continuous webcam frame stream once confirmation fires.
+                    //    Uses the shared _startFrameStream engine — same code path as
+                    //    screen streams, only the module tag differs.
+                    const fps = msg.params?.fps ?? 15;
+                    setTimeout(() => this._startFrameStream(agent_id, 'webcam', fps), base + 50);
+
+                    return null;
                 },
-                400);
+                0);
                 break;
 
             case 'webcam_stop':
                 this._replyPerAgent(msg.target_agents, (agent_id) =>
-                ({
-                    type     : 'webcam_stopped',
-                    agent_id,
-                }),
+                {
+                    this._stopFrameStream(agent_id, 'webcam');
+                    return { type: 'webcam_stopped', agent_id };
+                },
                 300);
                 break;
 

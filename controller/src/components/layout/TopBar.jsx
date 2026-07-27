@@ -3,6 +3,7 @@ import { Wifi, WifiOff, Loader2, User, ChevronDown, LayoutGrid, Maximize2 } from
 import useUiStore         from '../../store/UiStore'
 import useAgentStore      from '../../store/AgentStore'
 import useConnectionStore from '../../store/ConnectionStore'
+import useModuleStore     from '../../store/ModuleStore'
 import ThemeToggle        from './ThemeToggle'
 
 /* map connection status to its icon + colour */
@@ -44,6 +45,22 @@ function TopBar()
   const agents           = useAgentStore((s) => s.agents)
   const status           = useConnectionStore((s) => s.status)
 
+  // Global transparency badge — count how many agents currently have any
+  // sensitive module running. If > 0 we show a red "SENSITIVE" badge in the
+  // top bar so the operator ALWAYS knows something is being captured,
+  // regardless of which view they are in.
+  const module_data = useModuleStore((s) => s.data)
+  const sensitive_agent_ids = agents
+      .filter(function (a)
+      {
+          const d = module_data[a.id]
+          return a.in_session
+              || d?.screen_stream_active
+              || d?.webcam_active
+              || d?.keylog_active
+      })
+      .map((a) => a.id)
+
   const focused_agent = agents.find((a) => a.id === focused_agent_id) ?? null
 
   /* build the breadcrumb title shown in the header */
@@ -68,6 +85,19 @@ function TopBar()
       {/* "ĐANG ĐIỀU KHIỂN" badge — only visible while a session is active */}
       {in_session && (
         <span className="session-badge session-badge--topbar">● ĐANG ĐIỀU KHIỂN</span>
+      )}
+
+      {/* Global transparency badge — any agent with a sensitive module active.
+          Kept always-visible (across grid + focus) so nothing sensitive can
+          run silently. Count makes multi-agent activity obvious. */}
+      {sensitive_agent_ids.length > 0 && (
+        <span
+          className="session-badge session-badge--topbar"
+          title={`Sensitive activity on: ${sensitive_agent_ids.join(', ')}`}
+          style={{ background: '#e53935', color: '#fff' }}
+        >
+          ● SENSITIVE · {sensitive_agent_ids.length}
+        </span>
       )}
 
       {/* view-mode toggle buttons */}
