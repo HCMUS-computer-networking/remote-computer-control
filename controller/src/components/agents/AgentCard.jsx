@@ -70,8 +70,8 @@ function AgentCard({ agent })
                         style={{
                             display: 'inline-block',
                             width: 8, height: 8, borderRadius: '50%',
-                            background: '#e53935',
-                            boxShadow: '0 0 6px 2px rgba(229,57,53,0.55)',
+                            background: 'var(--danger-solid)',
+                            boxShadow: '0 0 6px 2px var(--danger-solid-glow)',
                             animation: 'keylog-pulse 1.4s ease-in-out infinite',
                         }}
                     />

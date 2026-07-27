@@ -1,5 +1,6 @@
 /* TopBar.jsx — header bar: breadcrumb title, session badge, connection, theme, admin */
 import { Wifi, WifiOff, Loader2, User, ChevronDown, LayoutGrid, Maximize2 } from 'lucide-react'
+import { useShallow }      from 'zustand/react/shallow'
 import useUiStore         from '../../store/UiStore'
 import useAgentStore      from '../../store/AgentStore'
 import useConnectionStore from '../../store/ConnectionStore'
@@ -45,20 +46,27 @@ function TopBar()
   const agents           = useAgentStore((s) => s.agents)
   const status           = useConnectionStore((s) => s.status)
 
-  // Global transparency badge — count how many agents currently have any
-  // sensitive module running. If > 0 we show a red "SENSITIVE" badge in the
-  // top bar so the operator ALWAYS knows something is being captured,
-  // regardless of which view they are in.
-  const module_data = useModuleStore((s) => s.data)
-  const sensitive_agent_ids = agents
-      .filter(function (a)
+  // Global transparency badge — list agent ids that currently have any
+  // sensitive module running. If non-empty we show a red "SENSITIVE" badge
+  // so the operator ALWAYS knows something is being captured, regardless
+  // of which view they are in.
+  //
+  // IMPORTANT: derive the id list INSIDE the selector and use useShallow
+  // so this component only re-renders when the id set actually changes.
+  // If we instead subscribed to s.data, every incoming frame (24fps in
+  // focus mode) would re-render TopBar and cascade into modal children.
+  const sensitive_flags = useModuleStore(useShallow(function (s)
+  {
+      const flags = {}
+      for (const agent_id of Object.keys(s.data))
       {
-          const d = module_data[a.id]
-          return a.in_session
-              || d?.screen_stream_active
-              || d?.webcam_active
-              || d?.keylog_active
-      })
+          const d = s.data[agent_id]
+          flags[agent_id] = !!(d?.screen_stream_active || d?.webcam_active || d?.keylog_active)
+      }
+      return flags
+  }))
+  const sensitive_agent_ids = agents
+      .filter((a) => a.in_session || sensitive_flags[a.id])
       .map((a) => a.id)
 
   const focused_agent = agents.find((a) => a.id === focused_agent_id) ?? null
@@ -94,7 +102,7 @@ function TopBar()
         <span
           className="session-badge session-badge--topbar"
           title={`Sensitive activity on: ${sensitive_agent_ids.join(', ')}`}
-          style={{ background: '#e53935', color: '#fff' }}
+          style={{ background: 'var(--danger-solid)', color: 'var(--on-danger)' }}
         >
           ● SENSITIVE · {sensitive_agent_ids.length}
         </span>

@@ -138,7 +138,7 @@ function WebcamTab({ agent })
                     // machine is actively broadcasting its webcam.
                     <span
                         className="screen-tab__live-badge"
-                        style={{ background: '#c62828', color: '#fff' }}
+                        style={{ background: 'var(--danger-deep)', color: 'var(--on-danger)' }}
                         title="Agent granted consent — webcam is broadcasting"
                     >
                         <ShieldCheck size={12} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginRight: 4 }} />
@@ -147,7 +147,7 @@ function WebcamTab({ agent })
                 )}
                 {streaming && !webcam_active && (
                     // Waiting on the Agent user to accept the consent popup.
-                    <span className="screen-tab__live-badge" style={{ background: '#f0ad4e', color: '#000' }}>
+                    <span className="screen-tab__live-badge" style={{ background: 'var(--warning-solid)', color: 'var(--on-warning-solid)' }}>
                         Waiting for consent…
                     </span>
                 )}

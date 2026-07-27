@@ -332,6 +332,8 @@ Screen and webcam frames arrive as a pair:
   is true for that agent.
 - `TopBar.jsx` shows a global red badge `● SENSITIVE · N` listing every agent
   id currently in a sensitive state; always visible across Grid and Focus.
+  The badge subscribes to `ModuleStore` through `useShallow` on a derived
+  per-agent boolean map so incoming frames do not re-render the top bar.
 
 ---
 
@@ -397,7 +399,15 @@ is a one-line import change.
   top, event handlers next, JSX at the bottom.
 - **Styling**: CSS in `src/index.css` and `src/App.css`. Tokens live at the
   top of `index.css` and are flipped by the `data-theme="dark"` attribute
-  set by `App.jsx`.
+  set by `App.jsx`. Two palette groups coexist:
+  - Theme-tinted tokens (`--danger`, `--warning`, `--accent`, ...) shift
+    between light and dark.
+  - Solid alert tokens (`--danger-solid`, `--danger-solid-glow`,
+    `--danger-deep`, `--warning-solid`, `--on-danger`, `--on-warning-solid`,
+    `--overlay-scrim`, `--shadow-modal`) stay identical in both themes so
+    sensitive-activity dots and modal chrome keep the same vivid look
+    regardless of theme.
+  Components never inline hex or rgba values — they always reference a token.
 - **Socket access**: components never import a service directly; they use
   `useAgentSocket`. Only `useAgentSocket` and `Protocol` know about the
   wire format.

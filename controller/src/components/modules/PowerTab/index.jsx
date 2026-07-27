@@ -17,7 +17,7 @@
 //
 // All commands go through useAgentSocket — never touch the socket directly.
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Lock, RotateCcw, Power, Moon, X } from 'lucide-react'
 import useAgentSocket from '../../../hooks/UseAgentSocket'
 import useUiStore     from '../../../store/UiStore'
@@ -37,11 +37,26 @@ function CountdownModal({ action, label, agent, onConfirm, onCancel })
 {
     const [remaining, setRemaining] = useState(COUNTDOWN_SECONDS)
 
-    // One shared timer ticks every second; when it hits 0 we call onConfirm.
-    // Cleanup clears the interval on unmount so a cancelled countdown never
-    // fires a stray onConfirm after the modal is gone.
+    // Hold the latest onConfirm / onCancel in refs so the countdown effect
+    // does NOT need them in its deps. Reason: parents that re-render often
+    // (e.g. TopBar reacting to live frames) would otherwise recreate these
+    // callbacks each render → the effect would tear down and rebuild the
+    // interval every tick → the countdown would freeze at its start value.
+    const on_confirm_ref = useRef(onConfirm)
+    const on_cancel_ref  = useRef(onCancel)
     useEffect(function ()
     {
+        on_confirm_ref.current = onConfirm
+        on_cancel_ref.current  = onCancel
+    })
+
+    // Cancelled flag guards the microtask below: if the modal unmounted
+    // between the "prev <= 1" branch and the microtask firing, we must not
+    // still call onConfirm (which would send a shutdown after user cancel).
+    useEffect(function ()
+    {
+        let cancelled = false
+
         const timer_id = setInterval(function ()
         {
             setRemaining(function (prev)
@@ -49,24 +64,26 @@ function CountdownModal({ action, label, agent, onConfirm, onCancel })
                 if (prev <= 1)
                 {
                     clearInterval(timer_id)
-                    // Fire in a microtask so React finishes this state update first.
-                    Promise.resolve().then(function () { onConfirm(action) })
+                    Promise.resolve().then(function ()
+                    {
+                        if (!cancelled) on_confirm_ref.current(action)
+                    })
                     return 0
                 }
                 return prev - 1
             })
         }, 1000)
 
-        // Also allow Esc to cancel — a common expectation for modals.
-        function onKey(e) { if (e.key === 'Escape') onCancel() }
+        function onKey(e) { if (e.key === 'Escape') on_cancel_ref.current() }
         window.addEventListener('keydown', onKey)
 
         return function ()
         {
+            cancelled = true
             clearInterval(timer_id)
             window.removeEventListener('keydown', onKey)
         }
-    }, [action, onConfirm, onCancel])
+    }, [action])   // only reset when the action itself changes
 
     return (
         <div
@@ -76,7 +93,7 @@ function CountdownModal({ action, label, agent, onConfirm, onCancel })
             aria-labelledby="power-modal-title"
             onClick={onCancel}   // click outside to cancel
             style={{
-                position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+                position: 'fixed', inset: 0, background: 'var(--overlay-scrim)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 zIndex: 1000,
             }}
@@ -91,7 +108,7 @@ function CountdownModal({ action, label, agent, onConfirm, onCancel })
                     padding: '20px 24px',
                     minWidth: 340,
                     maxWidth: 420,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+                    boxShadow: 'var(--shadow-modal)',
                 }}
             >
                 <div id="power-modal-title" style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
@@ -106,7 +123,7 @@ function CountdownModal({ action, label, agent, onConfirm, onCancel })
                 {/* Large visible countdown so the operator cannot miss it */}
                 <div style={{
                     fontSize: 48, fontWeight: 700, textAlign: 'center',
-                    color: remaining <= 3 ? '#c62828' : 'var(--text-primary)',
+                    color: remaining <= 3 ? 'var(--danger-deep)' : 'var(--text-primary)',
                     marginBottom: 16, fontVariantNumeric: 'tabular-nums',
                 }}>
                     {remaining}s

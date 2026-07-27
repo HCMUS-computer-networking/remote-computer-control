@@ -53,6 +53,18 @@
   /* misc UI tokens */
   --text-on-accent:    #FFFFFF;              /* text sitting on --accent surfaces */
   --shadow-notice:     0 2px 8px rgba(0, 0, 0, 0.35);   /* floating pill shadow */
+  --shadow-modal:      0 8px 32px rgba(0, 0, 0, 0.35);  /* modal card drop shadow */
+
+  /* solid alert palette — used by transparency dots, sensitive badges, modal overlays.
+     Kept separate from --danger/--warning (which are theme-tinted) because these must
+     stay the SAME vivid tone in light and dark theme so operators never miss them. */
+  --danger-solid:      #E53935;
+  --danger-solid-glow: rgba(229, 57, 53, 0.55);
+  --danger-deep:       #C62828;
+  --warning-solid:     #F0AD4E;
+  --on-danger:         #FFFFFF;
+  --on-warning-solid:  #000000;
+  --overlay-scrim:     rgba(0, 0, 0, 0.55);
 
   /* typography */
   --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
