@@ -26,7 +26,7 @@ import
     buildStreamStop,
 }
 from '../../../services/Protocol'
-import FrameCanvas from '../../livescreen/FrameCanvas'
+import FrameCanvas from '../../FrameCanvas'
 
 const FOCUS_FPS     = 24   // full frame rate for focused agent
 const FOCUS_QUALITY = 70   // JPEG quality (0–100)

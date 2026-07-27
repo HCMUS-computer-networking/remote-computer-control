@@ -1,4 +1,7 @@
-// FrameCanvas.jsx — draws one JPEG binary frame onto an HTML <canvas>.
+// FrameCanvas.jsx — shared primitive that draws one JPEG binary frame onto a <canvas>.
+//
+// Placed directly under src/components/ (not in livescreen/) because both the
+// live-screen views (GridView, FocusView, ScreenTab) and WebcamTab import it.
 //
 // MEMORY MANAGEMENT (important — read before modifying):
 //
@@ -20,9 +23,14 @@ import { useEffect, useRef } from 'react'
 
 // Props:
 //   frame_buffer — ArrayBuffer containing raw JPEG bytes (null = no frame yet)
+//   module       — "screen" | "webcam" (data attribute for CSS / debugging hooks)
+//   label        — optional short caption (e.g. "LIVE", "WEBCAM"). When provided,
+//                  drives the aria-label and shows a small corner badge.
+//                  Views that already render their own status badge (GridView tile
+//                  header, ScreenTab toolbar) simply omit this prop.
 //   width        — CSS width  for the <canvas> element (default "100%")
 //   height       — CSS height for the <canvas> element (default "100%")
-function FrameCanvas({ frame_buffer, width = '100%', height = '100%' })
+function FrameCanvas({ frame_buffer, module = 'screen', label, width = '100%', height = '100%' })
 {
     const canvas_ref = useRef(null)
 
@@ -90,12 +98,36 @@ function FrameCanvas({ frame_buffer, width = '100%', height = '100%' })
         }
     }, [frame_buffer])
 
+    const aria_label = label ? `${label} frame` : 'Live frame'
+
+    // When no label is passed, we render the canvas alone — GridView and ScreenTab
+    // already show their own status badges around it. When a label is passed
+    // (WebcamTab), we wrap in a positioned container and add a corner badge.
+    if (!label)
+    {
+        return (
+            <canvas
+                ref={canvas_ref}
+                data-module={module}
+                style={{ width, height, display: 'block', objectFit: 'contain' }}
+                aria-label={aria_label}
+            />
+        )
+    }
+
     return (
-        <canvas
-            ref={canvas_ref}
-            style={{ width, height, display: 'block', objectFit: 'contain' }}
-            aria-label="Live screen frame"
-        />
+        <div className="frame-canvas" style={{ position: 'relative', width, height }}>
+            <canvas
+                ref={canvas_ref}
+                data-module={module}
+                style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }}
+                aria-label={aria_label}
+            />
+            <span className="frame-canvas__badge" aria-hidden="true">
+                <span className="frame-canvas__badge-dot" />
+                {label}
+            </span>
+        </div>
     )
 }
 

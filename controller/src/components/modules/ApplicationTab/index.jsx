@@ -1,11 +1,12 @@
 /* ApplicationTab — shows the app list for the focused agent.
-   Lets the operator start / stop apps that are in WHITELISTED_APPS.
-   All others are shown but their buttons are disabled.                */
-import { useState, useEffect } from 'react'
-import { ChevronUp, ChevronDown } from 'lucide-react'
+   Thin wrapper around <ModuleTable />: declares the columns, WHITELISTED_APPS,
+   and the Start/Stop action renderer. Sort state, toolbar, empty state, and
+   scroll container all live in ModuleTable.                                    */
+import { useEffect } from 'react'
 
 import useModuleStore from '../../../store/ModuleStore'
 import useAgentSocket from '../../../hooks/UseAgentSocket'
+import ModuleTable    from '../../ModuleTable'
 import { buildAppList, buildAppStart, buildAppStop } from '../../../services/Protocol'
 
 // How often the tab asks the agent for a fresh snapshot (makes % look live).
@@ -21,13 +22,29 @@ const EMPTY_APPS = []
 // Apps NOT in this set are shown in the table but their buttons stay disabled.
 const WHITELISTED_APPS = new Set(['notepad', 'calc', 'mspaint', 'chrome', 'vlc'])
 
-// Columns that can be sorted — key must match the field name in the app object.
+// Column definitions passed to ModuleTable.
+// Only display_name and status use custom renderers; numeric cells fall back
+// to row[key] which prints the raw number.
 const COLUMNS =
 [
     { key: 'display_name', label: 'App Name',  numeric: false },
-    { key: 'status',       label: 'Status',    numeric: false },
-    { key: 'cpu_percent',  label: 'CPU %',     numeric: true  },
-    { key: 'ram_mb',       label: 'RAM (MB)',  numeric: true  },
+    {
+        key: 'status',
+        label: 'Status',
+        numeric: false,
+        render: (row) => (
+            <span className={`module-table__badge module-table__badge--${row.status}`}>
+                {row.status}
+            </span>
+        ),
+    },
+    {
+        key: 'cpu_percent',
+        label: 'CPU %',
+        numeric: true,
+        render: (row) => row.cpu_percent.toFixed(1),
+    },
+    { key: 'ram_mb', label: 'RAM (MB)', numeric: true },
 ]
 
 function ApplicationTab({ agent })
@@ -39,10 +56,6 @@ function ApplicationTab({ agent })
     // Select only this agent's app slice — no re-render when other agents update.
     // EMPTY_APPS (module-level const) keeps the reference stable when data is absent.
     const apps = useModuleStore((s) => s.data[agent.id]?.app ?? EMPTY_APPS)
-
-    // Client-side sort state — UI concern only, not persisted in any store.
-    const [sort_col, setSortCol] = useState('display_name')
-    const [sort_dir, setSortDir] = useState('asc')
 
     // Fetch on mount; refresh every POLL_INTERVAL_MS for live-looking numbers.
     // Effect re-runs if the user focuses a different agent (agent.id changes).
@@ -58,161 +71,50 @@ function ApplicationTab({ agent })
         return () => clearInterval(timer)   // stop polling when tab unmounts or agent changes
     }, [agent.id])
 
-    // Click a column header: toggle direction if already active; switch + reset dir otherwise.
-    function handleSortClick(col_key)
+    // Action column renderer — Start or Stop depending on current status,
+    // disabled entirely for apps outside WHITELISTED_APPS.
+    function renderAction(row)
     {
-        if (col_key === sort_col)
-        {
-            setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-        }
-        else
-        {
-            setSortCol(col_key)
-            setSortDir('desc')
-        }
-    }
+        const is_whitelisted = WHITELISTED_APPS.has(row.name)
+        const is_running     = row.status === 'running'
+        const disabled_tip   = 'Not in whitelist — action blocked'
 
-    // Sort a COPY of the store slice — never mutate the original array.
-    const sorted_apps = [...apps].sort(function (a, b)
-    {
-        const a_val = a[sort_col]
-        const b_val = b[sort_col]
-
-        if (typeof a_val === 'string')
+        if (is_running)
         {
-            return sort_dir === 'asc'
-                ? a_val.localeCompare(b_val)
-                : b_val.localeCompare(a_val)
+            return (
+                <button
+                    className="action-btn action-btn--stop"
+                    disabled={!is_whitelisted}
+                    title={is_whitelisted ? 'Stop this application' : disabled_tip}
+                    onClick={() => sendToFocused(buildAppStop(row.name))}
+                >
+                    Stop
+                </button>
+            )
         }
 
-        return sort_dir === 'asc' ? a_val - b_val : b_val - a_val
-    })
-
-    function handleStart(app_name)
-    {
-        sendToFocused(buildAppStart(app_name))
-    }
-
-    function handleStop(app_name)
-    {
-        sendToFocused(buildAppStop(app_name))
+        return (
+            <button
+                className="action-btn action-btn--start"
+                disabled={!is_whitelisted}
+                title={is_whitelisted ? 'Start this application' : disabled_tip}
+                onClick={() => sendToFocused(buildAppStart(row.name))}
+            >
+                Start
+            </button>
+        )
     }
 
     return (
-        <div className="module-table">
-
-            {/* ── toolbar ──────────────────────────────────────────── */}
-            <div className="module-table__toolbar">
-                <span className="module-table__title">
-                    Applications — {agent.name}
-                </span>
-                <span className="module-table__poll-badge">● Live</span>
-            </div>
-
-            {/* ── scrollable table ─────────────────────────────────── */}
-            <div className="module-table__scroll">
-                <table>
-                    <thead>
-                        <tr>
-                            {COLUMNS.map(function ({ key, label, numeric })
-                            {
-                                const is_active  = sort_col === key
-                                const SortIcon   = sort_dir === 'asc' ? ChevronUp : ChevronDown
-                                const th_classes = [
-                                    'module-table__th',
-                                    'module-table__th--sortable',
-                                    is_active ? 'module-table__th--active' : '',
-                                    numeric   ? 'module-table__th--num'    : '',
-                                ].filter(Boolean).join(' ')
-
-                                return (
-                                    <th
-                                        key={key}
-                                        className={th_classes}
-                                        onClick={() => handleSortClick(key)}
-                                        title={`Sort by ${label}`}
-                                    >
-                                        <span className="module-table__th-inner">
-                                            {label}
-                                            {is_active && (
-                                                <SortIcon size={12} strokeWidth={2} />
-                                            )}
-                                        </span>
-                                    </th>
-                                )
-                            })}
-                            <th className="module-table__th module-table__th--action">
-                                <span className="module-table__th-inner">Action</span>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sorted_apps.map(function (app)
-                        {
-                            const is_whitelisted = WHITELISTED_APPS.has(app.name)
-                            const is_running     = app.status === 'running'
-
-                            // Tooltip explains why a button is disabled.
-                            const disabled_tip = 'Not in whitelist — action blocked'
-
-                            return (
-                                <tr key={app.name} className="module-table__row">
-
-                                    <td className="module-table__td module-table__td--name">
-                                        {app.display_name}
-                                    </td>
-
-                                    <td className="module-table__td">
-                                        <span className={`module-table__badge module-table__badge--${app.status}`}>
-                                            {app.status}
-                                        </span>
-                                    </td>
-
-                                    <td className="module-table__td module-table__td--num">
-                                        {app.cpu_percent.toFixed(1)}
-                                    </td>
-
-                                    <td className="module-table__td module-table__td--num">
-                                        {app.ram_mb}
-                                    </td>
-
-                                    <td className="module-table__td module-table__td--action">
-                                        {is_running
-                                            ? (
-                                                <button
-                                                    className="action-btn action-btn--stop"
-                                                    disabled={!is_whitelisted}
-                                                    title={is_whitelisted ? 'Stop this application' : disabled_tip}
-                                                    onClick={() => handleStop(app.name)}
-                                                >
-                                                    Stop
-                                                </button>
-                                            )
-                                            : (
-                                                <button
-                                                    className="action-btn action-btn--start"
-                                                    disabled={!is_whitelisted}
-                                                    title={is_whitelisted ? 'Start this application' : disabled_tip}
-                                                    onClick={() => handleStart(app.name)}
-                                                >
-                                                    Start
-                                                </button>
-                                            )
-                                        }
-                                    </td>
-
-                                </tr>
-                            )
-                        })}
-                    </tbody>
-                </table>
-
-                {apps.length === 0 && (
-                    <div className="module-table__empty">Loading application list…</div>
-                )}
-            </div>
-
-        </div>
+        <ModuleTable
+            columns={COLUMNS}
+            rows={apps}
+            actionColumn={{ header: 'Action', render: renderAction }}
+            empty_label="Loading application list…"
+            title={`Applications — ${agent.name}`}
+            poll_badge
+            row_key={(row) => row.name}
+        />
     )
 }
 

@@ -64,9 +64,11 @@ controller/
     ├── services/       Protocol.js · MockSocket.js · Socket.js (stub)
     ├── hooks/          UseAgentSocket.js
     ├── components/
+    │   ├── ModuleTable.jsx  Template bảng dùng chung (Application, Process)
+    │   ├── FrameCanvas.jsx  Template canvas frame dùng chung (Livescreen, Webcam)
     │   ├── layout/     Sidebar · TopBar · ThemeToggle
     │   ├── agents/     AgentList · AgentCard · MultiSelect
-    │   ├── livescreen/ GridView · FocusView · FrameCanvas
+    │   ├── livescreen/ GridView · FocusView (import FrameCanvas ở tầng trên)
     │   └── modules/    7 tab (5 hoàn chỉnh, 2 placeholder)
     ├── App.jsx
     └── index.css       Toàn bộ CSS của dự án

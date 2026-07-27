@@ -19,7 +19,8 @@ Reflects the code state at the end of Playbook Week 3 (Keylog + File finished).
 | 4 Zustand stores (UiStore, AgentStore, ConnectionStore, ModuleStore) | ✅ Complete |
 | Layout components (Sidebar, TopBar, ThemeToggle) | ✅ Complete |
 | Agent components (AgentList, AgentCard, MultiSelect) | ✅ Complete |
-| Livescreen components (GridView, FocusView, FrameCanvas) | ✅ Complete — GridView starts 2 fps streams on connect, keyed on the sorted online-id set so an A↔B swap is detected; FrameCanvas has full ImageBitmap memory management |
+| Livescreen components (GridView, FocusView) | ✅ Complete — GridView starts 2 fps streams on connect, keyed on the sorted online-id set so an A↔B swap is detected. Both import `FrameCanvas` from `components/FrameCanvas.jsx` |
+| Shared primitives at `components/` root (`ModuleTable.jsx`, `FrameCanvas.jsx`) | ✅ `ModuleTable` — template for App/Process (columns, rows, actionColumn, empty_label, title, poll_badge, row_key; owns sort state, click-to-sort, scroll, empty state). `FrameCanvas` — JPEG ArrayBuffer decoder with full ImageBitmap memory management; `module` + optional `label` props (label triggers a corner badge overlay for WebcamTab) |
 | `Protocol.js` — message builders + type constants | ✅ Complete |
 | `MockSocket.js` — Gateway + Agent simulator | ✅ Complete — 7 fake agents (5 online, 2 offline; Windows / Ubuntu / macOS), OS-specific app + process pools, consent-denied agent (agent-06 → keylog_denied / webcam_denied), stateful per-agent app/process, uploaded-file persistence, frame stream engine (canvas test card → JPEG → frame_meta + binary) |
 | `UseAgentSocket.js` hook — ref-count singleton + store dispatch | ✅ Complete — binary frame dispatch via onBinary + _pending_meta pairing, toast on app_action / proc_kill / keylog_denied / webcam_denied / fs_error |
@@ -180,6 +181,44 @@ controller/
     │                                   so they never need to thread agent.id into builders.
     │
     └── components/
+        │
+        ├── ModuleTable.jsx             Shared table template used by ApplicationTab and
+        │                               ProcessTab. Placed directly under components/ (not
+        │                               in a subfolder) because it is a cross-feature primitive.
+        │                               Props: { columns:[{key,label,numeric?,render?(row)}], rows,
+        │                               actionColumn:{header,render(row)}, empty_label, title,
+        │                               poll_badge, row_key(row) }. Owns internal sort state
+        │                               (sort_col + sort_dir, defaults: first column, 'desc'),
+        │                               click-to-sort headers with ChevronUp/Down indicator on
+        │                               the active column, scrollable body, empty-state fallback.
+        │                               Sorts a copy of rows (never mutates parent's array);
+        │                               numeric columns are right-aligned + sorted as numbers.
+        │                               Row keys default to the first column value when row_key
+        │                               is not passed.
+        │                               Pure UI — imports neither store nor service.
+        │                               CSS classes reused: module-table + module-table__toolbar
+        │                               / __title / __poll-badge / __scroll / __th / __th--sortable
+        │                               / __th--active / __th--num / __th--action / __th-inner /
+        │                               __row / __td / __td--num / __td--action / __empty.
+        │
+        ├── FrameCanvas.jsx             Shared <canvas> primitive — decodes an ArrayBuffer JPEG
+        │                               via createImageBitmap, draws it, then calls bitmap.close()
+        │                               to release GPU memory. Uses a "cancelled" flag to prevent
+        │                               stale async decode callbacks from overwriting newer frames.
+        │                               .catch() silently skips corrupted/invalid frames.
+        │                               Cleanup closes any pending bitmap on unmount.
+        │                               Props: { frame_buffer, module ('screen' | 'webcam';
+        │                               default 'screen' — becomes canvas data-module attribute),
+        │                               label (optional short caption; when truthy, wraps canvas
+        │                               in a positioned container with a corner badge and uses
+        │                               "<label> frame" as aria-label; when omitted, renders
+        │                               canvas alone with "Live frame" aria-label), width, height
+        │                               (CSS values, default "100%") }. GridView and ScreenTab
+        │                               omit `label` because they render their own status badges
+        │                               around the canvas; WebcamTab will pass label="WEBCAM".
+        │                               Placed at components/ root (not livescreen/) because
+        │                               both Livescreen and Webcam import it.
+        │
         ├── layout/
         │   ├── Sidebar.jsx             Left panel (fixed width). Contains: CONTROLLER logo,
         │   │                           "Agents" label, search input (→ AgentStore.search_query),
@@ -211,7 +250,7 @@ controller/
         │                               "Select all" toggles between selecting all online agents
         │                               and clearing. Shows count label when any are selected.
         │
-        ├── livescreen/
+        ├── livescreen/                 (Both files import FrameCanvas from ../FrameCanvas.jsx)
         │   ├── GridView.jsx            Responsive grid of AgentThumbnail tiles (online agents
         │   │                           only). On mount (when conn_status is 'open'), starts a
         │   │                           2 fps / quality 50 stream for all online agents. On
@@ -229,31 +268,39 @@ controller/
         │   │                           on the active panel to force remount when the user
         │   │                           switches agents. Subscribes to focused_agent_id + agents
         │   │                           (not getFocusedAgent) to correctly re-render on agent change.
-        │   └── FrameCanvas.jsx         <canvas> that decodes an ArrayBuffer JPEG via
-        │                               createImageBitmap, draws it, then calls bitmap.close()
-        │                               to release GPU memory. Uses a "cancelled" flag to prevent
-        │                               stale async decode callbacks from overwriting newer
-        │                               frames. .catch() silently skips corrupted/invalid frames.
-        │                               Cleanup closes any pending bitmap on unmount.
-        │                               Width/height accept CSS values (default 100%).
+        │                               (FrameCanvas lives at components/FrameCanvas.jsx —
+        │                               see the shared-primitive block above.)
         │
         └── modules/                    Each tab receives { agent } prop from FocusView.
             ├── ApplicationTab/
-            │   └── index.jsx           App list table pulled from ModuleStore (agent.id slice).
-            │                           WHITELISTED_APPS Set declared at module scope (UPPER_SNAKE_CASE).
-            │                           Client-side sort: sort_col + sort_dir in component state.
-            │                           Click any COLUMNS header to sort; click again to flip dir.
-            │                           Polls every 3 s via setInterval in useEffect.
-            │                           Start/Stop buttons disabled for apps not in whitelist.
-            │                           Start/Stop mutate mock state — status changes on next poll.
-            │                           CSS: module-table + action-btn--start/stop classes.
+            │   └── index.jsx           Thin wrapper around <ModuleTable /> (see components/ModuleTable.jsx).
+            │                           Reads app list from ModuleStore (agent.id slice), fallback
+            │                           to a module-level EMPTY_APPS constant to keep the Zustand
+            │                           selector reference stable.
+            │                           Declares only:
+            │                             - WHITELISTED_APPS Set at module scope (UPPER_SNAKE_CASE).
+            │                             - COLUMNS array: display_name, status (custom render with
+            │                               module-table__badge--<status>), cpu_percent (numeric,
+            │                               toFixed(1)), ram_mb (numeric).
+            │                             - renderAction(row): returns Start or Stop button based on
+            │                               row.status; disabled when !WHITELISTED_APPS.has(row.name),
+            │                               with a tooltip explaining why.
+            │                           Polls buildAppList() every 3 s via setInterval; cleanup on
+            │                           unmount / agent switch. Uses row_key={row.name}.
+            │                           Sort state, thead click-to-sort, tbody layout, scroll
+            │                           container, empty state — all owned by ModuleTable.
             ├── ProcessTab/
-            │   └── index.jsx           Full process list from ModuleStore; polls every 3 s.
-            │                           Client-side sort: sort_col + sort_dir in component state.
-            │                           Click any COLUMNS header to sort; click again to flip dir.
-            │                           Kill button on every row sends buildProcKill(pid).
-            │                           Kill removes process from mock state — disappears on next poll.
-            │                           CSS: module-table + action-btn--kill classes.
+            │   └── index.jsx           Thin wrapper around <ModuleTable />. Reads full process list
+            │                           from ModuleStore (fallback EMPTY_PROCS); polls buildProcList()
+            │                           every 3 s.
+            │                           Declares only:
+            │                             - COLUMNS: name, pid (numeric), cpu_percent (numeric,
+            │                               toFixed(1)), ram_mb (numeric, toFixed(0)).
+            │                             - renderAction(row): Kill button on every row →
+            │                               buildProcKill(row.pid).
+            │                           Uses row_key={row.pid}. Kill removes process from mock state
+            │                           — the row disappears on the next 3 s poll.
+            │                           Sort/scroll/empty owned by ModuleTable.
             ├── ScreenTab/
             │   └── index.jsx           Screenshot + live stream panel. "Chụp 1 lần" sends
             │                           a single screenshot request. "Bắt đầu stream" starts
@@ -535,9 +582,15 @@ The `module` field ("screen" or "webcam") determines the store slot.
 MockSocket simulates this with an off-screen canvas test card → `toBlob('image/jpeg')` →
 `arrayBuffer()`, emitting the pair via `_on_message(frame_meta)` then `_on_binary(buffer)`.
 
-FrameCanvas decodes the ArrayBuffer via `createImageBitmap()`, draws it, and immediately
-calls `bitmap.close()` to release GPU memory. A `cancelled` flag prevents stale async
-decode callbacks from drawing over newer frames.
+`FrameCanvas` (the shared primitive at `src/components/FrameCanvas.jsx`) decodes the
+ArrayBuffer via `createImageBitmap()`, draws it, and immediately calls `bitmap.close()`
+to release GPU memory. A `cancelled` flag prevents stale async decode callbacks from
+drawing over newer frames. It accepts a `module` prop ("screen" | "webcam", surfaced
+as the canvas `data-module` attribute) and an optional `label` prop; when `label` is
+provided the canvas is wrapped in a positioned container with a corner badge and the
+aria-label becomes `"${label} frame"`. Livescreen views (GridView, FocusView, ScreenTab)
+render their own status badges around the canvas and omit `label`; WebcamTab passes
+`label="WEBCAM"` to display the built-in badge.
 
 GridView starts 2 fps streams on connect; ScreenTab starts 24 fps on "Bắt đầu stream".
 Both stop their streams on unmount via useEffect cleanup.

@@ -20,7 +20,7 @@ import useModuleStore          from '../../store/ModuleStore'
 import useConnectionStore      from '../../store/ConnectionStore'
 import useAgentSocket          from '../../hooks/UseAgentSocket'
 import { buildStreamStart, buildStreamStop } from '../../services/Protocol'
-import FrameCanvas             from './FrameCanvas'
+import FrameCanvas             from '../FrameCanvas'
 
 // Low fps for grid thumbnails — saves bandwidth vs. 24 fps focus stream
 const GRID_FPS     = 2
