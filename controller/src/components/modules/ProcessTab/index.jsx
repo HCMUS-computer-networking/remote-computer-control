@@ -4,9 +4,10 @@
    live in ModuleTable.                                                          */
 import { useEffect } from 'react'
 
-import useModuleStore from '../../../store/ModuleStore'
-import useAgentSocket from '../../../hooks/UseAgentSocket'
-import ModuleTable    from '../../ModuleTable'
+import useModuleStore     from '../../../store/ModuleStore'
+import useConnectionStore from '../../../store/ConnectionStore'
+import useAgentSocket     from '../../../hooks/UseAgentSocket'
+import ModuleTable        from '../../ModuleTable'
 import { buildProcList, buildProcKill } from '../../../services/Protocol'
 
 // How often the tab polls for a fresh process snapshot.
@@ -46,10 +47,15 @@ function ProcessTab({ agent })
     // EMPTY_PROCS keeps the selector return value stable when no data exists yet.
     const procs = useModuleStore((s) => s.data[agent.id]?.process ?? EMPTY_PROCS)
 
+    // Connection status drives the empty-state message (loading vs disconnected).
+    const conn_status = useConnectionStore((s) => s.status)
+
     // Fetch on mount; refresh every POLL_INTERVAL_MS.
-    // Re-runs when the focused agent changes.
+    // Re-runs when the focused agent changes. Offline agents are not polled.
     useEffect(function ()
     {
+        if (!agent.online) return
+
         sendToFocused(buildProcList())
 
         const timer = setInterval(function ()
@@ -58,7 +64,12 @@ function ProcessTab({ agent })
         }, POLL_INTERVAL_MS)
 
         return () => clearInterval(timer)
-    }, [agent.id])
+    }, [agent.id, agent.online])
+
+    // Friendly empty state: distinguish offline agent, dead link, and loading.
+    const empty_label = !agent.online     ? 'Agent is offline'
+                      : conn_status !== 'open' ? 'Gateway disconnected — waiting to reconnect…'
+                      :                        'Loading process list…'
 
     // Action column renderer — Kill button on every row.
     function renderAction(row)
@@ -79,9 +90,9 @@ function ProcessTab({ agent })
             columns={COLUMNS}
             rows={procs}
             actionColumn={{ header: 'Action', render: renderAction }}
-            empty_label="Loading process list…"
+            empty_label={empty_label}
             title={`Processes — ${agent.name}`}
-            poll_badge
+            poll_badge={agent.online}
             row_key={(row) => row.pid}
         />
     )

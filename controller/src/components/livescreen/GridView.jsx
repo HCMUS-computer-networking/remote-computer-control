@@ -42,15 +42,16 @@ function AgentThumbnail({ agent })
         setLayoutMode('focus')
     }
 
-    const dot_color = agent.online ? 'var(--success)' : 'var(--gray-400)'
+    const dot_class = agent.online
+        ? 'status-dot status-dot--sm status-dot--online'
+        : 'status-dot status-dot--sm status-dot--offline'
 
     return (
         <div className="agent-thumbnail" onClick={handleExpand}>
             {/* tile header — always dark to remain legible over the feed */}
             <div className="agent-thumbnail__header">
                 <span
-                    className="status-dot status-dot--sm"
-                    style={{ background: dot_color }}
+                    className={dot_class}
                     aria-hidden="true"
                 />
                 <span className="agent-thumbnail__name">{agent.name}</span>

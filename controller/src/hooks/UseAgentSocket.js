@@ -26,8 +26,8 @@
 
 import { useEffect } from 'react'
 
-import MockSocket                        from '../services/MockSocket'   // TODO: swap to Socket.js when backend is ready
-import { buildListAgents, MSG_TYPE, MODULE } from '../services/Protocol'
+import AgentSocket                       from '../services'   // mock or real, chosen by VITE_USE_MOCK in services/index.js
+import { buildListAgents, buildPolicyUpdate, normalizeIncoming, MSG_TYPE, MODULE } from '../services/Protocol'
 
 // Modules that only make sense against ONE agent at a time (the operator is
 // watching a single feed). sendCommand routes these to focused_agent_id even
@@ -44,6 +44,7 @@ import useConnectionStore                from '../store/ConnectionStore'
 import useAgentStore                     from '../store/AgentStore'
 import useModuleStore                    from '../store/ModuleStore'
 import useUiStore                        from '../store/UiStore'
+import usePolicyStore                    from '../store/PolicyStore'
 
 // ── Singleton state (module-level, shared across all hook invocations) ────────
 
@@ -71,6 +72,7 @@ export default function useAgentSocket()
     const setFsEntries      = useModuleStore.getState().setFsEntries
     const setFileDownload   = useModuleStore.getState().setFileDownload
     const setFilePutAck     = useModuleStore.getState().setFilePutAck
+    const setPolicyResult   = usePolicyStore.getState().setPolicyResult
     const addToast          = useUiStore.getState().addToast
 
     // ── Lifecycle: create / destroy the shared socket ─────────────────────
@@ -81,18 +83,28 @@ export default function useAgentSocket()
         // First caller creates the socket; later callers just bump the count.
         if (_socket === null)
         {
-            const socket = new MockSocket()
+            const socket = new AgentSocket()
             _socket      = socket
 
             socket.onOpen(function ()
             {
                 setStatus('open')
                 socket.send(buildListAgents())   // request agent list right away
+
+                // Push the security policy (app_whitelist + sandbox_path) to every
+                // agent on connect. Empty target_agents = all agents. The Agent
+                // overrides its local config in RAM and replies policy_update_result.
+                const policy = usePolicyStore.getState()
+                socket.send(buildPolicyUpdate(policy.app_whitelist, policy.sandbox_path, []))
             })
 
-            socket.onMessage(function (msg)
+            socket.onMessage(function (raw_msg)
             {
-                dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, setFileDownload, setFilePutAck, addToast })
+                // Normalize the real Gateway/Agent JSON into our canonical shape
+                // first, so dispatchMessage + stores stay unchanged. Mock messages
+                // are already canonical and pass through untouched.
+                const msg = normalizeIncoming(raw_msg)
+                dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, setFileDownload, setFilePutAck, setPolicyResult, addToast })
             })
 
             // Binary callback — pair incoming ArrayBuffer with the pending frame_meta.
@@ -288,7 +300,7 @@ function sendWithTargets(json_string, target_ids)
 //   fs_error           → (TODO) surface file error in FileModule
 //   power_result       → (TODO) surface in PowerModule
 
-function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, setFileDownload, setFilePutAck, addToast })
+function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylog, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, setFileDownload, setFilePutAck, setPolicyResult, addToast })
 {
     switch (msg.type)
     {
@@ -405,6 +417,17 @@ function dispatchMessage(msg, { setStatus, setAgents, setModuleData, appendKeylo
         case MSG_TYPE.FS_ERROR:
             // Surface sandbox path errors as toast notifications.
             addToast(`File error on ${msg.agent_id}: ${msg.message}`, 'error')
+            break
+
+        // ── Policy ────────────────────────────────────────────────────────
+        case MSG_TYPE.POLICY_UPDATE_RESULT:
+            // Record per-agent result. Only surface a toast on FAILURE so a
+            // successful multi-agent push does not spam N success toasts.
+            setPolicyResult(msg.agent_id, { success: msg.success, message: msg.message })
+            if (!msg.success)
+            {
+                addToast(`Policy update failed on ${msg.agent_id}: ${msg.message ?? 'unknown error'}`, 'error')
+            }
             break
 
         // ── Power ─────────────────────────────────────────────────────────

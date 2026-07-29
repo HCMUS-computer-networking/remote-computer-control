@@ -33,9 +33,9 @@ Lệnh khác: `npm run build`, `npm run preview`, `npm run lint`.
 ```
 src/
 ├── App.jsx, main.jsx        # entry + shell
-├── store/                   # 4 Zustand store (Agent / Connection / Module / Ui)
+├── store/                   # 5 Zustand store (Agent / Connection / Module / Policy / Ui)
 ├── hooks/UseAgentSocket.js  # singleton hook nối component ↔ socket
-├── services/                # Protocol.js (builders), MockSocket.js, Socket.js
+├── services/                # index.js (chọn mock/real), Protocol.js, MockSocket.js, Socket.js
 └── components/
     ├── FrameCanvas.jsx      # primitive dùng chung để vẽ JPEG frame
     ├── ModuleTable.jsx      # primitive dùng chung cho bảng có sort
@@ -54,6 +54,8 @@ Chi tiết kiến trúc, store, luồng dữ liệu, giao thức message xem tro
 ## Trạng thái backend
 
 Hiện tại app chạy bằng **`MockSocket`** (mô phỏng Gateway + Agent ngay trong
-trình duyệt) để phát triển UI không phụ thuộc backend. Khi Gateway thật sẵn
-sàng, chỉ cần đổi 1 dòng `import` trong `src/hooks/UseAgentSocket.js` từ
-`MockSocket` sang `Socket` — không cần sửa component hay store.
+trình duyệt) để phát triển UI không phụ thuộc backend. `MockSocket` và `Socket`
+(WebSocket thật) có cùng API, được chọn tại `src/services/index.js` qua biến môi
+trường `VITE_USE_MOCK`. Khi Gateway thật sẵn sàng, đặt `VITE_USE_MOCK=false`
+(và `VITE_GATEWAY_URL` trỏ tới Gateway) trong file `.env` — không cần sửa
+component hay store.

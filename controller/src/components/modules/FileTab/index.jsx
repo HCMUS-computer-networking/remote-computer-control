@@ -6,10 +6,11 @@ import { useState, useEffect, useRef } from 'react'
 import {
     Folder, FolderOpen, FileText, FileImage, File,
     ChevronRight, ChevronDown, Download, Upload,
-    Loader2, RefreshCw, Lock, CheckCircle, XCircle, X,
+    Loader2, RefreshCw, Lock, CheckCircle, XCircle, X, WifiOff,
 } from 'lucide-react'
 
 import useModuleStore                      from '../../../store/ModuleStore'
+import usePolicyStore                      from '../../../store/PolicyStore'
 import useAgentSocket                      from '../../../hooks/UseAgentSocket'
 import { buildFsList, buildFsGet, buildFsPut } from '../../../services/Protocol'
 
@@ -104,6 +105,9 @@ function FileTab({ agent })
 {
     const { sendToFocused } = useAgentSocket()
 
+    // Sandbox root comes from the pushed security policy (NOT hard-coded here).
+    const sandbox_path = usePolicyStore((s) => s.sandbox_path)
+
     // Store slices — scoped to this agent only.
     const file_state      = useModuleStore((s) => s.data[agent.id]?.file         ?? EMPTY_FILE_STATE)
     const download_result = useModuleStore((s) => s.data[agent.id]?.file_download ?? null)
@@ -144,13 +148,16 @@ function FileTab({ agent })
         dl_buf_ref.current  = {}
         ul_chunks_ref.current = {}
 
+        // Offline agents cannot answer — skip the sandbox request entirely.
+        if (!agent.online) return
+
         const current_tree = useModuleStore.getState().data[agent.id]?.file?.tree ?? {}
         if (!current_tree['/'])
         {
             sendToFocused(buildFsList('/'))
             setLoadingPath('/')
         }
-    }, [agent.id])
+    }, [agent.id, agent.online])
 
     // ── Clear loading spinner when the fetched path arrives in the tree ───
     useEffect(function ()
@@ -453,45 +460,48 @@ function FileTab({ agent })
                 <span className="file-tab__title">Files — {agent.name}</span>
                 <span
                     className="file-tab__sandbox-badge"
-                    title="All file operations are restricted to the Agent sandbox directory"
+                    title={`All file operations are restricted to the Agent sandbox: ${sandbox_path}`}
                 >
                     <Lock size={10} /> sandbox only
                 </span>
                 <button
                     className="action-btn action-btn--neutral"
                     onClick={handleRefresh}
-                    title="Refresh root listing"
+                    disabled={!agent.online}
+                    title={agent.online ? 'Refresh root listing' : 'Agent is offline'}
                 >
                     <RefreshCw size={12} /> Refresh
                 </button>
             </div>
 
-            {/* ── Upload drop zone ────────────────────────────────── */}
-            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
-            <div
-                className={`file-tab__drop-zone${drag_over ? ' file-tab__drop-zone--over' : ''}`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => file_input_ref.current?.click()}
-                title={`Upload files to ${UPLOAD_DEST_DIR}/`}
-            >
-                <Upload size={18} className="file-tab__drop-icon" />
-                <span className="file-tab__drop-label">
-                    {drag_over
-                        ? 'Release to upload'
-                        : <>Drop files here or <u>browse</u> → <code>{UPLOAD_DEST_DIR}/</code></>
-                    }
-                </span>
-                {/* Hidden input as a click-to-browse fallback */}
-                <input
-                    ref={file_input_ref}
-                    type="file"
-                    multiple
-                    style={{ display: 'none' }}
-                    onChange={handleInputChange}
-                />
-            </div>
+            {/* ── Upload drop zone (hidden while the agent is offline) ── */}
+            {agent.online && (
+                /* eslint-disable-next-line jsx-a11y/click-events-have-key-events */
+                <div
+                    className={`file-tab__drop-zone${drag_over ? ' file-tab__drop-zone--over' : ''}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => file_input_ref.current?.click()}
+                    title={`Upload files to ${UPLOAD_DEST_DIR}/`}
+                >
+                    <Upload size={18} className="file-tab__drop-icon" />
+                    <span className="file-tab__drop-label">
+                        {drag_over
+                            ? 'Release to upload'
+                            : <>Drop files here or <u>browse</u> → <code>{UPLOAD_DEST_DIR}/</code></>
+                        }
+                    </span>
+                    {/* Hidden input as a click-to-browse fallback */}
+                    <input
+                        ref={file_input_ref}
+                        type="file"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={handleInputChange}
+                    />
+                </div>
+            )}
 
             {/* ── Upload progress list ─────────────────────────────── */}
             {uploads.length > 0 && (
@@ -561,14 +571,21 @@ function FileTab({ agent })
 
             {/* ── File tree ────────────────────────────────────────── */}
             <div className="file-tab__tree">
-                {!root_loaded
+                {!agent.online
                     ? (
                         <div className="file-tab__empty">
-                            <Loader2 size={28} className="file-tab__spin" />
-                            <span>Loading sandbox…</span>
+                            <WifiOff size={28} />
+                            <span>Agent is offline — sandbox unavailable</span>
                         </div>
                     )
-                    : renderEntries('/', 0)
+                    : !root_loaded
+                        ? (
+                            <div className="file-tab__empty">
+                                <Loader2 size={28} className="file-tab__spin" />
+                                <span>Loading sandbox…</span>
+                            </div>
+                        )
+                        : renderEntries('/', 0)
                 }
             </div>
 

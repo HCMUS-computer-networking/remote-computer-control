@@ -30,8 +30,9 @@ function AgentCard({ agent })
         : 'status-dot status-dot--offline'
 
     let card_class = 'agent-card'
-    if (is_focused)  card_class += ' agent-card--active'
-    if (is_selected) card_class += ' agent-card--selected'
+    if (is_focused)   card_class += ' agent-card--active'
+    if (is_selected)  card_class += ' agent-card--selected'
+    if (!agent.online) card_class += ' agent-card--offline'
 
     function handleCardClick()
     {
@@ -65,20 +66,19 @@ function AgentCard({ agent })
                     dot on purpose so it can never be missed. */}
                 {sensitive_on && (
                     <span
+                        className="transparency-dot"
                         aria-label="Sensitive module active"
                         title="Sensitive module active on this agent (screen, webcam, keylog, or session)"
-                        style={{
-                            display: 'inline-block',
-                            width: 8, height: 8, borderRadius: '50%',
-                            background: 'var(--danger-solid)',
-                            boxShadow: '0 0 6px 2px var(--danger-solid-glow)',
-                            animation: 'keylog-pulse 1.4s ease-in-out infinite',
-                        }}
                     />
                 )}
 
                 {/* agent name — takes remaining space */}
                 <span className="agent-card__name">{agent.name}</span>
+
+                {/* offline label — clear text state beyond the gray dot */}
+                {!agent.online && (
+                    <span className="agent-card__offline-badge" aria-label="Agent offline">OFFLINE</span>
+                )}
 
                 {/* session badge — only when actively controlled */}
                 {agent.in_session && (

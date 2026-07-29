@@ -55,6 +55,19 @@
   --shadow-notice:     0 2px 8px rgba(0, 0, 0, 0.35);   /* floating pill shadow */
   --shadow-modal:      0 8px 32px rgba(0, 0, 0, 0.35);  /* modal card drop shadow */
 
+  /* spacing scale — one source of truth so gaps/paddings stay consistent */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* corner radius scale */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
   /* solid alert palette — used by transparency dots, sensitive badges, modal overlays.
      Kept separate from --danger/--warning (which are theme-tinted) because these must
      stay the SAME vivid tone in light and dark theme so operators never miss them. */
@@ -591,6 +604,13 @@ input
 }
 
 /* ── 15. Utility classes ─────────────────────────────────────────────── */
+
+/* Generic spinner — rotates any icon it is applied to (e.g. Loader2). */
+.spin
+{
+  animation: file-tab-spin 0.9s linear infinite;
+}
+
 .visually-hidden
 {
   position: absolute;
@@ -1582,6 +1602,198 @@ input
 {
   font-size : 11px;
   color     : var(--danger);
+}
+
+/* ── 23. Shared transparency dot ─────────────────────────────────────── */
+/* One reusable red pulsing dot for "sensitive module active". Used by
+   AgentCard next to the online dot. Stays the same vivid tone in both
+   themes because it references the solid alert tokens, not the tinted ones. */
+.transparency-dot
+{
+  display       : inline-block;
+  width         : 8px;
+  height        : 8px;
+  border-radius : 50%;
+  flex-shrink   : 0;
+  background    : var(--danger-solid);
+  box-shadow    : 0 0 6px 2px var(--danger-solid-glow);
+  animation     : keylog-pulse 1.4s ease-in-out infinite;
+}
+
+/* ── 24. Offline agent card + offline badge ──────────────────────────── */
+/* Dim the whole card so offline machines visibly recede in the list. */
+.agent-card--offline
+{
+  opacity : 0.55;
+}
+
+.agent-card--offline .agent-card__name
+{
+  color : var(--text-muted);
+}
+
+/* Small gray "OFFLINE" pill — a text label so state is clear beyond the dot. */
+.agent-card__offline-badge
+{
+  font-size      : 8px;
+  font-weight    : 700;
+  padding        : 2px 6px;
+  border-radius  : var(--radius-sm);
+  background     : var(--bg-surface);
+  color          : var(--text-muted);
+  border         : 1px solid var(--border);
+  white-space    : nowrap;
+  letter-spacing : 0.3px;
+}
+
+/* ── 25. Connection banner (shown while not connected) ───────────────── */
+/* Full-width strip above the TopBar. Warning tone while reconnecting,
+   danger tone once the socket is closed. Hidden when the socket is open. */
+.conn-banner
+{
+  display         : flex;
+  align-items     : center;
+  justify-content : center;
+  gap             : var(--space-2);
+  padding         : var(--space-2) var(--space-4);
+  font-size       : 12px;
+  font-weight     : 600;
+  flex-shrink     : 0;
+}
+
+.conn-banner--warning
+{
+  background    : var(--warning-bg);
+  color         : var(--warning);
+  border-bottom : 1px solid var(--warning);
+}
+
+.conn-banner--danger
+{
+  background    : var(--danger-bg);
+  color         : var(--danger);
+  border-bottom : 1px solid var(--danger);
+}
+
+/* ── 26. Webcam consent badges (ScreenTab status bar) ────────────────── */
+/* Solid alert tones so the "camera is broadcasting" state is unmissable
+   and identical in both themes. Replaces old inline styles in WebcamTab. */
+.screen-tab__consent-badge
+{
+  display        : inline-flex;
+  align-items    : center;
+  gap            : 4px;
+  font-size      : 10px;
+  font-weight    : 700;
+  padding        : 2px 8px;
+  border-radius  : var(--radius-sm);
+  letter-spacing : 0.3px;
+}
+
+.screen-tab__consent-badge--on
+{
+  background : var(--danger-deep);
+  color      : var(--on-danger);
+}
+
+.screen-tab__consent-badge--waiting
+{
+  background : var(--warning-solid);
+  color      : var(--on-warning-solid);
+}
+
+/* ── 27. PowerTab action grid + countdown modal ──────────────────────── */
+/* Moved out of inline styles so spacing/colour follow the token scale. */
+.power-tab__grid
+{
+  display               : grid;
+  grid-template-columns : repeat(auto-fit, minmax(180px, 1fr));
+  gap                   : var(--space-3);
+  padding               : var(--space-4);
+}
+
+/* Bigger, centered variant of screen-tab__btn for the power action grid. */
+.power-tab__btn
+{
+  padding         : var(--space-4);
+  justify-content : center;
+}
+
+.power-modal__overlay
+{
+  position        : fixed;
+  inset           : 0;
+  background      : var(--overlay-scrim);
+  display         : flex;
+  align-items     : center;
+  justify-content : center;
+  z-index         : 1000;
+}
+
+.power-modal__card
+{
+  background    : var(--bg-elevated);
+  color         : var(--text);
+  border-radius : var(--radius-lg);
+  padding       : var(--space-5) var(--space-6);
+  min-width     : 340px;
+  max-width     : 420px;
+  box-shadow    : var(--shadow-modal);
+}
+
+.power-modal__title
+{
+  font-size     : 16px;
+  font-weight   : 600;
+  margin-bottom : var(--space-2);
+}
+
+.power-modal__msg
+{
+  font-size     : 13px;
+  color         : var(--text-muted);
+  margin-bottom : var(--space-4);
+}
+
+/* Big countdown number — turns danger-red in the final seconds. */
+.power-modal__count
+{
+  font-size            : 48px;
+  font-weight          : 700;
+  text-align           : center;
+  margin-bottom        : var(--space-4);
+  font-variant-numeric : tabular-nums;
+  color                : var(--text);
+}
+
+.power-modal__count--urgent
+{
+  color : var(--danger-deep);
+}
+
+.power-modal__actions
+{
+  display         : flex;
+  justify-content : flex-end;
+  gap             : var(--space-2);
+}
+
+/* ── 28. Module offline / disconnected state (shared) ────────────────── */
+/* Reuses the same centered layout as other empty states. Used by
+   ScreenTab / WebcamTab / PowerTab when the agent is offline. */
+.module-offline
+{
+  display         : flex;
+  flex-direction  : column;
+  align-items     : center;
+  justify-content : center;
+  gap             : var(--space-3);
+  height          : 100%;
+  min-height      : 200px;
+  color           : var(--text-muted);
+  font-size       : 13px;
+  text-align      : center;
+  padding         : var(--space-5);
 }
 
 /* ── 20. Responsive — collapse sidebar on narrow screens ─────────────── */

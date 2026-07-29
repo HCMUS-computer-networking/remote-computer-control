@@ -1,5 +1,5 @@
 /* FocusView.jsx — single-agent view: 7-tab bar + active module panel */
-import { AppWindow, Cpu, MonitorPlay, Keyboard, FolderTree, Video, Power } from 'lucide-react'
+import { AppWindow, Cpu, MonitorPlay, Keyboard, FolderTree, Video, Power, MousePointerClick } from 'lucide-react'
 import useUiStore    from '../../store/UiStore'
 import useAgentStore from '../../store/AgentStore'
 
@@ -50,7 +50,8 @@ function FocusView()
     return (
       <div className="focus-view">
         <div className="focus-view__no-agent">
-          <span>Select an agent from the sidebar to start.</span>
+          <MousePointerClick size={40} strokeWidth={1.25} />
+          <span>No agent selected — pick a machine from the sidebar to start.</span>
         </div>
       </div>
     )

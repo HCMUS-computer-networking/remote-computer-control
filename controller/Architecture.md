@@ -24,19 +24,21 @@ controller/
 │   └── wireframe/
 └── src/
     ├── main.jsx              # ReactDOM.createRoot entry
-    ├── App.jsx               # root shell: sidebar + top bar + main area + toasts
+    ├── App.jsx               # root shell: conn banner + sidebar + top bar + main + toasts
     ├── index.css, App.css    # design tokens + all component styles
     ├── assets/               # static images
-    ├── store/                # Zustand global state (four stores)
+    ├── store/                # Zustand global state (five stores)
     │   ├── AgentStore.js
     │   ├── ConnectionStore.js
     │   ├── ModuleStore.js
+    │   ├── PolicyStore.js    # pushed security policy (whitelist + sandbox path)
     │   └── UiStore.js
     ├── hooks/
     │   └── UseAgentSocket.js # singleton hook: owns socket + RX dispatch
     ├── services/
+    │   ├── index.js         # single mock-vs-real switch (VITE_USE_MOCK)
     │   ├── Protocol.js       # pure builders / parsers for JSON messages
-    │   ├── Socket.js         # placeholder for the real WebSocket wrapper
+    │   ├── Socket.js         # real WebSocket wrapper (arraybuffer + reconnect)
     │   └── MockSocket.js     # in-process Gateway + Agent simulator
     └── components/
         ├── FrameCanvas.jsx   # shared JPEG-frame → <canvas> primitive
@@ -145,6 +147,17 @@ Actions
 - `setFilePutAck(agent_id, result)` / `clearFilePutAck`.
 - `clearModule(agent_id, module)`, `clearAgent(agent_id)`.
 
+### `PolicyStore.js`
+State
+- `app_whitelist` — app short-names allowed to Start/Stop (the policy the
+  Controller pushes to agents). Single source of truth — module tabs read this,
+  never a hard-coded list.
+- `sandbox_path` — Agent sandbox root pushed in the policy.
+- `results` — `{ [agent_id]: { success, message } }` from `policy_update_result`.
+
+Actions
+- `setWhitelist(list)`, `setSandboxPath(path)`, `setPolicyResult(agent_id, result)`.
+
 ### `UiStore.js`
 State
 - `theme` — `'light' | 'dark'`.
@@ -169,6 +182,8 @@ Singleton lifecycle
 - The first component to call the hook creates one socket; the last to unmount
   closes it. `_pending_meta` holds the last `frame_meta` until its binary
   companion arrives.
+- On `onOpen` the hook sends `list_agents` and then pushes the security policy
+  (`buildPolicyUpdate` from `PolicyStore`, empty `target_agents` = all agents).
 
 TX helpers returned by the hook
 - `sendCommand(json)` — smart auto-targeting:
@@ -217,6 +232,7 @@ RX routing table (`dispatchMessage`)
 | `fs_put_complete`      | `setFilePutAck(id, { ..., complete: true })` |
 | `fs_error`             | toast |
 | `power_result`         | toast (confirmed or cancelled) |
+| `policy_update_result` | `PolicyStore.setPolicyResult`; toast only on failure |
 | binary (ArrayBuffer)   | paired with `_pending_meta` → `setModuleData(id, meta.module, { frame, meta })` |
 
 ---
@@ -231,6 +247,9 @@ templates in `docs/formatjson/*.json`.
 - `request` — generic envelope with `{ module, params, target_agents }` for
   every module command. Built by module-specific helpers below.
 - `power` — separate top-level type carrying `{ action, target_agents }`.
+- `policy_update` — separate top-level type carrying
+  `{ params: { app_whitelist, sandbox_path }, target_agents }`. Built by
+  `buildPolicyUpdate`; pushed on connect.
 
 ### Module constants (value of `request.module`)
 Application: `app_list`, `app_start`, `app_stop`.
@@ -249,7 +268,7 @@ Webcam:      `webcam_start`, `webcam_stop`.
 `keylog_started`, `keylog_stopped`, `keylog_denied`, `stream_started`,
 `stream_stopped`, `webcam_started`, `webcam_stopped`, `webcam_denied`,
 `fs_list_result`, `fs_get_result`, `fs_put_result`, `fs_put_complete`,
-`fs_error`, `power_result`.
+`fs_error`, `power_result`, `policy_update_result`.
 
 ### Binary channel
 Screen and webcam frames arrive as a pair:
@@ -261,21 +280,42 @@ Screen and webcam frames arrive as a pair:
 `buildAppStop`, `buildProcList`, `buildProcKill`, `buildScreenshot`,
 `buildStreamStart`, `buildStreamStop`, `buildKeylogStart`, `buildKeylogStop`,
 `buildFsList`, `buildFsGet`, `buildFsPut`, `buildWebcamStart`,
-`buildWebcamStop`, `buildPower`. Plus `buildMessage` / `parseMessage`.
+`buildWebcamStop`, `buildPower`, `buildPolicyUpdate`. Plus `buildMessage` /
+`parseMessage`.
+
+### Incoming adapter — `normalizeIncoming(raw_msg)`
+Rewrites a real Gateway/Agent JSON message into the ONE canonical shape the
+store + `dispatchMessage` already expect, so the wire format can differ from the
+mock without touching any component or store. `UseAgentSocket` runs it on every
+JSON message before dispatch; already-canonical mock messages pass through
+unchanged.
+- `TYPE_ALIASES` — real `type` string → canonical `MSG_TYPE` (identity if absent).
+- Shared field aliases: `agent_id` ⟵ `agentId`/`agentID`/`machine_id`;
+  `timestamp_ms` ⟵ `ts`/`time`/`timestamp`.
+- Per-type `NORMALIZERS` reshape list/record types: `agents_list`,
+  `app_list_result`, `proc_list_result`, `keylog`, `frame_meta`,
+  `fs_list_result`, `fs_get_result`, `power_result`, `policy_update_result`.
+  Types with no normalizer keep their body and only get `agent_id` +
+  `timestamp_ms` fixed.
+- All lookups use `pickField(obj, aliases, fallback)` (first match wins), so
+  unknown messages degrade to a safe pass-through. Alias arrays are the single
+  "EDIT POINT" to extend when a new real field name appears.
 
 ---
 
 ## 6. Feature status per module
 
 ### Application (`ApplicationTab/index.jsx`)
-- Table via `ModuleTable`: name, display name, status, CPU %, RAM MB,
-  whitelist flag.
-- Start / Stop buttons per row, disabled for non-whitelisted apps.
+- Table via `ModuleTable`: App Name (`display_name`), Status (badge), CPU %,
+  RAM (MB).
+- Start / Stop buttons per row, disabled for non-whitelisted apps. The
+  whitelist is NOT hard-coded: each row's `in_whitelist` (from the Agent, which
+  applies the pushed policy) is used, falling back to `PolicyStore.app_whitelist`.
 - 3-second polling loop dispatching `buildAppList`.
 - Toast on Start / Stop confirmation from `app_action_result`.
 
 ### Process (`ProcessTab/index.jsx`)
-- Table via `ModuleTable`: PID, name, CPU %, RAM MB.
+- Table via `ModuleTable`: Process Name, PID, CPU %, RAM (MB).
 - Kill button per row, dispatching `buildProcKill`.
 - 3-second polling loop dispatching `buildProcList`.
 - Toast on Kill confirmation from `proc_kill_result`.
@@ -302,7 +342,9 @@ Screen and webcam frames arrive as a pair:
 - Uses `keylog_active` for the running / consent-denied UI state.
 
 ### File (`FileTab/index.jsx`)
-- Sandbox-only browser of `fs_list_result` under `data[id].file.tree`.
+- Sandbox-only browser of `fs_list_result` under `data[id].file.tree`. The
+  "sandbox only" badge tooltip shows `PolicyStore.sandbox_path` (from the pushed
+  policy, not hard-coded).
 - Download via `buildFsGet` (single-chunk base64 → Blob download).
 - Chunked upload via `buildFsPut`, progress bar advances on each
   `fs_put_result`, marked complete on `fs_put_complete`.
@@ -326,8 +368,23 @@ Screen and webcam frames arrive as a pair:
   sent; on cancel nothing is sent (the countdown lives Controller-side).
 - Toast on `power_result`.
 
+### Empty / loading / offline states
+- Each module tab distinguishes three states through a friendly message and
+  disabled controls: loading (waiting for the first reply), agent offline
+  (`agent.online === false`), and Gateway disconnected (`ConnectionStore.status
+  !== 'open'`). Offline agents are not polled and their action buttons /
+  upload zone / power actions are disabled.
+- `ApplicationTab` / `ProcessTab` pass a computed `empty_label` to `ModuleTable`
+  and hide the poll badge when offline.
+- `ScreenTab` / `WebcamTab` / `FileTab` / `PowerTab` show a `WifiOff`
+  placeholder when offline; `KeylogTab` shows an `OFFLINE` indicator.
+- `App.jsx` renders a full-width `ConnectionBanner` above the TopBar while the
+  socket is `connecting` (warning) or `closed` (danger); hidden when open.
+- Sidebar `AgentCard` dims offline agents and adds an `OFFLINE` text pill next
+  to the gray status dot.
+
 ### Transparency indicators
-- `AgentCard.jsx` shows a pulsing red dot next to the online dot whenever any
+- `AgentCard.jsx` shows a pulsing red dot (`.transparency-dot`) next to the online dot whenever any
   of `screen_stream_active`, `webcam_active`, `keylog_active`, or `in_session`
   is true for that agent.
 - `TopBar.jsx` shows a global red badge `● SENSITIVE · N` listing every agent
@@ -360,11 +417,24 @@ Screen and webcam frames arrive as a pair:
 
 ---
 
-## 8. MockSocket
+## 8. Socket services
 
-`services/MockSocket.js` mirrors the real Socket's API (`connect`, `close`,
-`send`, `onOpen`, `onMessage`, `onBinary`, `onClose`, `onError`) so swapping
-is a one-line import change.
+`services/Socket.js` (real) and `services/MockSocket.js` (simulator) expose the
+identical API surface (`connect`, `close`, `send`, `onOpen`, `onMessage`,
+`onBinary`, `onClose`, `onError`). `services/index.js` picks one and exports it
+as `AgentSocket`; `UseAgentSocket` imports only from `../services`.
+
+### `Socket.js` (real WebSocket)
+- Target URL from `import.meta.env.VITE_GATEWAY_URL`, fallback
+  `ws://localhost:8080`.
+- `binaryType = "arraybuffer"` so image/video frames arrive as `ArrayBuffer`.
+- `onmessage` splits `typeof data === 'string'` (JSON → `onMessage`) from
+  binary (`ArrayBuffer` → `onBinary`), matching the frame_meta + binary pair.
+- Auto-reconnect with exponential backoff (500 ms base, 8 s cap); reset on a
+  clean open; suppressed after a user `close()`.
+- Keeps `ConnectionStore.status` in sync (`connecting` / `open` / `closed`).
+
+### MockSocket
 
 - 7 fake agents cover every UI state: Windows online / offline,
   in-session, Ubuntu, macOS, and one agent (`agent-06`) that always denies
@@ -381,6 +451,9 @@ is a one-line import change.
 - Consent-denied agents reply `keylog_denied` / `webcam_denied` instead of
   the corresponding `*_started`.
 - Power replies `power_result` with `confirmed: true`.
+- `policy_update` is stored in RAM; the whitelist then drives each app's
+  `in_whitelist` in `app_list_result`, and the mock replies
+  `policy_update_result` per agent — a full end-to-end policy demo.
 - All timers (frame streams, keylog streams, connect timer) are cancelled on
   `close()`.
 
@@ -399,7 +472,13 @@ is a one-line import change.
   top, event handlers next, JSX at the bottom.
 - **Styling**: CSS in `src/index.css` and `src/App.css`. Tokens live at the
   top of `index.css` and are flipped by the `data-theme="dark"` attribute
-  set by `App.jsx`. Two palette groups coexist:
+  set by `App.jsx`. A spacing scale (`--space-1..6`) and radius scale
+  (`--radius-sm/md/lg`) are theme-independent and used by newer rules.
+  Shared helpers: `.spin` (generic icon spinner), `.transparency-dot`
+  (red pulsing sensitive-activity dot), `.conn-banner` (offline strip),
+  `.module-offline` (offline module state), `.screen-tab__consent-badge`
+  (webcam consent), and the `.power-tab__grid` / `.power-modal__*` classes.
+  Two palette groups coexist:
   - Theme-tinted tokens (`--danger`, `--warning`, `--accent`, ...) shift
     between light and dark.
   - Solid alert tokens (`--danger-solid`, `--danger-solid-glow`,
@@ -416,16 +495,17 @@ is a one-line import change.
 
 ## 10. Mock → real switch
 
-- Only two files know that the mock exists: `services/MockSocket.js` (the
-  mock itself) and `hooks/UseAgentSocket.js` (the one `import MockSocket`
-  line, marked with a `TODO` comment).
-- `services/Socket.js` is the placeholder for the real WebSocket wrapper.
-  It must expose the same surface as `MockSocket`
-  (`connect`, `close`, `send`, `onOpen`, `onMessage`, `onBinary`, `onClose`,
-  `onError`). Once implemented, changing the import line in
-  `UseAgentSocket.js` from `MockSocket` to `Socket` is the only edit
-  required — no component or store change is needed.
-- `ConnectionStore.gateway_url` holds the URL the real socket will target.
+- `services/index.js` is the ONLY place that chooses mock vs real. It reads
+  `import.meta.env.VITE_USE_MOCK`: any value other than the string `"false"`
+  keeps the mock (default), `"false"` uses the real `Socket`. No import edit is
+  needed to switch — just the env flag.
+- `hooks/UseAgentSocket.js` imports `AgentSocket` from `../services` and never
+  references `MockSocket` or `Socket` directly.
+- Both socket classes expose the same surface (`connect`, `close`, `send`,
+  `onOpen`, `onMessage`, `onBinary`, `onClose`, `onError`), so no component or
+  store change is ever needed.
+- Real Gateway URL comes from `VITE_GATEWAY_URL` (fallback `ws://localhost:8080`);
+  `ConnectionStore.gateway_url` mirrors the same default for display.
 - The `target_agents` fan-out semantics that `sendCommand` relies on need
   explicit confirmation from the Gateway team; the TODO note is in
   `UseAgentSocket.js`.

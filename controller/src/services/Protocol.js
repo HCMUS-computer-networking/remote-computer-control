@@ -8,9 +8,10 @@
 export const MSG_TYPE =
 {
     // TX — Controller sends to Gateway
-    LIST_AGENTS : "list_agents",   // request current agent list
-    REQUEST     : "request",       // generic wrapper for almost all commands
-    POWER       : "power",         // power action (special type, not "request")
+    LIST_AGENTS   : "list_agents",   // request current agent list
+    REQUEST       : "request",       // generic wrapper for almost all commands
+    POWER         : "power",         // power action (special type, not "request")
+    POLICY_UPDATE : "policy_update", // push app_whitelist + sandbox_path to agents
 
     // RX — Gateway / Agent sends to Controller
     AGENTS_LIST       : "agents_list",        // reply to list_agents
@@ -35,6 +36,7 @@ export const MSG_TYPE =
     FS_PUT_COMPLETE   : "fs_put_complete",    // agent confirms the full file is saved
     FS_ERROR          : "fs_error",           // file operation error (e.g. path outside sandbox)
     POWER_RESULT      : "power_result",       // agent confirms or denies the power action
+    POLICY_UPDATE_RESULT : "policy_update_result", // agent confirms it applied the pushed policy
 }
 
 // ─── Module name constants (value of the "module" field in REQUEST messages) ─
@@ -104,6 +106,221 @@ export function parseMessage(raw)
     }
 }
 
+// ─── Incoming adapter (real Gateway/Agent JSON → canonical shape) ─────────────
+//
+// The real Gateway/Agent may name fields slightly differently from our mock
+// (e.g. "agentId" instead of "agent_id", "procs" instead of "processes").
+// This adapter rewrites every incoming message into the ONE canonical shape the
+// store + dispatch table already expect, so no component/store code changes.
+//
+// The canonical shape per type is exactly what MockSocket produces today and
+// what dispatchMessage() in UseAgentSocket reads. See the field map below.
+//
+// HOW TO EXTEND — when you see a real message with a different field name:
+//   1) add the real name to the alias array (marked "EDIT POINT" below), or
+//   2) add / adjust the per-type normalizer in NORMALIZERS.
+// Everything defaults to identity, so an unknown message passes through safely.
+
+// Return the first present value among the given alias keys, else fallback.
+// Used to accept several possible source names for one canonical field.
+function pickField(obj, alias_keys, fallback)
+{
+    for (const key of alias_keys)
+    {
+        if (obj != null && obj[key] !== undefined) return obj[key]
+    }
+    return fallback
+}
+
+// ── Type-name aliases (real "type" string → canonical MSG_TYPE) ──────────────
+// EDIT POINT: left side = whatever the real server sends; right = our constant.
+// Identity entries are omitted — unknown types keep their original name.
+const TYPE_ALIASES =
+{
+    // "agentList"       : MSG_TYPE.AGENTS_LIST,     // example: camelCase variant
+    // "processList"     : MSG_TYPE.PROC_LIST_RESULT,
+    // "frameMeta"       : MSG_TYPE.FRAME_META,
+}
+
+// ── Common field aliases shared by many message types ───────────────────────
+// EDIT POINT: add real source names here; the FIRST match wins.
+const AGENT_ID_ALIASES  = ['agent_id', 'agentId', 'agentID', 'machine_id']   // → agent_id
+const TIMESTAMP_ALIASES = ['timestamp_ms', 'ts', 'time', 'timestamp']        // → timestamp_ms
+
+// Copy the canonical agent_id onto a message from any accepted alias.
+// Every per-agent RX message needs agent_id for store keying.
+function withAgentId(msg, src)
+{
+    const agent_id = pickField(src, AGENT_ID_ALIASES)
+    if (agent_id !== undefined) msg.agent_id = agent_id
+    return msg
+}
+
+// Normalize one agent record inside agents_list.
+// Canonical: { id, name, os, ip, online, in_session }
+function normalizeAgent(a)
+{
+    return {
+        id         : pickField(a, ['id', 'agent_id', 'agentId']),
+        name       : pickField(a, ['name', 'hostname', 'machine_name']),
+        os         : pickField(a, ['os', 'os_name', 'platform']),
+        ip         : pickField(a, ['ip', 'ip_addr', 'address']),
+        online     : pickField(a, ['online', 'is_online', 'connected'], false),
+        in_session : pickField(a, ['in_session', 'inSession', 'busy'], false),
+    }
+}
+
+// Normalize one app record inside app_list_result.
+// Canonical: { name, display_name, status, cpu_percent, ram_mb, in_whitelist }
+function normalizeApp(a)
+{
+    return {
+        name         : pickField(a, ['name', 'app_name']),
+        display_name : pickField(a, ['display_name', 'displayName', 'title']),
+        status       : pickField(a, ['status', 'state']),
+        cpu_percent  : pickField(a, ['cpu_percent', 'cpu', 'cpuPercent'], 0),
+        ram_mb       : pickField(a, ['ram_mb', 'ram', 'memory_mb'], 0),
+        in_whitelist : pickField(a, ['in_whitelist', 'whitelisted', 'allowed'], false),
+    }
+}
+
+// Normalize one process record inside proc_list_result.
+// Canonical: { pid, name, cpu_percent, ram_mb }
+function normalizeProc(p)
+{
+    return {
+        pid         : pickField(p, ['pid', 'process_id']),
+        name        : pickField(p, ['name', 'proc_name', 'image_name']),
+        cpu_percent : pickField(p, ['cpu_percent', 'cpu', 'cpuPercent'], 0),
+        ram_mb      : pickField(p, ['ram_mb', 'ram', 'memory_mb'], 0),
+    }
+}
+
+// Normalize one keystroke event inside a keylog batch.
+// Canonical: { key, ctrl, alt, shift, timestamp_ms }
+function normalizeKeyEvent(e)
+{
+    return {
+        key          : pickField(e, ['key', 'k', 'char']),
+        ctrl         : pickField(e, ['ctrl', 'ctrlKey'], false),
+        alt          : pickField(e, ['alt', 'altKey'], false),
+        shift        : pickField(e, ['shift', 'shiftKey'], false),
+        timestamp_ms : pickField(e, TIMESTAMP_ALIASES),
+    }
+}
+
+// Normalize one filesystem entry inside fs_list_result.
+// Canonical: { name, type, size, modified_ms }
+function normalizeFsEntry(e)
+{
+    return {
+        name        : pickField(e, ['name', 'filename']),
+        type        : pickField(e, ['type', 'kind']),               // "file" | "directory"
+        size        : pickField(e, ['size', 'bytes'], null),
+        modified_ms : pickField(e, ['modified_ms', 'mtime_ms', 'modified'], null),
+    }
+}
+
+// Per-type structural normalizers. Each takes the raw message and returns the
+// canonical message. Types NOT listed here fall through to a shallow copy that
+// only fixes agent_id + timestamp aliases.
+const NORMALIZERS =
+{
+    [MSG_TYPE.AGENTS_LIST]: (m) =>
+    ({
+        type   : MSG_TYPE.AGENTS_LIST,
+        agents : (pickField(m, ['agents', 'agent_list', 'list'], [])).map(normalizeAgent),
+    }),
+
+    [MSG_TYPE.APP_LIST_RESULT]: (m) =>
+        withAgentId({
+            type : MSG_TYPE.APP_LIST_RESULT,
+            apps : (pickField(m, ['apps', 'applications', 'app_list'], [])).map(normalizeApp),
+        }, m),
+
+    [MSG_TYPE.PROC_LIST_RESULT]: (m) =>
+        withAgentId({
+            type      : MSG_TYPE.PROC_LIST_RESULT,
+            processes : (pickField(m, ['processes', 'procs', 'process_list'], [])).map(normalizeProc),
+        }, m),
+
+    [MSG_TYPE.KEYLOG]: (m) =>
+        withAgentId({
+            type   : MSG_TYPE.KEYLOG,
+            events : (pickField(m, ['events', 'keys', 'batch'], [])).map(normalizeKeyEvent),
+        }, m),
+
+    [MSG_TYPE.FRAME_META]: (m) =>
+        withAgentId({
+            type         : MSG_TYPE.FRAME_META,
+            module       : pickField(m, ['module', 'kind', 'source']),         // "screen" | "webcam"
+            w            : pickField(m, ['w', 'width']),
+            h            : pickField(m, ['h', 'height']),
+            len          : pickField(m, ['len', 'length', 'byte_len']),
+            seq          : pickField(m, ['seq', 'sequence', 'frame_no']),
+            timestamp_ms : pickField(m, TIMESTAMP_ALIASES),
+        }, m),
+
+    [MSG_TYPE.FS_LIST_RESULT]: (m) =>
+        withAgentId({
+            type    : MSG_TYPE.FS_LIST_RESULT,
+            path    : pickField(m, ['path', 'dir', 'folder']),
+            entries : (pickField(m, ['entries', 'files', 'items'], [])).map(normalizeFsEntry),
+        }, m),
+
+    [MSG_TYPE.FS_GET_RESULT]: (m) =>
+        withAgentId({
+            type         : MSG_TYPE.FS_GET_RESULT,
+            path         : pickField(m, ['path', 'filepath']),
+            total_size   : pickField(m, ['total_size', 'size', 'totalSize']),
+            chunk_index  : pickField(m, ['chunk_index', 'chunkIndex', 'index'], 0),
+            total_chunks : pickField(m, ['total_chunks', 'totalChunks', 'chunks'], 1),
+            data_base64  : pickField(m, ['data_base64', 'data', 'base64', 'content']),
+        }, m),
+
+    [MSG_TYPE.POWER_RESULT]: (m) =>
+        withAgentId({
+            type      : MSG_TYPE.POWER_RESULT,
+            action    : pickField(m, ['action', 'power_action']),
+            confirmed : pickField(m, ['confirmed', 'success', 'ok'], false),
+            message   : pickField(m, ['message', 'msg', 'detail'], ''),
+        }, m),
+
+    [MSG_TYPE.POLICY_UPDATE_RESULT]: (m) =>
+        withAgentId({
+            type    : MSG_TYPE.POLICY_UPDATE_RESULT,
+            success : pickField(m, ['success', 'ok', 'applied'], false),
+            message : pickField(m, ['message', 'msg', 'detail'], ''),
+        }, m),
+}
+
+// Public entry point — normalize ONE parsed incoming message into canonical shape.
+// UseAgentSocket calls this on every JSON message before dispatchMessage().
+// Safe on already-canonical messages (mock) — they pass through unchanged.
+export function normalizeIncoming(raw_msg)
+{
+    if (raw_msg == null || typeof raw_msg !== 'object') return raw_msg
+
+    // 1) Canonicalize the type name first (camelCase → snake_case, etc.).
+    const canonical_type = TYPE_ALIASES[raw_msg.type] ?? raw_msg.type
+
+    // 2) Run the type-specific normalizer if we have one.
+    const normalizer = NORMALIZERS[canonical_type]
+    if (normalizer)
+    {
+        return normalizer(raw_msg)
+    }
+
+    // 3) Default path: keep the message, but fix the type + shared aliases so
+    //    simple confirm/deny messages (keylog_started, webcam_denied, ...)
+    //    still carry a canonical agent_id + timestamp_ms.
+    const out = { ...raw_msg, type: canonical_type }
+    withAgentId(out, raw_msg)
+    const ts = pickField(raw_msg, TIMESTAMP_ALIASES)
+    if (ts !== undefined) out.timestamp_ms = ts
+    return out
+}
+
 // ─── Connection ───────────────────────────────────────────────────────────────
 
 // Ask the Gateway for the current list of all known agents.
@@ -111,6 +328,23 @@ export function parseMessage(raw)
 export function buildListAgents()
 {
     return buildMessage(MSG_TYPE.LIST_AGENTS, {})
+}
+
+// ─── Policy update (docs/formatjson/PolicyUpdate.json) ───────────────────────
+
+// Push the security policy to one or more agents. The Agent overrides its local
+// config in RAM and replies policy_update_result. Uses its own "policy_update"
+// type (NOT the generic "request").
+// app_whitelist — array of app short-names allowed to Start/Stop.
+// sandbox_path  — Agent sandbox root that file operations are confined to.
+// targetAgents  — array of agent id strings; empty array means all agents.
+export function buildPolicyUpdate(app_whitelist, sandbox_path, targetAgents)
+{
+    return buildMessage(MSG_TYPE.POLICY_UPDATE,
+    {
+        params        : { app_whitelist, sandbox_path },
+        target_agents : targetAgents ?? [],
+    })
 }
 
 // ─── Generic request (all module commands go through this) ───────────────────

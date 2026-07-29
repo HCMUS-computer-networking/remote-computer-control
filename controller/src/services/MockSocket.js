@@ -273,6 +273,12 @@ class MockSocket
         // Active keylog streams keyed by agent_id. Each value is a setInterval ID.
         this._keylog_streams = {};
 
+        // Security policy last pushed by the Controller (policy_update). When set,
+        // app_list computes each app's in_whitelist from this whitelist Set,
+        // simulating the Agent applying the pushed policy in RAM.
+        // Shape: { whitelist: Set<string>, sandbox_path: string } | null
+        this._policy = null;
+
         // Sequence counter per stream key. Increments with every frame.
         this._seq_counters   = {};
 
@@ -410,9 +416,10 @@ class MockSocket
     {
         switch (msg.type)
         {
-            case 'list_agents': this._handleListAgents(msg); break;
-            case 'request':     this._handleRequest(msg);    break;
-            case 'power':       this._handlePower(msg);      break;
+            case 'list_agents':   this._handleListAgents(msg); break;
+            case 'request':       this._handleRequest(msg);    break;
+            case 'power':         this._handlePower(msg);      break;
+            case 'policy_update': this._handlePolicy(msg);     break;
 
             // TODO: add handlers for new top-level message types here
 
@@ -438,12 +445,16 @@ class MockSocket
             case 'app_list':
                 this._replyPerAgent(msg.target_agents, (agent_id) =>
                 {
-                    // Return current stateful app list with fresh random CPU/RAM for running apps
+                    // Return current stateful app list with fresh random CPU/RAM for running apps.
+                    // in_whitelist is derived from the pushed policy when present,
+                    // simulating the Agent applying the Controller's whitelist.
+                    const policy_set = this._policy?.whitelist
                     const apps = this._getApps(agent_id).map((a) =>
                     ({
                         ...a,
-                        cpu_percent : a.status === 'running' ? randomFloat(0.1, 15) : 0,
-                        ram_mb      : a.status === 'running' ? randomInt(5, 500)     : 0,
+                        in_whitelist : policy_set ? policy_set.has(a.name) : a.in_whitelist,
+                        cpu_percent  : a.status === 'running' ? randomFloat(0.1, 15) : 0,
+                        ram_mb       : a.status === 'running' ? randomInt(5, 500)     : 0,
                     }))
                     return { type: 'app_list_result', agent_id, apps }
                 },
@@ -715,6 +726,26 @@ class MockSocket
                     this._reply({ type: 'module_denied', agent_id, module: msg.module, reason: 'unknown module' });
                 });
         }
+    }
+
+    // Apply a pushed security policy and confirm per agent.
+    // Format: docs/formatjson/PolicyUpdate.json → policy_update_result
+    _handlePolicy(msg)
+    {
+        const app_whitelist = msg.params?.app_whitelist ?? []
+        const sandbox_path  = msg.params?.sandbox_path  ?? ''
+
+        // Store in RAM — next app_list uses this whitelist to set in_whitelist.
+        this._policy = { whitelist: new Set(app_whitelist), sandbox_path }
+
+        this._replyPerAgent(msg.target_agents, (agent_id) =>
+        ({
+            type    : 'policy_update_result',
+            agent_id,
+            success : true,
+            message : 'Policy updated successfully on memory',
+        }),
+        350);
     }
 
     _handlePower(msg)

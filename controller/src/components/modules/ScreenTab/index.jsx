@@ -16,7 +16,7 @@
 // It never touches the socket directly — all commands go via useAgentSocket.
 
 import { useState, useEffect, useRef } from 'react'
-import { Camera, Play, Square }        from 'lucide-react'
+import { Camera, Play, Square, WifiOff } from 'lucide-react'
 import useModuleStore                   from '../../../store/ModuleStore'
 import useAgentSocket                   from '../../../hooks/UseAgentSocket'
 import
@@ -99,7 +99,7 @@ function ScreenTab({ agent })
                     <button
                         className="screen-tab__btn screen-tab__btn--secondary"
                         onClick={handleScreenshot}
-                        disabled={streaming}
+                        disabled={streaming || !agent.online}
                         title="Capture a single screenshot"
                     >
                         <Camera size={14} strokeWidth={2} />
@@ -122,6 +122,7 @@ function ScreenTab({ agent })
                             <button
                                 className="screen-tab__btn screen-tab__btn--primary"
                                 onClick={handleStartStream}
+                                disabled={!agent.online}
                                 title="Start 24 fps live stream"
                             >
                                 <Play size={14} strokeWidth={2} />
@@ -142,14 +143,21 @@ function ScreenTab({ agent })
 
             {/* ── Frame display ──────────────────────────────── */}
             <div className="screen-tab__canvas-wrapper">
-                {frame_buffer
-                    ? <FrameCanvas frame_buffer={frame_buffer} width="100%" height="100%" />
-                    : (
+                {!agent.online
+                    ? (
                         <div className="screen-tab__placeholder">
-                            <Camera size={40} strokeWidth={1.25} />
-                            <span>Press "Chụp 1 lần" or "Bắt đầu stream" to see the Agent screen</span>
+                            <WifiOff size={40} strokeWidth={1.25} />
+                            <span>Agent is offline — cannot capture or stream</span>
                         </div>
                     )
+                    : frame_buffer
+                        ? <FrameCanvas frame_buffer={frame_buffer} width="100%" height="100%" />
+                        : (
+                            <div className="screen-tab__placeholder">
+                                <Camera size={40} strokeWidth={1.25} />
+                                <span>Press "Chụp 1 lần" or "Bắt đầu stream" to see the Agent screen</span>
+                            </div>
+                        )
                 }
             </div>
         </div>

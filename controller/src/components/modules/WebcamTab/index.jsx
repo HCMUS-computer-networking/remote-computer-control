@@ -24,7 +24,7 @@
 // directly — every command goes through useAgentSocket.
 
 import { useState, useEffect, useRef } from 'react'
-import { Video, VideoOff, ShieldCheck }  from 'lucide-react'
+import { Video, VideoOff, ShieldCheck, WifiOff } from 'lucide-react'
 import useModuleStore                    from '../../../store/ModuleStore'
 import useAgentSocket                    from '../../../hooks/UseAgentSocket'
 import
@@ -120,6 +120,7 @@ function WebcamTab({ agent })
                             <button
                                 className="screen-tab__btn screen-tab__btn--primary"
                                 onClick={handleStart}
+                                disabled={!agent.online}
                                 title="Ask the Agent for webcam consent and start streaming"
                             >
                                 <Video size={14} strokeWidth={2} />
@@ -137,17 +138,16 @@ function WebcamTab({ agent })
                     // LED so the operator can see at a glance that the remote
                     // machine is actively broadcasting its webcam.
                     <span
-                        className="screen-tab__live-badge"
-                        style={{ background: 'var(--danger-deep)', color: 'var(--on-danger)' }}
+                        className="screen-tab__consent-badge screen-tab__consent-badge--on"
                         title="Agent granted consent — webcam is broadcasting"
                     >
-                        <ShieldCheck size={12} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                        <ShieldCheck size={12} strokeWidth={2.5} />
                         ● CAM ON · {WEBCAM_FPS} fps
                     </span>
                 )}
                 {streaming && !webcam_active && (
                     // Waiting on the Agent user to accept the consent popup.
-                    <span className="screen-tab__live-badge" style={{ background: 'var(--warning-solid)', color: 'var(--on-warning-solid)' }}>
+                    <span className="screen-tab__consent-badge screen-tab__consent-badge--waiting">
                         Waiting for consent…
                     </span>
                 )}
@@ -156,7 +156,14 @@ function WebcamTab({ agent })
 
             {/* ── Frame display (shared template) ────────────── */}
             <div className="screen-tab__canvas-wrapper">
-                {frame_buffer
+                {!agent.online
+                    ? (
+                        <div className="screen-tab__placeholder">
+                            <WifiOff size={40} strokeWidth={1.25} />
+                            <span>Agent is offline — webcam unavailable</span>
+                        </div>
+                    )
+                    : frame_buffer
                     ? (
                         // Use the SHARED FrameCanvas template — same decoder /
                         // renderer that Livescreen uses. Passing module="webcam"

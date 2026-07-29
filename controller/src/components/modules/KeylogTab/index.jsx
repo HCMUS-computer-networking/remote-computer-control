@@ -103,10 +103,11 @@ function KeylogTab({ agent })
             <div className="keylog-tab__toolbar">
 
                 <div className="keylog-tab__title-group">
-                    {/* Consent indicator — always visible; pulses red while active */}
+                    {/* Consent indicator — always visible; pulses red while active.
+                        Shows OFFLINE when the agent is unreachable. */}
                     <span className={`keylog-tab__indicator${is_active ? ' keylog-tab__indicator--live' : ''}`}>
                         <Circle size={8} fill="currentColor" />
-                        {is_active ? 'LIVE' : 'IDLE'}
+                        {!agent.online ? 'OFFLINE' : is_active ? 'LIVE' : 'IDLE'}
                     </span>
                     <span className="keylog-tab__title">
                         Input Activity — {agent.name}
@@ -119,7 +120,8 @@ function KeylogTab({ agent })
                             <button
                                 className="action-btn action-btn--start"
                                 onClick={handleStart}
-                                title="Start keylog (requires Agent consent)"
+                                disabled={!agent.online}
+                                title={agent.online ? 'Start keylog (requires Agent consent)' : 'Agent is offline'}
                             >
                                 <Play size={12} /> Start
                             </button>
@@ -164,7 +166,7 @@ function KeylogTab({ agent })
                     ? (
                         <div className="keylog-tab__empty">
                             <Keyboard size={32} strokeWidth={1.25} />
-                            <span>No events — press Start to begin capturing.</span>
+                            <span>{agent.online ? 'No events — press Start to begin capturing.' : 'Agent is offline — no input to capture.'}</span>
                         </div>
                     )
                     : events.map((evt, i) => (

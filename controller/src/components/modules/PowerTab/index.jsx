@@ -18,7 +18,7 @@
 // All commands go through useAgentSocket — never touch the socket directly.
 
 import { useState, useEffect, useRef } from 'react'
-import { Lock, RotateCcw, Power, Moon, X } from 'lucide-react'
+import { Lock, RotateCcw, Power, Moon, X, WifiOff } from 'lucide-react'
 import useAgentSocket from '../../../hooks/UseAgentSocket'
 import useUiStore     from '../../../store/UiStore'
 import { buildPower, POWER_ACTION } from '../../../services/Protocol'
@@ -92,44 +92,27 @@ function CountdownModal({ action, label, agent, onConfirm, onCancel })
             aria-modal="true"
             aria-labelledby="power-modal-title"
             onClick={onCancel}   // click outside to cancel
-            style={{
-                position: 'fixed', inset: 0, background: 'var(--overlay-scrim)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                zIndex: 1000,
-            }}
         >
             <div
                 className="power-modal__card"
                 onClick={function (e) { e.stopPropagation() }}
-                style={{
-                    background: 'var(--bg-elevated)',
-                    color: 'var(--text-primary)',
-                    borderRadius: 8,
-                    padding: '20px 24px',
-                    minWidth: 340,
-                    maxWidth: 420,
-                    boxShadow: 'var(--shadow-modal)',
-                }}
             >
-                <div id="power-modal-title" style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+                <div id="power-modal-title" className="power-modal__title">
                     Confirm {label}
                 </div>
 
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+                <div className="power-modal__msg">
                     About to <strong>{label.toLowerCase()}</strong> agent <strong>{agent.name}</strong>.
                     Click Cancel to abort.
                 </div>
 
-                {/* Large visible countdown so the operator cannot miss it */}
-                <div style={{
-                    fontSize: 48, fontWeight: 700, textAlign: 'center',
-                    color: remaining <= 3 ? 'var(--danger-deep)' : 'var(--text-primary)',
-                    marginBottom: 16, fontVariantNumeric: 'tabular-nums',
-                }}>
+                {/* Large visible countdown so the operator cannot miss it.
+                    Turns danger-red in the final 3 seconds. */}
+                <div className={`power-modal__count${remaining <= 3 ? ' power-modal__count--urgent' : ''}`}>
                     {remaining}s
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <div className="power-modal__actions">
                     <button
                         className="screen-tab__btn screen-tab__btn--secondary"
                         onClick={onCancel}
@@ -196,48 +179,51 @@ function PowerTab({ agent })
                 </span>
             </div>
 
+            {/* Offline note — power actions cannot reach an unreachable agent. */}
+            {!agent.online && (
+                <div className="module-offline">
+                    <WifiOff size={40} strokeWidth={1.25} />
+                    <span>Agent is offline — power actions are unavailable</span>
+                </div>
+            )}
+
             {/* ── Action grid ────────────────────────────────── */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                gap: 12,
-                padding: 16,
-            }}>
+            <div className="power-tab__grid">
                 <button
-                    className="screen-tab__btn screen-tab__btn--secondary"
+                    className="screen-tab__btn screen-tab__btn--secondary power-tab__btn"
                     onClick={handleLock}
+                    disabled={!agent.online}
                     title="Lock the Agent screen immediately"
-                    style={{ padding: 16, justifyContent: 'center' }}
                 >
                     <Lock size={16} strokeWidth={2} />
                     Lock (ngay lập tức)
                 </button>
 
                 <button
-                    className="screen-tab__btn screen-tab__btn--primary"
+                    className="screen-tab__btn screen-tab__btn--primary power-tab__btn"
                     onClick={function () { askConfirm(POWER_ACTION.RESTART, 'Restart') }}
+                    disabled={!agent.online}
                     title="Restart the Agent machine after a 10-second countdown"
-                    style={{ padding: 16, justifyContent: 'center' }}
                 >
                     <RotateCcw size={16} strokeWidth={2} />
                     Restart (10s)
                 </button>
 
                 <button
-                    className="screen-tab__btn screen-tab__btn--danger"
+                    className="screen-tab__btn screen-tab__btn--danger power-tab__btn"
                     onClick={function () { askConfirm(POWER_ACTION.SHUTDOWN, 'Shutdown') }}
+                    disabled={!agent.online}
                     title="Shut down the Agent machine after a 10-second countdown"
-                    style={{ padding: 16, justifyContent: 'center' }}
                 >
                     <Power size={16} strokeWidth={2} />
                     Shutdown (10s)
                 </button>
 
                 <button
-                    className="screen-tab__btn screen-tab__btn--secondary"
+                    className="screen-tab__btn screen-tab__btn--secondary power-tab__btn"
                     onClick={function () { askConfirm(POWER_ACTION.SLEEP, 'Sleep') }}
+                    disabled={!agent.online}
                     title="Put the Agent machine to sleep after a 10-second countdown"
-                    style={{ padding: 16, justifyContent: 'center' }}
                 >
                     <Moon size={16} strokeWidth={2} />
                     Sleep (10s)
