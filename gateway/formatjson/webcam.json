@@ -1,0 +1,69 @@
+{
+  "_comment": "Webcam module messages — Controller <-> Gateway <-> Agent",
+  "_consent_note": "Agent MUST display a visible on-screen indicator while webcam is active. User consent is required before any frames are sent.",
+  "_binary_note": "Frames use the same two-message pattern as livescreen: JSON 'frame_meta' followed by binary JPEG (ArrayBuffer).",
+
+  "controller_to_gateway": {
+
+    "webcam_start": {
+      "_desc": "Request agent to start streaming webcam frames (requires user consent on Agent side)",
+      "type": "request",
+      "module": "webcam_start",
+      "params": {
+        "fps": 15,
+        "quality": 60
+      },
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "webcam_stop": {
+      "_desc": "Stop the webcam stream",
+      "type": "request",
+      "module": "webcam_stop",
+      "params": {},
+      "target_agents": ["PC-Lab-01"]
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "frame_meta_webcam": {
+      "_desc": "Sent immediately BEFORE the binary JPEG frame. module field is 'webcam' to distinguish from screen frames.",
+      "type": "frame_meta",
+      "module": "webcam",
+      "agent_id": "PC-Lab-01",
+      "w": 640,
+      "h": 480,
+      "len": 18700,
+      "seq": 1,
+      "timestamp_ms": 1720000005000
+    },
+
+    "binary_frame": {
+      "_desc": "Raw JPEG bytes (ArrayBuffer). Always follows a frame_meta with module='webcam'.",
+      "format": "ArrayBuffer (raw JPEG bytes)",
+      "size_bytes": "matches frame_meta.len"
+    },
+
+    "webcam_started": {
+      "_desc": "Agent confirms webcam stream is active (user granted consent)",
+      "type": "webcam_started",
+      "agent_id": "PC-Lab-01"
+    },
+
+    "webcam_stopped": {
+      "_desc": "Agent confirms webcam stream has stopped",
+      "type": "webcam_stopped",
+      "agent_id": "PC-Lab-01"
+    },
+
+    "webcam_denied": {
+      "_desc": "Agent reports that the user denied the consent popup",
+      "type": "webcam_denied",
+      "agent_id": "PC-Lab-01",
+      "reason": "User declined permission"
+    }
+
+  }
+}

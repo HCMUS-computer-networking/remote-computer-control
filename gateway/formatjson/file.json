@@ -1,0 +1,97 @@
+{
+  "_comment": "File module messages — Controller <-> Gateway <-> Agent",
+  "_sandbox_note": "ALL file operations are restricted to the Agent's designated sandbox directory. Paths outside the sandbox are rejected by the Agent.",
+
+  "controller_to_gateway": {
+
+    "fs_list": {
+      "_desc": "List files and folders inside a sandbox path",
+      "type": "request",
+      "module": "fs_list",
+      "params": {
+        "path": "/"
+      },
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "fs_get": {
+      "_desc": "Download a file from the agent's sandbox",
+      "type": "request",
+      "module": "fs_get",
+      "params": {
+        "path": "/reports/log.txt"
+      },
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "fs_put": {
+      "_desc": "Upload a file to the agent's sandbox. File content is sent in base64 chunks or as a binary follow-up (TODO: confirm with team which encoding to use).",
+      "type": "request",
+      "module": "fs_put",
+      "params": {
+        "path": "/uploads/data.csv",
+        "total_size": 20480,
+        "chunk_index": 0,
+        "total_chunks": 4,
+        "data_base64": "<base64-encoded-chunk>"
+      },
+      "target_agents": ["PC-Lab-01"]
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "fs_list_result": {
+      "_desc": "Directory listing returned by the agent",
+      "type": "fs_list_result",
+      "agent_id": "PC-Lab-01",
+      "path": "/",
+      "entries": [
+        { "name": "reports",  "type": "directory", "size": null,  "modified_ms": 1719900000000 },
+        { "name": "uploads",  "type": "directory", "size": null,  "modified_ms": 1719900001000 },
+        { "name": "readme.txt", "type": "file",    "size": 1024,  "modified_ms": 1719900002000 }
+      ]
+    },
+
+    "fs_get_result": {
+      "_desc": "File content returned by the agent (base64 encoded). For large files, may be chunked.",
+      "type": "fs_get_result",
+      "agent_id": "PC-Lab-01",
+      "path": "/reports/log.txt",
+      "total_size": 1024,
+      "chunk_index": 0,
+      "total_chunks": 1,
+      "data_base64": "<base64-encoded-content>"
+    },
+
+    "fs_put_result": {
+      "_desc": "Agent acknowledges receipt of an upload chunk",
+      "type": "fs_put_result",
+      "agent_id": "PC-Lab-01",
+      "path": "/uploads/data.csv",
+      "chunk_index": 0,
+      "success": true,
+      "message": "Chunk received"
+    },
+
+    "fs_put_complete": {
+      "_desc": "Agent confirms the full file has been received and saved",
+      "type": "fs_put_complete",
+      "agent_id": "PC-Lab-01",
+      "path": "/uploads/data.csv",
+      "success": true,
+      "message": "File saved successfully"
+    },
+
+    "fs_error": {
+      "_desc": "Agent reports a file operation error (path outside sandbox, permission denied, etc.)",
+      "type": "fs_error",
+      "agent_id": "PC-Lab-01",
+      "operation": "fs_get",
+      "path": "../../secret.txt",
+      "message": "Path is outside the sandbox"
+    }
+
+  }
+}
