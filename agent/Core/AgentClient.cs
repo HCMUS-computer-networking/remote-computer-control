@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using AgentSystem.Managers;
@@ -20,6 +20,19 @@ namespace AgentSystem.Core
         
         // THÊM: Registry tự động
         private readonly Dictionary<string, BaseModule> _moduleRegistry;
+        
+        // THÊM: Quản lý phân quyền
+        private readonly HashSet<string> _grantedFeatures = new HashSet<string>();
+        private readonly Dictionary<string, string> _commandToFeatureMap = new Dictionary<string, string>
+        {
+            { "app_list", "application" }, { "app_start", "application" }, { "app_stop", "application" },
+            { "proc_list", "process" }, { "proc_kill", "process" },
+            { "screenshot", "screen" }, { "screen_stream", "screen" }, { "screen_stream_stop", "screen" },
+            { "keylog_start", "keylog" }, { "keylog_stop", "keylog" },
+            { "fs_list", "file" }, { "fs_get", "file" }, { "fs_put", "file" },
+            { "webcam_start", "webcam" }, { "webcam_stop", "webcam" },
+            { "power", "power" }
+        };
 
         // SỬA: Constructor nhận Dependencies
         public AgentClient(string agentId, string gatewayUrl, SecurityManager security, UIManager ui, IEnumerable<BaseModule> injectedModules)
@@ -65,7 +78,7 @@ namespace AgentSystem.Core
             }
         }
 
-        public void Start() { /* Nội dung giữ nguyên */ wsClient.Connect(); SendResponse(new { type = "REGISTER", agent_id = AgentId }); }
+        public void Start() { /* Nội dung giữ nguyên */ wsClient.Connect(); }
         public void Stop() { /* Nội dung giữ nguyên */ wsClient.Disconnect(); }
         public void SendResponse(object responseData) { /* Nội dung giữ nguyên */ string json = JsonSerializer.Serialize(responseData); wsClient.SendText(json); }
         public void SendBinaryFrame(byte[] bytes) { /* Nội dung giữ nguyên */ wsClient.SendBinary(bytes); }
@@ -119,8 +132,79 @@ namespace AgentSystem.Core
                 return;
             }
 
+            if (packet.Type == "permission_request")
+            {
+                _ = Task.Run(async () =>
+                {
+                    bool granted = await UIManager.ShowConsentPopupAsync(packet.Feature, 30000);
+                    if (granted)
+                    {
+                        lock (_grantedFeatures)
+                        {
+                            _grantedFeatures.Add(packet.Feature);
+                        }
+                    }
+                    SendResponse(new 
+                    { 
+                        type = "permission_result", 
+                        agent_id = AgentId, 
+                        feature = packet.Feature, 
+                        granted = granted 
+                    });
+                });
+                return;
+            }
+
+            if (packet.Type == "permission_revoke")
+            {
+                lock (_grantedFeatures)
+                {
+                    _grantedFeatures.Remove(packet.Feature);
+                }
+                return;
+            }
+
+            if (packet.Type == "stop_module")
+            {
+                string commandToStop = packet.Feature switch
+                {
+                    "screen" => "screen_stream_stop",
+                    "keylog" => "keylog_stop",
+                    "webcam" => "webcam_stop",
+                    _ => null
+                };
+                
+                if (commandToStop != null && _moduleRegistry.TryGetValue(commandToStop, out BaseModule mod))
+                {
+                    _ = Task.Run(async () => await mod.ExecuteAsync(commandToStop, packet.Params, packet.CommandId));
+                }
+                return;
+            }
+
             // SỬA: Định tuyến thông minh, gộp chung xử lý cho mọi module kể cả Power
             string routingKey = packet.Module ?? packet.Type; 
+            
+            // THÊM: Gate kiểm tra quyền
+            if (_commandToFeatureMap.TryGetValue(routingKey, out string requiredFeature))
+            {
+                bool hasPermission;
+                lock (_grantedFeatures)
+                {
+                    hasPermission = _grantedFeatures.Contains(requiredFeature);
+                }
+                
+                if (!hasPermission)
+                {
+                    SendResponse(new { 
+                        type = "module_error", 
+                        agent_id = AgentId, 
+                        feature = requiredFeature, 
+                        message = "Chưa được cấp quyền" 
+                    });
+                    return;
+                }
+            }
+
             if (routingKey != null && _moduleRegistry.TryGetValue(routingKey, out BaseModule module))
             {
                 // Sử dụng Fire-and-Forget Task với async/await

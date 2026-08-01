@@ -7,7 +7,10 @@ using System.Threading.Tasks;
 using Timer = System.Threading.Timer;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using System.Net;
+using System.Net.Sockets;
 using Serilog;
+using AgentSystem.Managers;
 
 namespace AgentSystem.Core
 {
@@ -44,12 +47,6 @@ namespace AgentSystem.Core
         {
             try
             {
-                // 1. Kiểm tra bắt buộc phải dùng WSS
-                if (!url.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
-                {
-                    Log.Warning("[CẢNH BÁO] Hệ thống đang yêu cầu chạy WSS, nhưng cấu hình là WS. Cố gắng kết nối không an toàn...");
-                }
-
                 cts = new CancellationTokenSource();
                 webSocket = new ClientWebSocket();
 
@@ -66,12 +63,23 @@ namespace AgentSystem.Core
                     return true; 
                 };
 
-                Log.Information("[WebSocket] Đang kết nối bảo mật (TLS) tới {url}...", url);
-                await webSocket.ConnectAsync(new Uri(url), cts.Token);
-                Log.Information("[WebSocket] KẾT NỐI BẢO MẬT WSS THÀNH CÔNG!");
+                string finalUrl = $"{url.TrimEnd('/')}/agent?key={ConfigManager.Current.AuthKey}";
+                Log.Information("[WebSocket] Đang kết nối tới {finalUrl}...", finalUrl);
+                await webSocket.ConnectAsync(new Uri(finalUrl), cts.Token);
+                Log.Information("[WebSocket] KẾT NỐI THÀNH CÔNG!");
                 
                 isReconnecting = false;
-                context.SendResponse(new { type = "REGISTER", agent_id = context.AgentId });
+                
+                string ip = Dns.GetHostAddresses(Dns.GetHostName())
+                    .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork)?.ToString() ?? "unknown";
+
+                context.SendResponse(new { 
+                    type = "REGISTER", 
+                    agent_id = context.AgentId,
+                    hostname = Environment.MachineName,
+                    ip = ip,
+                    os = Environment.OSVersion.ToString()
+                });
                 StartHeartbeat();
                 _ = ReceiveLoopAsync();
             }
@@ -222,13 +230,23 @@ namespace AgentSystem.Core
                 try
                 {
                     webSocket = new ClientWebSocket();
-                    await webSocket.ConnectAsync(new Uri(url), cts.Token);
+                    string finalUrl = $"{url.TrimEnd('/')}/agent?key={ConfigManager.Current.AuthKey}";
+                    await webSocket.ConnectAsync(new Uri(finalUrl), cts.Token);
                     
                     Log.Information("[WebSocket] TÁI KẾT NỐI THÀNH CÔNG!");
                     isReconnecting = false;
                     
+                    string ip = Dns.GetHostAddresses(Dns.GetHostName())
+                        .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork)?.ToString() ?? "unknown";
+
                     // Gửi lại gói đăng ký AgentId sau khi có kết nối mới
-                    context.SendResponse(new { type = "REGISTER" }); 
+                    context.SendResponse(new { 
+                        type = "REGISTER", 
+                        agent_id = context.AgentId,
+                        hostname = Environment.MachineName,
+                        ip = ip,
+                        os = Environment.OSVersion.ToString()
+                    }); 
                     
                     StartHeartbeat();
                     _ = ReceiveLoopAsync();

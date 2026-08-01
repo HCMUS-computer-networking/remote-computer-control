@@ -22,5 +22,8 @@ namespace AgentSystem.Models
 
         [JsonPropertyName("target_agents")]
         public string[] TargetAgents { get; set; }
+
+        [JsonPropertyName("feature")]
+        public string Feature { get; set; }
     }
 }

