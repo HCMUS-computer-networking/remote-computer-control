@@ -1,46 +1,65 @@
-# Controller
+# Controller — Đồ án Điều khiển máy tính từ xa
 
-Controller là giao diện web dùng để **điều khiển từ xa** các máy Agent trong đồ án "Điều khiển máy tính từ xa". Người dùng (Controller) quan sát danh sách Agent đang kết nối, xem màn hình trực tiếp (live screen), và gửi lệnh điều khiển (file, process, power, keylog, webcam, application...) tới từng Agent thông qua Gateway trung gian.
+**Controller** là giao diện web (SPA) để người quản trị giám sát và điều khiển
+nhiều máy Agent từ xa thông qua một Gateway trung gian bằng WebSocket.
+
+---
 
 ## Tech stack
 
 - **React 19** — UI
-- **Vite** — dev server & build tool
-- **Zustand** — quản lý state (agent, connection, module, UI)
-- **WebSocket** — giao tiếp real-time với Gateway/Agent
+- **Vite** — dev server + build
+- **Zustand** — global state (không dùng Redux / Context)
+- **WebSocket** (native) — giao tiếp real-time với Gateway
+- **lucide-react** — icon
+
+Không dùng TypeScript.
+
+---
 
 ## Cách chạy
 
 ```bash
-npm install
-npm run dev
+npm install        # cài dependencies (chỉ cần lần đầu)
+npm run dev        # dev server → http://localhost:5173
 ```
 
-Các lệnh khác:
+Lệnh khác: `npm run build`, `npm run preview`, `npm run lint`.
 
-```bash
-npm run build     # build production
-npm run preview   # preview bản build
-npm run lint      # kiểm tra lint với oxlint
-```
+---
 
-## Cấu trúc thư mục
+## Cấu trúc thư mục (tóm tắt)
 
 ```
 src/
-├── assets/            # hình ảnh, icon tĩnh
-├── components/
-│   ├── agents/        # danh sách, card, chọn agent
-│   ├── layout/         # sidebar, topbar, theme toggle
-│   ├── livescreen/     # xem màn hình agent (grid/focus view)
-│   └── modules/        # các tab chức năng: File, Process, Power, Keylog, Webcam, Application, Screen
-├── hooks/              # custom hooks (vd: UseAgentSocket)
-├── services/           # Socket.js, MockSocket.js, Protocol.js
-├── store/              # Zustand store: Agent, Connection, Module, UI
-├── App.jsx
-└── main.jsx
+├── App.jsx, main.jsx        # entry + shell
+├── store/                   # 6 Zustand store (Agent / Connection / Module /
+│                            #                  Permission / Policy / Ui)
+├── hooks/UseAgentSocket.js  # singleton hook nối component ↔ socket
+├── services/                # index.js (chọn mock/real), Protocol.js,
+│                            # MockSocket.js, Socket.js, AuthService.js
+└── components/
+    ├── LoginScreen.jsx      # màn đăng nhập admin (JWT)
+    ├── FrameCanvas.jsx      # primitive dùng chung để vẽ JPEG frame
+    ├── ModuleTable.jsx      # primitive dùng chung cho bảng có sort
+    ├── PermissionGate.jsx   # wrapper Connect/Disconnect cho từng module
+    ├── agents/              # sidebar agent list + multi-select
+    ├── layout/              # Sidebar, TopBar, ThemeToggle
+    ├── livescreen/          # Grid view + Focus view
+    └── modules/             # 7 tab: Application, Process, Screen, Keylog,
+                             #        File, Webcam, Power
 ```
 
-## Ghi chú
+Chi tiết kiến trúc, store, luồng dữ liệu, giao thức message xem trong
+[`Architecture.md`](./Architecture.md).
 
-> ⚠️ Hiện tại project đang chạy bằng **`MockSocket`** ([src/services/MockSocket.js](src/services/MockSocket.js)) để giả lập dữ liệu/agent trong lúc phát triển UI. Khi Gateway thật đã sẵn sàng, cần đổi sang **`Socket.js`** ([src/services/Socket.js](src/services/Socket.js)) để kết nối WebSocket thật.
+---
+
+## Trạng thái backend
+
+Hiện tại app chạy bằng **`MockSocket`** (mô phỏng Gateway + Agent ngay trong
+trình duyệt) để phát triển UI không phụ thuộc backend. `MockSocket` và `Socket`
+(WebSocket thật) có cùng API, được chọn tại `src/services/index.js` qua biến môi
+trường `VITE_USE_MOCK`. Khi Gateway thật sẵn sàng, đặt `VITE_USE_MOCK=false`
+(và `VITE_GATEWAY_URL` trỏ tới Gateway) trong file `.env` — không cần sửa
+component hay store.

@@ -1,0 +1,65 @@
+{
+  "_comment": "Process module messages — Controller <-> Gateway <-> Agent",
+  "_note": "All running processes are listed; any process may be killed (no whitelist for kill).",
+
+  "controller_to_gateway": {
+
+    "proc_list": {
+      "_desc": "Request the full process list from one or more agents",
+      "type": "request",
+      "module": "proc_list",
+      "params": {},
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "proc_kill": {
+      "_desc": "Ask agent to terminate a process by its PID",
+      "type": "request",
+      "module": "proc_kill",
+      "params": {
+        "pid": 4512
+      },
+      "target_agents": ["PC-Lab-01"]
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "proc_list_result": {
+      "_desc": "Agent replies with its full process list",
+      "type": "proc_list_result",
+      "agent_id": "PC-Lab-01",
+      "processes": [
+        {
+          "pid": 4,
+          "name": "System",
+          "cpu_percent": 0.0,
+          "ram_mb": 0.1
+        },
+        {
+          "pid": 1234,
+          "name": "chrome.exe",
+          "cpu_percent": 5.2,
+          "ram_mb": 310.4
+        },
+        {
+          "pid": 4512,
+          "name": "notepad.exe",
+          "cpu_percent": 0.0,
+          "ram_mb": 11.2
+        }
+      ]
+    },
+
+    "proc_kill_result": {
+      "_desc": "Agent confirms whether the kill command succeeded",
+      "type": "proc_kill_result",
+      "agent_id": "PC-Lab-01",
+      "pid": 4512,
+      "success": true,
+      "message": "Process terminated"
+    }
+
+  }
+}

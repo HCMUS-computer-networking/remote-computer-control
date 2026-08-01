@@ -1,0 +1,58 @@
+{
+  "_comment": "Power module messages — Controller <-> Gateway <-> Agent",
+  "_safety_note": "Lock executes immediately. Restart / Shutdown / Sleep require a 10-second countdown + user confirmation on the Controller side before the command is sent.",
+
+  "controller_to_gateway": {
+
+    "power_lock": {
+      "_desc": "Lock the agent machine immediately (no countdown needed)",
+      "type": "power",
+      "action": "lock",
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "power_restart": {
+      "_desc": "Restart the agent machine (sent only after Controller 10s countdown completes)",
+      "type": "power",
+      "action": "restart",
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "power_shutdown": {
+      "_desc": "Shut down the agent machine (sent only after Controller 10s countdown completes)",
+      "type": "power",
+      "action": "shutdown",
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "power_sleep": {
+      "_desc": "Put the agent machine to sleep (sent only after Controller 10s countdown completes)",
+      "type": "power",
+      "action": "sleep",
+      "target_agents": ["PC-Lab-01"]
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "power_result": {
+      "_desc": "Agent confirms whether the power action was executed",
+      "type": "power_result",
+      "agent_id": "PC-Lab-01",
+      "action": "restart",
+      "confirmed": true,
+      "message": "System is restarting"
+    },
+
+    "power_result_cancelled": {
+      "_desc": "Used when Controller cancels the countdown before sending — Gateway/Agent may never see this; shown here for reference.",
+      "type": "power_result",
+      "agent_id": "PC-Lab-01",
+      "action": "shutdown",
+      "confirmed": false,
+      "message": "Cancelled by operator"
+    }
+
+  }
+}

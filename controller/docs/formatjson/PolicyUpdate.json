@@ -1,0 +1,36 @@
+{
+  "_comment": "Security Policy module messages — Controller <-> Gateway <-> Agent",
+  "_note": "Agent applies the new Whitelist and Sandbox path into RAM immediately upon receiving a policy_update, overriding local config.",
+
+  "controller_to_gateway": {
+
+    "policy_update": {
+      "_desc": "Push a new security policy (whitelist & sandbox path) to one or more agents",
+      "type": "policy_update",
+      "params": {
+        "app_whitelist": [
+          "notepad",
+          "calc",
+          "chrome",
+          "winword",
+          "vlc"
+        ],
+        "sandbox_path": "C:\\AgentSandbox\\"
+      },
+      "target_agents": ["PC-Lab-01", "PC-Lab-02"]
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "policy_update_result": {
+      "_desc": "Agent confirms the result of applying a policy_update command",
+      "type": "policy_update_result",
+      "agent_id": "PC-Lab-01",
+      "success": true,
+      "message": "Policy updated successfully on memory and disk"
+    }
+
+  }
+}

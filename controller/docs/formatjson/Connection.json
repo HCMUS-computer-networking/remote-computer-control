@@ -1,0 +1,33 @@
+{
+  "_comment": "Connection & Agent list messages — Controller <-> Gateway",
+
+  "controller_to_gateway": {
+
+    "list_agents": {
+      "_desc": "Controller asks Gateway for the current list of agents",
+      "type": "list_agents"
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "agents_list": {
+      "_desc": "Gateway replies with all known agents and their online status",
+      "type": "agents_list",
+      "agents": [
+        { "id": "PC-Lab-01", "name": "PC-Lab-01", "online": true  },
+        { "id": "PC-Lab-02", "name": "PC-Lab-02", "online": true  },
+        { "id": "PC-Lab-03", "name": "PC-Lab-03", "online": false }
+      ]
+    },
+
+    "agent_status": {
+      "_desc": "Gateway pushes a status change when an agent goes online or offline",
+      "type": "agent_status",
+      "agent_id": "PC-Lab-01",
+      "online": false
+    }
+
+  }
+}

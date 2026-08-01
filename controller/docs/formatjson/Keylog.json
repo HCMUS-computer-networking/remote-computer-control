@@ -1,0 +1,76 @@
+{
+  "_comment": "Input Activity (Keylog) module messages — Controller <-> Gateway <-> Agent",
+  "_consent_note": "Agent MUST show a visible permission popup and on-screen indicator before sending any keylog data. Controller only renders what the Agent voluntarily sends.",
+
+  "controller_to_gateway": {
+
+    "keylog_start": {
+      "_desc": "Request agent to start capturing and sending keyboard events (requires user consent on Agent side)",
+      "type": "request",
+      "module": "keylog_start",
+      "params": {},
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "keylog_stop": {
+      "_desc": "Request agent to stop sending keyboard events",
+      "type": "request",
+      "module": "keylog_stop",
+      "params": {},
+      "target_agents": ["PC-Lab-01"]
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "keylog": {
+      "_desc": "Batch of keyboard events pushed by the agent",
+      "type": "keylog",
+      "agent_id": "PC-Lab-01",
+      "events": [
+        {
+          "key": "H",
+          "ctrl": false,
+          "alt": false,
+          "shift": true,
+          "timestamp_ms": 1720000001000
+        },
+        {
+          "key": "e",
+          "ctrl": false,
+          "alt": false,
+          "shift": false,
+          "timestamp_ms": 1720000001120
+        },
+        {
+          "key": "Tab",
+          "ctrl": false,
+          "alt": true,
+          "shift": false,
+          "timestamp_ms": 1720000002000
+        }
+      ]
+    },
+
+    "keylog_started": {
+      "_desc": "Agent confirms keylog is active (user granted consent)",
+      "type": "keylog_started",
+      "agent_id": "PC-Lab-01"
+    },
+
+    "keylog_stopped": {
+      "_desc": "Agent confirms keylog has stopped",
+      "type": "keylog_stopped",
+      "agent_id": "PC-Lab-01"
+    },
+
+    "keylog_denied": {
+      "_desc": "Agent reports that the user denied the consent popup",
+      "type": "keylog_denied",
+      "agent_id": "PC-Lab-01",
+      "reason": "User declined permission"
+    }
+
+  }
+}
