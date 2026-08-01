@@ -10,16 +10,27 @@ namespace AgentSystem.Managers
 {
     public static class ConfigManager
     {
-        private const string ConfigPath = "config.json";
+        private static string GetConfigFilePath()
+        {
+            string baseDirConfig = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+            if (File.Exists(baseDirConfig)) return baseDirConfig;
+            
+            string cwdConfig = Path.Combine(Directory.GetCurrentDirectory(), "config.json");
+            if (File.Exists(cwdConfig)) return cwdConfig;
+
+            return baseDirConfig;
+        }
+
         public static AppConfig Current { get; private set; }
 
         public static void Load()
         {
+            string configPath = GetConfigFilePath();
             try
             {
-                if (File.Exists(ConfigPath))
+                if (File.Exists(configPath))
                 {
-                    string json = File.ReadAllText(ConfigPath);
+                    string json = File.ReadAllText(configPath);
                     Current = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
                 }
                 else
@@ -34,6 +45,7 @@ namespace AgentSystem.Managers
                 }
 
                 Save(); // Lưu lại cấu hình chuẩn
+                Log.Information("[Config] Đã tải config thành công: AgentId={AgentId}, GatewayUrl={GatewayUrl}", Current.AgentId, Current.GatewayUrl);
             }
             catch (Exception ex)
             {
@@ -76,7 +88,7 @@ namespace AgentSystem.Managers
             {
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 string json = JsonSerializer.Serialize(Current, options);
-                File.WriteAllText(ConfigPath, json);
+                File.WriteAllText(GetConfigFilePath(), json);
             }
             catch (Exception ex)
             {

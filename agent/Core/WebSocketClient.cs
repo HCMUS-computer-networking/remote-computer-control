@@ -50,18 +50,14 @@ namespace AgentSystem.Core
                 cts = new CancellationTokenSource();
                 webSocket = new ClientWebSocket();
 
-                // 2. CẤU HÌNH BỎ QUA LỖI CHỨNG CHỈ TỰ KÝ (Chỉ dùng cho môi trường Lab/Nội bộ)
-                // Nếu Gateway có chứng chỉ xịn (Let's Encrypt, Cloudflare), bạn có thể bỏ qua đoạn này.
-                webSocket.Options.RemoteCertificateValidationCallback = delegate (
-                    object sender, 
-                    X509Certificate certificate, 
-                    X509Chain chain, 
-                    SslPolicyErrors sslPolicyErrors) 
+                try
                 {
-                    // Trả về true để chấp nhận mọi chứng chỉ (Kể cả Self-signed)
-                    // Khuyến cáo thực tế: Nên so sánh Hash của chứng chỉ ở đây để chống Fake Server
-                    return true; 
-                };
+                    webSocket.Options.RemoteCertificateValidationCallback = (sender, cert, chain, sslErrors) => true;
+                }
+                catch (Exception certEx)
+                {
+                    Log.Debug(certEx, "[WebSocket] Ignore cert validation config error for non-SSL connection");
+                }
 
                 string finalUrl = $"{url.TrimEnd('/')}/agent?key={ConfigManager.Current.AuthKey}";
                 Log.Information("[WebSocket] Đang kết nối tới {finalUrl}...", finalUrl);

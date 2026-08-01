@@ -1,6 +1,6 @@
 {
   "agent_id": "DUY-5BCD",
-  "gateway_url": "ws://localhost:8080",
+  "gateway_url": "ws://127.0.0.1:8080",
   "auth_key": "agent-secret-key-2024",
   "app_whitelist": [
     "notepad",
@@ -8,5 +8,8 @@
     "chrome",
     "winword"
   ],
-  "sandbox_root_path": "C:\\AgentSandbox\\"
+  "sandbox_root_path": "C:\\AgentSandbox\\",
+  "log_retention_days": 7,
+  "consent_timeout_ms": 30000,
+  "tray_password": ""
 }

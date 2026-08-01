@@ -34,24 +34,23 @@ namespace AgentSystem.Core
             { "power", "power" }
         };
 
-        // SỬA: Constructor nhận Dependencies
-        public AgentClient(string agentId, string gatewayUrl, SecurityManager security, UIManager ui, IEnumerable<BaseModule> injectedModules)
+        public AgentClient(string agentId, string gatewayUrl, SecurityManager security, UIManager ui)
         {
             AgentId = agentId; 
             this.gatewayUrl = gatewayUrl;
             
-            // Gán service được tiêm
             SecurityManager = security;
             UIManager = ui;
             
-            // Các class con thuộc Core tự khởi tạo (vì chúng gắn chặt với vòng đời AgentClient)
             Dispatcher = new MessageDispatcher(this);
             wsClient = new WebSocketClient(this, gatewayUrl);
 
             wsClient.OnDisconnectedEvent += HandleAgentDisconnected;
-
-            // Tự động map các Module dựa trên SupportedCommands
             _moduleRegistry = new Dictionary<string, BaseModule>();
+        }
+
+        public void RegisterModules(IEnumerable<BaseModule> injectedModules)
+        {
             foreach (var module in injectedModules)
             {
                 foreach (var cmd in module.SupportedCommands)
