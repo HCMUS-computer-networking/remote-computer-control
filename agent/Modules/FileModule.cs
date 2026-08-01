@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -168,22 +168,40 @@ namespace AgentSystem.Modules
                 return;
             }
 
-            byte[] fileBytes = await File.ReadAllBytesAsync(fullPath);
-            string base64String = Convert.ToBase64String(fileBytes);
-            
-            // TÍNH MÃ BÂM SHA256
-            string fileHash = ComputeSHA256(fileBytes);
+            const int CHUNK_SIZE = 512 * 1024; // 512 KB mỗi chunk
 
-            context.SendResponse(new
+            // Tính SHA256 toàn file trước khi gửi
+            string fileHash = ComputeFileSHA256(fullPath);
+
+            using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+            long totalSize = stream.Length;
+            int totalChunks = (int)Math.Ceiling((double)totalSize / CHUNK_SIZE);
+            if (totalChunks == 0) totalChunks = 1; // File rỗng vẫn gửi 1 chunk
+
+            byte[] buffer = new byte[CHUNK_SIZE];
+            int chunkIndex = 0;
+            int bytesRead;
+
+            while ((bytesRead = await stream.ReadAsync(buffer, 0, CHUNK_SIZE)) > 0)
             {
-                type = "fs_get_result",
-                agent_id = context.AgentId,
-                command_id = commandId,
-                success = true,
-                path = relativePath,
-                content = base64String,
-                sha256 = fileHash // BỔ SUNG TRƯỜNG NÀY ĐỂ SERVER ĐỐI CHIẾU
-            });
+                string chunkBase64 = Convert.ToBase64String(buffer, 0, bytesRead);
+                
+                context.SendResponse(new
+                {
+                    type = "fs_get_result",
+                    agent_id = context.AgentId,
+                    command_id = commandId,
+                    success = true,
+                    path = relativePath,
+                    total_size = totalSize,
+                    chunk_index = chunkIndex,
+                    total_chunks = totalChunks,
+                    data_base64 = chunkBase64,
+                    sha256 = (chunkIndex == totalChunks - 1) ? fileHash : null // SHA256 chỉ gửi ở chunk cuối
+                });
+
+                chunkIndex++;
+            }
         }
 
         private void SendError(string commandId, string action, string path, string message)

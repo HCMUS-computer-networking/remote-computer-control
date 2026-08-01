@@ -65,6 +65,12 @@ namespace AgentSystem.Core
         {
             Log.Information("[AgentClient] Mất kết nối! Đang yêu cầu các module dọn dẹp tài nguyên...");
             
+            // B3: Reset quyền khi mất kết nối — Controller sẽ phải xin lại
+            lock (_grantedFeatures)
+            {
+                _grantedFeatures.Clear();
+            }
+            
             foreach (var module in _moduleRegistry.Values)
             {
                 try
@@ -78,6 +84,21 @@ namespace AgentSystem.Core
             }
         }
 
+        /// <summary>
+        /// Gọi sau khi reconnect thành công và REGISTER xong.
+        /// Thông báo Controller rằng Agent đã reconnect và cần xin lại quyền.
+        /// </summary>
+        public void NotifyReconnected()
+        {
+            SendResponse(new 
+            { 
+                type = "permissions_reset", 
+                agent_id = AgentId,
+                message = "Agent reconnected. Please re-grant permissions." 
+            });
+            Log.Information("[AgentClient] Đã gửi permissions_reset tới Gateway.");
+        }
+
         public void Start() { /* Nội dung giữ nguyên */ wsClient.Connect(); }
         public void Stop() { /* Nội dung giữ nguyên */ wsClient.Disconnect(); }
         public void SendResponse(object responseData) { /* Nội dung giữ nguyên */ string json = JsonSerializer.Serialize(responseData); wsClient.SendText(json); }
@@ -85,6 +106,12 @@ namespace AgentSystem.Core
 
         public void RouteCommand(CommandPacket packet)
         {
+            if (!ValidatePacket(packet))
+            {
+                Log.Warning("[Security] Nhận được gói tin không hợp lệ hoặc không dành cho Agent này. Đã bỏ qua.");
+                return;
+            }
+
             if (packet.Type == "policy_update")
             {
                 try
@@ -144,6 +171,7 @@ namespace AgentSystem.Core
                             _grantedFeatures.Add(packet.Feature);
                         }
                     }
+                    AuditLogger.LogCommand(packet.CommandId, "permission_request", packet.Feature, granted);
                     SendResponse(new 
                     { 
                         type = "permission_result", 
@@ -161,6 +189,7 @@ namespace AgentSystem.Core
                 {
                     _grantedFeatures.Remove(packet.Feature);
                 }
+                AuditLogger.LogCommand(packet.CommandId, "permission_revoke", packet.Feature, false);
                 return;
             }
 
@@ -195,6 +224,7 @@ namespace AgentSystem.Core
                 
                 if (!hasPermission)
                 {
+                    AuditLogger.LogCommand(packet.CommandId, packet.Type, requiredFeature, false);
                     SendResponse(new { 
                         type = "module_error", 
                         agent_id = AgentId, 
@@ -207,6 +237,11 @@ namespace AgentSystem.Core
 
             if (routingKey != null && _moduleRegistry.TryGetValue(routingKey, out BaseModule module))
             {
+                if (_commandToFeatureMap.TryGetValue(routingKey, out string f))
+                {
+                    AuditLogger.LogCommand(packet.CommandId, packet.Type, f, true);
+                }
+
                 // Sử dụng Fire-and-Forget Task với async/await
                 _ = Task.Run(async () =>
                 {
@@ -220,6 +255,22 @@ namespace AgentSystem.Core
                     }
                 });
             }
+        }
+
+        private bool ValidatePacket(CommandPacket packet)
+        {
+            // command_id không được rỗng (trừ một số lệnh đặc biệt nếu có)
+            if (string.IsNullOrWhiteSpace(packet.CommandId)) 
+                return false;
+            
+            // target_agents phải chứa AgentId này (hoặc rỗng/null = broadcast)
+            if (packet.TargetAgents != null && packet.TargetAgents.Length > 0)
+            {
+                if (!Array.Exists(packet.TargetAgents, t => t == AgentId || t == "all"))
+                    return false;
+            }
+            
+            return true;
         }
     }
 }

@@ -153,6 +153,7 @@ namespace AgentSystem.Core
                     using (var ms = new MemoryStream())
                     {
                         WebSocketReceiveResult result;
+                        const int MAX_MESSAGE_SIZE = 4 * 1024 * 1024; // 4 MB
                         do
                         {
                             result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
@@ -166,8 +167,19 @@ namespace AgentSystem.Core
                             }
                             
                             ms.Write(buffer, 0, result.Count);
+
+                            if (ms.Length > MAX_MESSAGE_SIZE)
+                            {
+                                Log.Warning("[Security] Message vượt quá kích thước cho phép ({Size} bytes). Bị bỏ qua.", ms.Length);
+                                break; // Thoát khỏi vòng lặp đọc
+                            }
                         } 
                         while (!result.EndOfMessage);
+
+                        if (ms.Length > MAX_MESSAGE_SIZE)
+                        {
+                            continue; // Bỏ qua việc xử lý message này
+                        }
 
                         // Xử lý gói tin văn bản (Điều khiển từ Controller)
                         if (result.MessageType == WebSocketMessageType.Text)
@@ -222,11 +234,15 @@ namespace AgentSystem.Core
             heartbeatTimer?.Dispose();
             webSocket?.Dispose();
 
-            // Lặp lại việc kết nối sau mỗi 5 giây cho đến khi thành công
+            int retryCount = 0;
+            // Lặp lại việc kết nối với Exponential Backoff (5s, 10s, 20s... tối đa 120s)
             while (isReconnecting && !cts.IsCancellationRequested)
             {
-                await Task.Delay(5000);
-                Log.Information("[WebSocket] Đang thử kết nối lại...");
+                int delaySeconds = Math.Min(5 * (int)Math.Pow(2, retryCount), 120);
+                Log.Information("[WebSocket] Đang thử kết nối lại sau {Delay}s (lần {Count})...", delaySeconds, retryCount + 1);
+                await Task.Delay(delaySeconds * 1000);
+                retryCount++;
+
                 try
                 {
                     webSocket = new ClientWebSocket();
@@ -250,6 +266,9 @@ namespace AgentSystem.Core
                     
                     StartHeartbeat();
                     _ = ReceiveLoopAsync();
+                    
+                    // B3: Thông báo Controller rằng Agent đã reconnect, cần xin lại quyền
+                    context.NotifyReconnected();
                 }
                 catch
                 {

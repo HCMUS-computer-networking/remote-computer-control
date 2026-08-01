@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Threading;
@@ -28,6 +28,7 @@ namespace AgentSystem.Modules
 
                     if (!isApproved)
                     {
+                        AuditLogger.LogCommand(commandId, "power", safeAction, false);
                         context.SendResponse(new
                         {
                             type = "power_result",
@@ -64,6 +65,7 @@ namespace AgentSystem.Modules
                         message = $"Unknown power action: {action}";
                         break;
                 }
+                AuditLogger.LogCommand(commandId, "power", safeAction, success);
                 Log.Information("[PowerModule] Thực thi lệnh nguồn '{Action}' từ Gateway...", safeAction);
 
                 // 3. Trả về kết quả

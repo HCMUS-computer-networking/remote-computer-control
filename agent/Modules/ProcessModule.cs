@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.ComponentModel;
@@ -41,6 +41,7 @@ namespace AgentSystem.Modules
                         context.SendResponse(new
                         {
                             type = "proc_kill_result",
+                            agent_id = context.AgentId,
                             command_id = commandId,
                             pid = -1,
                             success = false,
@@ -54,6 +55,7 @@ namespace AgentSystem.Modules
                 context.SendResponse(new
                 {
                     type = "ERROR",
+                    agent_id = context.AgentId,
                     command_id = commandId,
                     message = $"Error in ProcessModule: {ex.Message}"
                 });
@@ -119,6 +121,7 @@ namespace AgentSystem.Modules
             context.SendResponse(new
             {
                 type = "proc_list_result",
+                agent_id = context.AgentId,
                 command_id = commandId,
                 processes = processList.ToList() 
             });
@@ -147,6 +150,7 @@ namespace AgentSystem.Modules
                 context.SendResponse(new
                 {
                     type = "proc_kill_result",
+                    agent_id = context.AgentId,
                     command_id = commandId,
                     pid = pid,
                     success = true,
@@ -158,6 +162,7 @@ namespace AgentSystem.Modules
                 context.SendResponse(new
                 {
                     type = "proc_kill_result",
+                    agent_id = context.AgentId,
                     command_id = commandId,
                     pid = pid,
                     success = false,
@@ -169,6 +174,7 @@ namespace AgentSystem.Modules
                 context.SendResponse(new
                 {
                     type = "proc_kill_result",
+                    agent_id = context.AgentId,
                     command_id = commandId,
                     pid = pid,
                     success = false,
