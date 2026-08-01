@@ -36,6 +36,10 @@ namespace AgentSystem
             Log.Information("===========================================");
 
             ConfigManager.Load();
+
+            // Khởi chạy dọn dẹp log định kỳ
+            LogCleanupJob.Start(ConfigManager.Current.LogRetentionDays);
+
             string agentId = ConfigManager.Current.AgentId;
             string gatewayUrl = ConfigManager.Current.GatewayUrl;
 

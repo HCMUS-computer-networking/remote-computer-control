@@ -10,6 +10,8 @@ using AgentSystem.Core;
 using Serilog;
 using AgentSystem.Utils;
 using AgentSystem.Managers;
+using System.Security.Cryptography;
+using System.Linq;
 
 namespace AgentSystem.Modules
 {
@@ -21,6 +23,7 @@ namespace AgentSystem.Modules
         private Graphics scaledGraphics;
         private Size lastScreenSize;
         private readonly Size TargetSize = new Size(1280, 720);
+        private byte[] lastFrameHash = null;
         
         private bool isStreaming = false;
         private string streamCommandId = string.Empty;
@@ -146,6 +149,7 @@ namespace AgentSystem.Modules
                 scaledBitmap?.Dispose();
                 scaledBitmap = null;
                 lastScreenSize = Size.Empty;
+                lastFrameHash = null;
             }
             finally
             {
@@ -214,6 +218,20 @@ namespace AgentSystem.Modules
                 scaledGraphics.DrawImage(captureBitmap, new Rectangle(0, 0, TargetSize.Width, TargetSize.Height));
                 
                 byte[] imageBytes = ImageUtils.CompressImageToJpeg(scaledBitmap, quality);
+                
+                if (isFromStream)
+                {
+                    using (MD5 md5 = MD5.Create())
+                    {
+                        byte[] currentHash = md5.ComputeHash(imageBytes);
+                        if (lastFrameHash != null && currentHash.SequenceEqual(lastFrameHash))
+                        {
+                            // Màn hình không thay đổi, bỏ qua không gửi để tiết kiệm băng thông
+                            return;
+                        }
+                        lastFrameHash = currentHash;
+                    }
+                }
                 
                 context.SendResponse(new
                 {

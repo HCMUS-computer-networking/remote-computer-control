@@ -19,5 +19,14 @@ namespace AgentSystem.Models
 
         [JsonPropertyName("sandbox_root_path")]
         public string SandboxRootPath { get; set; } = @"C:\AgentSandbox\";
+
+        [JsonPropertyName("log_retention_days")]
+        public int LogRetentionDays { get; set; } = 7;
+
+        [JsonPropertyName("consent_timeout_ms")]
+        public int ConsentTimeoutMs { get; set; } = 30000;
+
+        [JsonPropertyName("tray_password")]
+        public string TrayPassword { get; set; } = "";
     }
 }

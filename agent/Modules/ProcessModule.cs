@@ -9,6 +9,7 @@ using AgentSystem.Core;
 using System.Threading.Tasks;
 using System.Threading;
 using AgentSystem.Managers;
+using System.Management;
 
 namespace AgentSystem.Modules
 {
@@ -95,10 +96,30 @@ namespace AgentSystem.Modules
                     catch (Win32Exception) { }
                     catch (InvalidOperationException) { }
 
+                    string username = "Unknown";
+                    try
+                    {
+                        string query = "Select * From Win32_Process Where ProcessID = " + p.Id;
+                        using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(query))
+                        {
+                            foreach (ManagementObject obj in searcher.Get())
+                            {
+                                string[] argList = new string[] { string.Empty, string.Empty };
+                                int returnVal = Convert.ToInt32(obj.InvokeMethod("GetOwner", argList));
+                                if (returnVal == 0)
+                                {
+                                    username = (string.IsNullOrEmpty(argList[1]) ? "" : argList[1] + "\\") + argList[0];
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
                     processList.Add(new
                     {
                         pid = p.Id,
                         name = p.ProcessName + ".exe",
+                        username = username,
                         cpu_percent = cpuPercent,
                         ram_mb = ramMb
                     });

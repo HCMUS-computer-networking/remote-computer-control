@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
@@ -15,14 +15,14 @@ namespace AgentSystem.Managers
         private static readonly object _lock = new object();
         
         // 1. Popup Xin Quyền (Chặn luồng và chờ kết quả)
-        public Task<bool> ShowConsentPopupAsync(string moduleName, int timeoutMs)        {
+        public async Task<bool> ShowConsentPopupAsync(string moduleName, int timeoutMs)        {
             lock (_lock)
             {
                 // Nếu đang có popup của module này hiển thị -> Tự động Từ chối (Reject) ngay lập tức
                 if (_activePermissionPopups.Contains(moduleName))
                 {
                     Log.Information("[UIManager] Request xin quyền module '{moduleName}' bị từ chối do popup cũ chưa đóng (Anti-DoS).", moduleName);
-                    return Task.FromResult(false);  
+                    return false;  
                 }
 
                 // Đánh dấu module này đang hiện popup
@@ -58,8 +58,18 @@ namespace AgentSystem.Managers
             uiThread.SetApartmentState(ApartmentState.STA);
             uiThread.Start();
 
-            // Chờ kết quả đồng bộ mà không làm chết Thread
-            return tcs.Task; 
+            // Chờ kết quả đồng bộ với Hard Timeout dự phòng (timeoutMs + 2000)
+            var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs + 2000));
+            if (completedTask == tcs.Task)
+            {
+                return await tcs.Task;
+            }
+            else
+            {
+                Log.Warning("[UIManager] ConsentForm hard-timeout triggered for '{moduleName}'.", moduleName);
+                lock (_lock) { _activePermissionPopups.Remove(moduleName); }
+                return false;
+            }
         }
 
         // 2. Giao diện đếm ngược (Dùng cho Webcam)
