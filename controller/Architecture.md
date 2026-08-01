@@ -24,7 +24,7 @@ controller/
 │   └── wireframe/
 └── src/
     ├── main.jsx              # ReactDOM.createRoot entry
-    ├── App.jsx               # root shell: conn banner + sidebar + top bar + main + toasts
+    ├── App.jsx               # login gate → ConsoleShell (socket owner) + toasts
     ├── index.css, App.css    # design tokens + all component styles
     ├── assets/               # static images
     ├── store/                # Zustand global state (five stores)
@@ -32,6 +32,7 @@ controller/
     │   ├── ConnectionStore.js
     │   ├── ModuleStore.js
     │   ├── PolicyStore.js    # pushed security policy (whitelist + sandbox path)
+    │   ├── PermissionStore.js# consent status per (agent_id, feature) — Plan B
     │   └── UiStore.js
     ├── hooks/
     │   └── UseAgentSocket.js # singleton hook: owns socket + RX dispatch
@@ -39,10 +40,13 @@ controller/
     │   ├── index.js         # single mock-vs-real switch (VITE_USE_MOCK)
     │   ├── Protocol.js       # pure builders / parsers for JSON messages
     │   ├── Socket.js         # real WebSocket wrapper (arraybuffer + reconnect)
+    │   ├── AuthService.js    # admin login (POST /api/login) + token storage
     │   └── MockSocket.js     # in-process Gateway + Agent simulator
     └── components/
+        ├── LoginScreen.jsx   # admin sign-in gate shown until a JWT is present
         ├── FrameCanvas.jsx   # shared JPEG-frame → <canvas> primitive
         ├── ModuleTable.jsx   # shared sortable table primitive
+        ├── PermissionGate.jsx# shared consent gate for every module tab (Plan B)
         ├── agents/
         │   ├── AgentCard.jsx     # one row in the sidebar list
         │   ├── AgentList.jsx     # filtered list of AgentCards
@@ -105,6 +109,8 @@ State
 
 Actions
 - `setAgents(agents)` — replace the list when `agents_list` arrives.
+- `setAgentStatus(id, patch)` — patch one agent's `online` / `in_session` from
+  an `agent_status` push (no-op if the id is unknown).
 - `toggleSelect(id)` — add / remove one agent from the multi-select set.
 - `setSelectedIds(ids)` — replace the whole selection (used by "Select all").
 - `clearSelection()` — empty the multi-select set.
@@ -117,11 +123,16 @@ Actions
 State
 - `status` — `'idle' | 'connecting' | 'open' | 'closed'`.
 - `gateway_url` — destination WebSocket URL for the real `Socket.js`.
-- `token` — auth token received after handshake.
+- `token` — legacy handshake token field.
+- `auth_token` — JWT from `/api/login`, seeded from `sessionStorage`
+  (`controller_auth_token`) so a refresh keeps the operator signed in. `Socket.js`
+  reads it to build `?token=<JWT>`. Password is NEVER stored — only the token.
 
 Actions
 - `connect(url)`, `disconnect()`, `setStatus(s)`, `setGatewayUrl(url)`,
   `setToken(t)`.
+- `setAuthToken(t)` — store the JWT after login. `clearAuthToken()` — drop it on
+  logout so the next reconnect falls back to `?key=`.
 
 ### `ModuleStore.js`
 Root state: `data` keyed by `agent_id`. Each agent has:
@@ -158,6 +169,20 @@ State
 Actions
 - `setWhitelist(list)`, `setSandboxPath(path)`, `setPolicyResult(agent_id, result)`.
 
+### `PermissionStore.js`
+Plan B requires Agent consent for a feature BEFORE any module command is sent.
+State
+- `permissions` — nested map `permissions[agent_id][feature] = status`, where
+  status is `'idle' | 'requesting' | 'granted' | 'denied'`.
+
+Actions
+- `requestPermission(agent_id, feature)` — mark the pair `'requesting'` after
+  sending `permission_request`.
+- `setPermissionResult(agent_id, feature, granted)` — apply the Agent reply
+  (`'granted'` / `'denied'`).
+- `revoke(agent_id, feature)` — reset the pair back to `'idle'`.
+- `getStatus(agent_id, feature)` — non-reactive read for hook / callback code.
+
 ### `UiStore.js`
 State
 - `theme` — `'light' | 'dark'`.
@@ -185,21 +210,37 @@ Singleton lifecycle
 - On `onOpen` the hook sends `list_agents` and then pushes the security policy
   (`buildPolicyUpdate` from `PolicyStore`, empty `target_agents` = all agents).
 
+Fan-out model (Plan B — broadcast + Controller filter)
+- The Gateway does NOT fan out a single `target_agents=[id1, id2, ...]` message.
+  Every multi-agent module command is LOOP-EMITTED here: one message per agent,
+  each carrying `target_agents=[one_id]`. This is what lets the Controller apply
+  per-`(agent, feature)` consent before a command leaves the socket.
+- Private `fanoutSend(msg, target_ids)` does the loop. For a permission-gated
+  message (`request` / `power`) it emits only to agents whose matching feature
+  is `'granted'`; agents that have not granted are skipped and counted, then one
+  aggregate toast `"Đã bỏ qua N agent chưa cấp quyền"` is shown. `MODULE_FEATURE`
+  + `featureForMessage(msg)` map each command to its `FEATURE` (power → `power`).
+
 TX helpers returned by the hook
-- `sendCommand(json)` — smart auto-targeting:
-  - If the payload already has a non-empty `target_agents`, it is respected.
+- `sendCommand(json)` — resolves targets, then fans out:
   - If `type` is not `"request"` or `"power"`, the message is passed through
-    unchanged (e.g. `list_agents`).
-  - For frame-focus modules (`screenshot`, `screen_stream`,
-    `screen_stream_stop`, `webcam_start`, `webcam_stop`) `target_agents` is
-    set to `[focused_agent_id]`.
-  - For every other module command, `target_agents` is set to
-    `selected_agent_ids` if the multi-select set is non-empty, otherwise falls
-    back to `[focused_agent_id]`.
-  - TODO in the code: confirm with the Gateway team that `target_agents` with
-    multiple IDs is fan-out on the server side.
-- `sendToFocused(json)` — force target to `[focused_agent_id]`.
-- `sendToSelected(json)` — force target to `selected_agent_ids`.
+    unchanged (e.g. `list_agents`) — no fan-out, no filter.
+  - Targets = explicit non-empty `target_agents` if present; else frame-focus
+    modules (`screenshot`, `screen_stream`, `screen_stream_stop`, `webcam_start`,
+    `webcam_stop`) use `[focused_agent_id]`; every other command uses
+    `selected_agent_ids` (or `[focused_agent_id]` when nothing is selected).
+  - The resolved targets are handed to `fanoutSend` (loop-emit + consent filter).
+- `sendToFocused(json)` — loop-emit to `[focused_agent_id]` via `fanoutSend`.
+- `sendToSelected(json)` — loop-emit to every `selected_agent_ids` via `fanoutSend`.
+- `requestPermission(feature, agent_id)` / `revokePermission` / `stopModule` —
+  targets resolve to `[agent_id]` when given (per-agent `PermissionGate`), else
+  the whole `selected_agent_ids` set (bulk Connect / Disconnect), else
+  `[focused_agent_id]`. Each loop-emits ONE permission message per agent (these
+  are NOT consent-filtered — they establish or withdraw consent).
+  `requestPermission` marks each pair `'requesting'`; `revokePermission` resets
+  to `'idle'`; both revoke and stop call the private `stopLocalFeature`, which
+  maps `screen`/`keylog`/`webcam` to `ModuleStore.set*Active(id, false)` (other
+  features no-op).
 
 Binary frame dispatch
 - When `frame_meta` arrives it is stored in `_pending_meta`.
@@ -211,7 +252,7 @@ RX routing table (`dispatchMessage`)
 | Message `type`         | Effect |
 |------------------------|--------|
 | `agents_list`          | `AgentStore.setAgents(agents)` |
-| `agent_status`         | (placeholder) |
+| `agent_status`         | `AgentStore.setAgentStatus(id, {online, in_session})`; unknown id → resync `list_agents` |
 | `app_list_result`      | `ModuleStore.setModuleData(id, 'app', apps)` |
 | `app_action_result`    | toast (success or error) |
 | `proc_list_result`     | `ModuleStore.setModuleData(id, 'process', procs)` |
@@ -233,6 +274,7 @@ RX routing table (`dispatchMessage`)
 | `fs_error`             | toast |
 | `power_result`         | toast (confirmed or cancelled) |
 | `policy_update_result` | `PolicyStore.setPolicyResult`; toast only on failure |
+| `permission_result`    | `PermissionStore.setPermissionResult(id, feature, granted)` + toast |
 | binary (ArrayBuffer)   | paired with `_pending_meta` → `setModuleData(id, meta.module, { frame, meta })` |
 
 ---
@@ -250,6 +292,14 @@ templates in `docs/formatjson/*.json`.
 - `policy_update` — separate top-level type carrying
   `{ params: { app_whitelist, sandbox_path }, target_agents }`. Built by
   `buildPolicyUpdate`; pushed on connect.
+- `permission_request` / `permission_revoke` / `stop_module` — Plan B consent
+  flow, each carrying `{ feature, target_agents }`. Built by
+  `buildPermissionRequest` / `buildPermissionRevoke` / `buildStopModule`.
+
+### Feature constants (`FEATURE`, D6 vocab — value of the `feature` field)
+`application`, `process`, `screen`, `keylog`, `file`, `webcam`, `power`.
+Distinct from the module command names below (e.g. `FEATURE.SCREEN` vs
+`MODULE.SCREENSHOT`); used only by the permission flow.
 
 ### Module constants (value of `request.module`)
 Application: `app_list`, `app_start`, `app_stop`.
@@ -268,19 +318,30 @@ Webcam:      `webcam_start`, `webcam_stop`.
 `keylog_started`, `keylog_stopped`, `keylog_denied`, `stream_started`,
 `stream_stopped`, `webcam_started`, `webcam_stopped`, `webcam_denied`,
 `fs_list_result`, `fs_get_result`, `fs_put_result`, `fs_put_complete`,
-`fs_error`, `power_result`, `policy_update_result`.
+`fs_error`, `power_result`, `policy_update_result`, `permission_result`.
 
 ### Binary channel
 Screen and webcam frames arrive as a pair:
 1. JSON `frame_meta { type, module, agent_id, w, h, len, seq, timestamp_ms }`.
 2. Raw JPEG bytes as an `ArrayBuffer` on the socket's binary handler.
 
+**Gateway ordering contract (REQUIRED):** the relay MUST forward each frame's
+binary IMMEDIATELY after its `frame_meta`, with NO other message interleaved on
+the controller socket. The hook holds one `_pending_meta` slot and pairs the next
+binary with it, so an out-of-order relay (e.g. `meta(A) meta(B) bin(A) bin(B)`
+when GridView streams many agents at once) would draw a frame into the wrong
+agent/module slot. Two runtime guards warn when this happens: a fresh
+`frame_meta` arriving while one is still unpaired, and a `meta.len` vs
+`ArrayBuffer.byteLength` mismatch. If those warnings fire, the Gateway relay is
+interleaving frames and must serialise each (meta, binary) pair per socket.
+
 ### Exported builders
 `buildListAgents`, `buildRequest`, `buildAppList`, `buildAppStart`,
 `buildAppStop`, `buildProcList`, `buildProcKill`, `buildScreenshot`,
 `buildStreamStart`, `buildStreamStop`, `buildKeylogStart`, `buildKeylogStop`,
 `buildFsList`, `buildFsGet`, `buildFsPut`, `buildWebcamStart`,
-`buildWebcamStop`, `buildPower`, `buildPolicyUpdate`. Plus `buildMessage` /
+`buildWebcamStop`, `buildPower`, `buildPolicyUpdate`, `buildPermissionRequest`,
+`buildPermissionRevoke`, `buildStopModule`. Plus `buildMessage` /
 `parseMessage`.
 
 ### Incoming adapter — `normalizeIncoming(raw_msg)`
@@ -293,8 +354,9 @@ unchanged.
 - Shared field aliases: `agent_id` ⟵ `agentId`/`agentID`/`machine_id`;
   `timestamp_ms` ⟵ `ts`/`time`/`timestamp`.
 - Per-type `NORMALIZERS` reshape list/record types: `agents_list`,
-  `app_list_result`, `proc_list_result`, `keylog`, `frame_meta`,
-  `fs_list_result`, `fs_get_result`, `power_result`, `policy_update_result`.
+  `agent_status`, `app_list_result`, `proc_list_result`, `keylog`, `frame_meta`,
+  `fs_list_result`, `fs_get_result`, `power_result`, `policy_update_result`,
+  `permission_result`.
   Types with no normalizer keep their body and only get `agent_id` +
   `timestamp_ms` fixed.
 - All lookups use `pickField(obj, aliases, fallback)` (first match wins), so
@@ -415,6 +477,17 @@ unchanged.
 - Sort state is local; click a header to toggle direction or switch column.
 - Never imports any store or service.
 
+### `PermissionGate.jsx`
+- Shared Plan-B consent wrapper any module tab can wrap its command UI in.
+- Props: `feature`, `agent_id`, `disabled`, `children`.
+- Reads the `(agent_id, feature)` status from `PermissionStore` (selector) and
+  drives the transport only through `useAgentSocket` — never the socket.
+- Shows a Connect button (`requestPermission`) until `granted`, then a
+  Disconnect button (`revokePermission` + `stopModule`). Shows
+  "Chờ cấp quyền..." while `requesting`; the denied toast comes from the hook.
+- Wraps `children` in a `<fieldset disabled={!granted}>` so every module command
+  button inside stays disabled until consent is granted — no per-tab wiring.
+
 ---
 
 ## 8. Socket services
@@ -425,8 +498,10 @@ identical API surface (`connect`, `close`, `send`, `onOpen`, `onMessage`,
 as `AgentSocket`; `UseAgentSocket` imports only from `../services`.
 
 ### `Socket.js` (real WebSocket)
-- Target URL from `import.meta.env.VITE_GATEWAY_URL`, fallback
-  `ws://localhost:8080`.
+- Base URL from `import.meta.env.VITE_GATEWAY_URL`, fallback `ws://localhost:8080`.
+- `_buildEndpoint()` appends `/controller?token=<auth_token>` when
+  `ConnectionStore.auth_token` is set; before login it falls back to
+  `/controller?key=<VITE_CONTROLLER_KEY>`.
 - `binaryType = "arraybuffer"` so image/video frames arrive as `ArrayBuffer`.
 - `onmessage` splits `typeof data === 'string'` (JSON → `onMessage`) from
   binary (`ArrayBuffer` → `onBinary`), matching the frame_meta + binary pair.
@@ -456,6 +531,30 @@ as `AgentSocket`; `UseAgentSocket` imports only from `../services`.
   `policy_update_result` per agent — a full end-to-end policy demo.
 - All timers (frame streams, keylog streams, connect timer) are cancelled on
   `close()`.
+
+### `AuthService.js` (admin login — D8)
+- `login(username, password)` POSTs JSON `{ username, password }` to
+  `${gatewayHttpUrl}/api/login`, where `gatewayHttpUrl` is `VITE_GATEWAY_URL`
+  with the scheme swapped `ws→http` / `wss→https`. Gateway reply contract:
+  `{ ok, token, message }`.
+  - Success → saves the JWT to `sessionStorage['controller_auth_token']` and
+    `ConnectionStore.setAuthToken(token)`; returns `{ ok:true, token, message }`.
+  - Network error or `ok:false` → returns a friendly `{ ok:false, message }`.
+- `logout()` clears the token from `sessionStorage` and the store.
+- `getToken()` reads the current JWT from the store.
+- The REAL credential check (bcrypt password + JWT signing) lives on the
+  GATEWAY; the client only stores and forwards the token, never the password.
+
+### Login gate (`App.jsx` + `LoginScreen.jsx`)
+- `App` reads `ConnectionStore.auth_token`: no token → renders `<LoginScreen>`;
+  with a token → renders `<ConsoleShell>`, which is the ONLY component that calls
+  `useAgentSocket`. So the socket opens only after login and, on logout, the
+  shell unmounts and the ref-counted hook closes the socket.
+- `LoginScreen` holds `username` / `password` in local state, calls
+  `AuthService.login`, and shows the returned message on failure. On success the
+  updated `auth_token` re-renders `App` into the console.
+- `TopBar`'s Logout button calls `AuthService.logout()` → token cleared →
+  `App` swaps back to `LoginScreen` and the socket closes.
 
 ---
 
@@ -506,6 +605,6 @@ as `AgentSocket`; `UseAgentSocket` imports only from `../services`.
   store change is ever needed.
 - Real Gateway URL comes from `VITE_GATEWAY_URL` (fallback `ws://localhost:8080`);
   `ConnectionStore.gateway_url` mirrors the same default for display.
-- The `target_agents` fan-out semantics that `sendCommand` relies on need
-  explicit confirmation from the Gateway team; the TODO note is in
-  `UseAgentSocket.js`.
+- Fan-out is done Controller-side (Plan B): the hook loop-emits one message per
+  agent instead of relying on server-side `target_agents` fan-out, so the
+  Gateway only ever needs to route single-target messages.

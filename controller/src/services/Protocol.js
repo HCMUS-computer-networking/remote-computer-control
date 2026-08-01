@@ -8,10 +8,13 @@
 export const MSG_TYPE =
 {
     // TX — Controller sends to Gateway
-    LIST_AGENTS   : "list_agents",   // request current agent list
-    REQUEST       : "request",       // generic wrapper for almost all commands
-    POWER         : "power",         // power action (special type, not "request")
-    POLICY_UPDATE : "policy_update", // push app_whitelist + sandbox_path to agents
+    LIST_AGENTS        : "list_agents",        // request current agent list
+    REQUEST            : "request",            // generic wrapper for almost all commands
+    POWER              : "power",              // power action (special type, not "request")
+    POLICY_UPDATE      : "policy_update",      // push app_whitelist + sandbox_path to agents
+    PERMISSION_REQUEST : "permission_request", // ask an Agent to grant a feature (consent popup)
+    PERMISSION_REVOKE  : "permission_revoke",  // withdraw a previously granted feature
+    STOP_MODULE        : "stop_module",        // tell the Agent to stop a running feature
 
     // RX — Gateway / Agent sends to Controller
     AGENTS_LIST       : "agents_list",        // reply to list_agents
@@ -37,6 +40,23 @@ export const MSG_TYPE =
     FS_ERROR          : "fs_error",           // file operation error (e.g. path outside sandbox)
     POWER_RESULT      : "power_result",       // agent confirms or denies the power action
     POLICY_UPDATE_RESULT : "policy_update_result", // agent confirms it applied the pushed policy
+    PERMISSION_RESULT : "permission_result",  // agent grants or denies a permission_request
+}
+
+// ─── Feature constants (D6 vocab — used for permission request / revoke / stop) ─
+// One value per sensitive capability the Controller must ask consent for before
+// issuing any module command. These are the "feature" field values, distinct
+// from the MODULE command names above (e.g. FEATURE.SCREEN vs MODULE.SCREENSHOT).
+
+export const FEATURE =
+{
+    APPLICATION : "application",   // Application module (list / start / stop apps)
+    PROCESS     : "process",       // Process module (list / kill)
+    SCREEN      : "screen",        // Screenshot + live screen stream
+    KEYLOG      : "keylog",        // Input activity (keystroke monitoring)
+    FILE        : "file",          // Sandbox file operations
+    WEBCAM      : "webcam",        // Webcam stream
+    POWER       : "power",         // Power actions (lock / restart / shutdown / sleep)
 }
 
 // ─── Module name constants (value of the "module" field in REQUEST messages) ─
@@ -232,6 +252,15 @@ const NORMALIZERS =
         agents : (pickField(m, ['agents', 'agent_list', 'list'], [])).map(normalizeAgent),
     }),
 
+    [MSG_TYPE.AGENT_STATUS]: (m) =>
+        withAgentId({
+            type       : MSG_TYPE.AGENT_STATUS,
+            // Left undefined when the field is absent so the store patch only
+            // touches the flags the Gateway actually reported.
+            online     : pickField(m, ['online', 'is_online', 'connected']),
+            in_session : pickField(m, ['in_session', 'inSession', 'busy']),
+        }, m),
+
     [MSG_TYPE.APP_LIST_RESULT]: (m) =>
         withAgentId({
             type : MSG_TYPE.APP_LIST_RESULT,
@@ -292,6 +321,15 @@ const NORMALIZERS =
             success : pickField(m, ['success', 'ok', 'applied'], false),
             message : pickField(m, ['message', 'msg', 'detail'], ''),
         }, m),
+
+    [MSG_TYPE.PERMISSION_RESULT]: (m) =>
+        withAgentId({
+            type         : MSG_TYPE.PERMISSION_RESULT,
+            feature      : pickField(m, ['feature', 'capability', 'module']),
+            granted      : pickField(m, ['granted', 'allowed', 'approved', 'ok'], false),
+            message      : pickField(m, ['message', 'msg', 'reason', 'detail'], ''),
+            timestamp_ms : pickField(m, TIMESTAMP_ALIASES),
+        }, m),
 }
 
 // Public entry point — normalize ONE parsed incoming message into canonical shape.
@@ -343,6 +381,43 @@ export function buildPolicyUpdate(app_whitelist, sandbox_path, targetAgents)
     return buildMessage(MSG_TYPE.POLICY_UPDATE,
     {
         params        : { app_whitelist, sandbox_path },
+        target_agents : targetAgents ?? [],
+    })
+}
+
+// ─── Permission flow (Plan B — consent before every module command) ──────────
+//
+// The Controller must ask the Agent for consent (feature-level) BEFORE sending
+// any module command. The Agent shows a popup; its reply comes back as a
+// "permission_result" message. feature — one of the FEATURE constants above.
+// targetAgents — array of agent id strings; empty array means all agents.
+
+// Ask the given agents to grant a feature (triggers the Agent consent popup).
+export function buildPermissionRequest(feature, targetAgents)
+{
+    return buildMessage(MSG_TYPE.PERMISSION_REQUEST,
+    {
+        feature,
+        target_agents : targetAgents ?? [],
+    })
+}
+
+// Withdraw a feature we no longer need (the Agent drops the granted consent).
+export function buildPermissionRevoke(feature, targetAgents)
+{
+    return buildMessage(MSG_TYPE.PERMISSION_REVOKE,
+    {
+        feature,
+        target_agents : targetAgents ?? [],
+    })
+}
+
+// Tell the Agent to stop a currently running feature (e.g. stop the stream).
+export function buildStopModule(feature, targetAgents)
+{
+    return buildMessage(MSG_TYPE.STOP_MODULE,
+    {
+        feature,
         target_agents : targetAgents ?? [],
     })
 }

@@ -33,12 +33,16 @@ Lệnh khác: `npm run build`, `npm run preview`, `npm run lint`.
 ```
 src/
 ├── App.jsx, main.jsx        # entry + shell
-├── store/                   # 5 Zustand store (Agent / Connection / Module / Policy / Ui)
+├── store/                   # 6 Zustand store (Agent / Connection / Module /
+│                            #                  Permission / Policy / Ui)
 ├── hooks/UseAgentSocket.js  # singleton hook nối component ↔ socket
-├── services/                # index.js (chọn mock/real), Protocol.js, MockSocket.js, Socket.js
+├── services/                # index.js (chọn mock/real), Protocol.js,
+│                            # MockSocket.js, Socket.js, AuthService.js
 └── components/
+    ├── LoginScreen.jsx      # màn đăng nhập admin (JWT)
     ├── FrameCanvas.jsx      # primitive dùng chung để vẽ JPEG frame
     ├── ModuleTable.jsx      # primitive dùng chung cho bảng có sort
+    ├── PermissionGate.jsx   # wrapper Connect/Disconnect cho từng module
     ├── agents/              # sidebar agent list + multi-select
     ├── layout/              # Sidebar, TopBar, ThemeToggle
     ├── livescreen/          # Grid view + Focus view

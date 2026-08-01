@@ -1829,3 +1829,216 @@ input
     z-index: 199;
   }
 }
+
+/* ── 30. PermissionGate — consent wrapper shared by every module tab ─────── */
+
+.permission-gate
+{
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* consent bar sitting above the module command area */
+.permission-gate__bar
+{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+/* status badge — icon + feature name + short status text */
+.permission-gate__badge
+{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.permission-gate__feature
+{
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.permission-gate__status
+{
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* colour the badge per status (borrow the semantic vars) */
+.permission-gate__badge--granted    { color: var(--success); }
+.permission-gate__badge--denied     { color: var(--danger);  }
+.permission-gate__badge--requesting { color: var(--warning); }
+
+.permission-gate__actions
+{
+  display: flex;
+  gap: 8px;
+}
+
+/* module command area — fieldset resets so it looks like a plain container */
+.permission-gate__body
+{
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* dim the whole command area while consent is not granted */
+.permission-gate__body:disabled
+{
+  opacity: 0.55;
+}
+
+/* spinner shown on the Connect button while a request is pending */
+.permission-gate__spin
+{
+  animation: permission-gate-spin 0.9s linear infinite;
+}
+
+@keyframes permission-gate-spin
+{
+  to { transform: rotate(360deg); }
+}
+
+/* ── 31. LoginScreen — admin sign-in gate ───────────────────────────────── */
+
+.login-screen
+{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--bg);
+  box-sizing: border-box;
+}
+
+.login-card
+{
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 360px;
+  padding: 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+}
+
+.login-card__header
+{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+}
+
+.login-card__title
+{
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.login-card__hint
+{
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.login-card__field
+{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-card__label
+{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.login-card__input
+{
+  padding: 9px 12px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.login-card__input:focus
+{
+  border-color: var(--accent);
+}
+
+.login-card__input:disabled
+{
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* error banner shown on wrong credentials or network failure */
+.login-card__error
+{
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+}
+
+.login-card__submit
+{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.login-card__submit:not(:disabled):hover
+{
+  background: var(--accent-hover);
+}
+
+.login-card__submit:disabled
+{
+  opacity: 0.5;
+  cursor: not-allowed;
+}

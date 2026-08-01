@@ -1,23 +1,12 @@
 // AgentStore.js — agent list, multi-select set, and focused agent for detail view.
 import { create } from 'zustand'
 
-// Scaffold agents matching MockSocket's FAKE_AGENTS exactly.
-// Replaced by real data from agents_list message once UseAgentSocket is wired up.
-const MOCK_AGENTS =
-[
-    { id: 'agent-01', name: 'PC-Lab-01',      os: 'Windows 11',   ip: '192.168.1.101', online: true,  in_session: false },
-    { id: 'agent-02', name: 'PC-Lab-02',      os: 'Windows 11',   ip: '192.168.1.102', online: true,  in_session: true  },
-    { id: 'agent-03', name: 'PC-Lab-03',      os: 'Windows 10',   ip: '192.168.1.103', online: false, in_session: false },
-    { id: 'agent-04', name: 'PC-Lab-04',      os: 'Windows 11',   ip: '192.168.1.104', online: true,  in_session: false },
-    { id: 'agent-05', name: 'DEV-Ubuntu-01',  os: 'Ubuntu 22.04', ip: '192.168.1.105', online: true,  in_session: false },
-    { id: 'agent-06', name: 'PC-Lab-06',      os: 'Windows 10',   ip: '192.168.1.106', online: true,  in_session: true  },
-    { id: 'agent-07', name: 'MacBook-Lab-01', os: 'macOS 14',     ip: '192.168.1.107', online: false, in_session: false },
-]
-
+// Start empty; the real list arrives via agents_list right after the socket
+// opens (MockSocket also emits one on connect, so mock mode still populates).
 const useAgentStore = create(function (set, get)
 {
     return {
-        agents              : MOCK_AGENTS,  // full agent list from gateway
+        agents              : [],           // full agent list from gateway
         selected_agent_ids  : [],           // IDs checked for multi-agent commands
         focused_agent_id    : null,         // single agent open in FocusView
         search_query        : '',           // text in the sidebar search box
@@ -37,6 +26,22 @@ const useAgentStore = create(function (set, get)
                     ? s.selected_agent_ids.filter((x) => x !== id)
                     : [...s.selected_agent_ids, id]
                 return { selected_agent_ids: next_ids }
+            }),
+
+        // Patch ONE agent's live status (online / in_session) from an
+        // agent_status push. No-op if the agent id is unknown — the dispatch
+        // layer then resyncs the whole list via list_agents.
+        setAgentStatus: (agent_id, patch) =>
+            set(function (s)
+            {
+                let found = false
+                const next_agents = s.agents.map(function (a)
+                {
+                    if (a.id !== agent_id) return a
+                    found = true
+                    return { ...a, ...patch }
+                })
+                return found ? { agents: next_agents } : {}
             }),
 
         // Open one agent in the detail (Focus) view.

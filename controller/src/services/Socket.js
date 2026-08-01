@@ -16,6 +16,8 @@
 // with a simple exponential backoff and keep ConnectionStore.status in sync.
 
 import useConnectionStore from '../store/ConnectionStore'
+import useUiStore         from '../store/UiStore'
+import { logout }         from './AuthService'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -47,7 +49,15 @@ class Socket
         this._closed_by_user = false;   // true after close() so we do NOT reconnect
         this._retry_count    = 0;       // how many reconnect attempts so far
         this._reconnect_timer = null;   // saved so close() can cancel a pending retry
+        this._opened_once    = false;   // true after the current WS reached onopen
+        this._auth_fail_count = 0;      // consecutive closes that never opened while a JWT was set
     }
+
+    // Threshold: after this many consecutive failed opens with a JWT present,
+    // assume the JWT is expired/invalid (Gateway responds 401 at upgrade, which
+    // the browser surfaces as onclose code 1006 — indistinguishable from network
+    // errors, so we rely on repeated failures instead of a specific code).
+    static AUTH_FAIL_THRESHOLD = 2;
 
     // ── Callback registration (mirror the MockSocket API) ──────────────────
 
@@ -103,6 +113,23 @@ class Socket
         this._ws.send(message);
     }
 
+    // ── Private: build the final /controller endpoint URL ──────────────────
+
+    // Prefer the JWT auth_token from ConnectionStore. Before login there is no
+    // token yet, so we fall back to the pre-JWT CONTROLLER_KEY from the env.
+    _buildEndpoint()
+    {
+        const auth_token = useConnectionStore.getState().auth_token;
+
+        if (auth_token)
+        {
+            return `${this._url}/controller?token=${auth_token}`;
+        }
+
+        const controller_key = import.meta.env.VITE_CONTROLLER_KEY ?? '';
+        return `${this._url}/controller?key=${controller_key}`;
+    }
+
     // ── Private: open + wire up one WebSocket ──────────────────────────────
 
     _openSocket()
@@ -113,7 +140,7 @@ class Socket
         let ws;
         try
         {
-            ws = new WebSocket(this._url);
+            ws = new WebSocket(this._buildEndpoint());
         }
         catch (err)
         {
@@ -129,7 +156,9 @@ class Socket
 
         ws.onopen = () =>
         {
-            this._retry_count = 0;                              // reset backoff on success
+            this._retry_count      = 0;   // reset backoff on success
+            this._opened_once      = true;
+            this._auth_fail_count  = 0;   // handshake succeeded → JWT is good
             useConnectionStore.getState().setStatus('open');
             if (this._on_open) this._on_open();
         };
@@ -167,9 +196,31 @@ class Socket
 
         ws.onclose = () =>
         {
-            this._ws = null;
+            const never_opened = !this._opened_once;
+            this._ws           = null;
+            this._opened_once  = false;      // reset for the next attempt
             useConnectionStore.getState().setStatus('closed');
             if (this._on_close) this._on_close();
+
+            // JWT expired detection: Gateway rejects at HTTP upgrade with 401,
+            // browser reports onclose without ever calling onopen. Count these
+            // consecutive failed opens while an auth_token is set; past the
+            // threshold, force logout so the operator lands on LoginScreen.
+            const has_token = !!useConnectionStore.getState().auth_token;
+            if (never_opened && has_token && !this._closed_by_user)
+            {
+                this._auth_fail_count++;
+                if (this._auth_fail_count >= Socket.AUTH_FAIL_THRESHOLD)
+                {
+                    useUiStore.getState().addToast(
+                        'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.',
+                        'error'
+                    );
+                    this._closed_by_user = true;   // stop the reconnect loop
+                    logout();                       // clears auth_token → App swaps to LoginScreen
+                    return;
+                }
+            }
 
             // Auto-reconnect unless WE closed it on purpose.
             if (!this._closed_by_user)

@@ -1,11 +1,12 @@
 /* TopBar.jsx — header bar: breadcrumb title, session badge, connection, theme, admin */
-import { Wifi, WifiOff, Loader2, User, ChevronDown, LayoutGrid, Maximize2 } from 'lucide-react'
+import { Wifi, WifiOff, Loader2, LogOut, LayoutGrid, Maximize2 } from 'lucide-react'
 import { useShallow }      from 'zustand/react/shallow'
 import useUiStore         from '../../store/UiStore'
 import useAgentStore      from '../../store/AgentStore'
 import useConnectionStore from '../../store/ConnectionStore'
 import useModuleStore     from '../../store/ModuleStore'
 import ThemeToggle        from './ThemeToggle'
+import { logout }         from '../../services/AuthService'
 
 /* map connection status to its icon + colour */
 function ConnectionIndicator({ status })
@@ -131,11 +132,16 @@ function TopBar()
 
       <ThemeToggle />
 
-      {/* admin dropdown placeholder */}
-      <button className="topbar__btn" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <User size={14} strokeWidth={1.75} />
-        Admin
-        <ChevronDown size={12} strokeWidth={1.75} />
+      {/* Logout — clears the JWT; App then unmounts the console shell, which
+          closes the socket (the ref-counted hook fires its cleanup). */}
+      <button
+        className="topbar__btn"
+        onClick={logout}
+        title="Đăng xuất"
+        style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+      >
+        <LogOut size={14} strokeWidth={1.75} />
+        Logout
       </button>
     </header>
   )
