@@ -105,9 +105,13 @@ export const POWER_ACTION =
 
 // Merge type + payload into one object, then serialise to a JSON string.
 // All specific builders below call this to produce the final string for socket.send().
+// The Agent (C#) ValidatePacket rejects any packet whose command_id is empty and
+// silently drops it, so we auto-generate a short random id here. A caller-supplied
+// command_id inside `payload` still wins (spread runs after the default).
 export function buildMessage(type, payload)
 {
-    const msg = { type, ...payload }
+    const command_id = Math.random().toString(36).substring(2, 9)
+    const msg = { type, command_id, ...payload }
     return JSON.stringify(msg)
 }
 
