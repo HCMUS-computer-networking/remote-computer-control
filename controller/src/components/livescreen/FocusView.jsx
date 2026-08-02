@@ -10,8 +10,11 @@ import KeylogTab      from '../modules/KeylogTab'
 import FileTab        from '../modules/FileTab'
 import WebcamTab      from '../modules/WebcamTab'
 import PowerTab       from '../modules/PowerTab'
+import PermissionGate from '../PermissionGate'
 
-/* tab definitions — order matches wireframe left-to-right */
+/* tab definitions — order matches wireframe left-to-right.
+   NOTE: each tab id MUST match a FEATURE constant in Protocol.js — PermissionGate
+   uses it verbatim as the `feature` field of permission_request / revoke / stop. */
 const TABS =
 [
   { id: 'application', label: 'Application', Icon: AppWindow  },
@@ -83,7 +86,9 @@ function FocusView()
 
       {/* active module panel */}
       <div className="focus-view__panel" role="tabpanel">
-        <ActivePanel key={focused_agent.id} agent={focused_agent} />
+        <PermissionGate feature={active_tab} agent_id={focused_agent.id}>
+          <ActivePanel key={focused_agent.id} agent={focused_agent} />
+        </PermissionGate>
       </div>
     </div>
   )

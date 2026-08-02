@@ -284,6 +284,11 @@ RX routing table (`dispatchMessage`)
 `services/Protocol.js` exports constants and builders. All formats mirror the
 templates in `docs/formatjson/*.json`.
 
+Every outgoing message carries a short random `command_id` field auto-injected
+by `buildMessage(type, payload)` (the Agent's `ValidatePacket` rejects packets
+without one). A caller-supplied `command_id` inside `payload` overrides the
+default.
+
 ### TX message types (Controller → Gateway)
 - `list_agents` — `buildListAgents()`.
 - `request` — generic envelope with `{ module, params, target_agents }` for
@@ -397,6 +402,10 @@ unchanged.
 ### Focus live-screen (`livescreen/FocusView.jsx`)
 - 7-tab bar (Application / Process / Screen / Keylog / File / Webcam / Power)
   and the active module panel for `focused_agent_id`.
+- The active panel is always rendered inside `<PermissionGate feature={active_tab}
+  agent_id={focused_agent.id}>`, so the tab id doubles as the FEATURE constant
+  used by the consent flow — the seven tab ids match the seven `FEATURE` values
+  one-to-one.
 
 ### Keylog (`KeylogTab/index.jsx`)
 - Start / Stop buttons dispatching `buildKeylogStart` / `buildKeylogStop`.
@@ -478,7 +487,8 @@ unchanged.
 - Never imports any store or service.
 
 ### `PermissionGate.jsx`
-- Shared Plan-B consent wrapper any module tab can wrap its command UI in.
+- Shared Plan-B consent wrapper. `FocusView` applies it uniformly around every
+  active module panel, so no module tab needs its own gate wiring.
 - Props: `feature`, `agent_id`, `disabled`, `children`.
 - Reads the `(agent_id, feature)` status from `PermissionStore` (selector) and
   drives the transport only through `useAgentSocket` — never the socket.
