@@ -1,5 +1,6 @@
 {
   "_comment": "File module messages — Controller <-> Gateway <-> Agent",
+  "_binary_transfer_note": "File transfer now uses binary WebSocket frames. Each chunk = 1 JSON metadata message + 1 binary frame. Group chunks by transfer_id; verify integrity with sha256 at the last chunk.",
   "_sandbox_note": "ALL file operations are restricted to the Agent's designated sandbox directory. Paths outside the sandbox are rejected by the Agent.",
 
   "controller_to_gateway": {
@@ -15,25 +16,25 @@
     },
 
     "fs_get": {
-      "_desc": "Download a file from the agent's sandbox",
+      "_desc": "Download a file from the agent's sandbox. Agent responds with 1 JSON metadata message + 1 binary WebSocket frame per chunk.",
       "type": "request",
       "module": "fs_get",
       "params": {
-        "path": "/reports/log.txt"
+        "path": "/reports/log.txt",
+        "transfer_id": "<uuid-optional>"
       },
       "target_agents": ["PC-Lab-01"]
     },
 
     "fs_put": {
-      "_desc": "Upload a file to the agent's sandbox. File content is sent in base64 chunks or as a binary follow-up (TODO: confirm with team which encoding to use).",
+      "_desc": "Upload a file chunk to the agent's sandbox. Controller sends this JSON metadata immediately followed by a binary WebSocket frame with raw chunk bytes.",
       "type": "request",
       "module": "fs_put",
       "params": {
         "path": "/uploads/data.csv",
-        "total_size": 20480,
+        "transfer_id": "<uuid>",
         "chunk_index": 0,
-        "total_chunks": 4,
-        "data_base64": "<base64-encoded-chunk>"
+        "total_chunks": 4
       },
       "target_agents": ["PC-Lab-01"]
     }
@@ -46,6 +47,7 @@
       "_desc": "Directory listing returned by the agent",
       "type": "fs_list_result",
       "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
       "path": "/",
       "entries": [
         { "name": "reports",  "type": "directory", "size": null,  "modified_ms": 1719900000000 },
@@ -55,20 +57,25 @@
     },
 
     "fs_get_result": {
-      "_desc": "File content returned by the agent (base64 encoded). For large files, may be chunked.",
+      "_desc": "Metadata for the next binary WebSocket frame. Agent sends this JSON immediately followed by a binary frame containing raw chunk bytes (512KB per chunk, except possibly the last chunk).",
       "type": "fs_get_result",
       "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
+      "transfer_id": "<uuid — used to group chunks; falls back to command_id if client did not provide one>",
+      "success": true,
       "path": "/reports/log.txt",
       "total_size": 1024,
       "chunk_index": 0,
-      "total_chunks": 1,
-      "data_base64": "<base64-encoded-content>"
+      "total_chunks": 4,
+      "sha256": null
     },
 
     "fs_put_result": {
       "_desc": "Agent acknowledges receipt of an upload chunk",
       "type": "fs_put_result",
       "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
+      "transfer_id": "<uuid>",
       "path": "/uploads/data.csv",
       "chunk_index": 0,
       "success": true,
@@ -76,18 +83,22 @@
     },
 
     "fs_put_complete": {
-      "_desc": "Agent confirms the full file has been received and saved",
+      "_desc": "Agent confirms the full file has been received and saved, returning the calculated SHA256 checksum",
       "type": "fs_put_complete",
       "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
+      "transfer_id": "<uuid>",
       "path": "/uploads/data.csv",
       "success": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "message": "File saved successfully"
     },
 
     "fs_error": {
-      "_desc": "Agent reports a file operation error (path outside sandbox, permission denied, etc.)",
+      "_desc": "Agent reports a file operation error (path outside sandbox, permission denied, timeout waiting for binary chunk, etc.)",
       "type": "fs_error",
       "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
       "operation": "fs_get",
       "path": "../../secret.txt",
       "message": "Path is outside the sandbox"
