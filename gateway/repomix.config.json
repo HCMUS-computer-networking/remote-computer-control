@@ -1,0 +1,20 @@
+{
+    "output": {
+        "filePath": "repomix-output.xml",
+        "style": "xml"
+    },
+    "ignore": {
+        "useGitignore": true,
+        "useDefaultPatterns": true,
+        "customPatterns": [
+            "formatjson/",
+            "tests/",
+            "scripts/",
+            "logs/",
+            "node_modules/",
+            ".vs/",
+            ".env.example",
+            "nodemon.json"
+        ]
+    }
+}

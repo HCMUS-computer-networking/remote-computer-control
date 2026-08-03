@@ -9,13 +9,14 @@
       "type": "request",
       "module": "screenshot",
       "params": {
-        "mode": "once"
+        "mode": "once",
+        "quality": 90
       },
       "target_agents": ["PC-Lab-01"]
     },
 
     "stream_start": {
-      "_desc": "Start a continuous screen stream at the given FPS",
+      "_desc": "Start a continuous screen stream at the given FPS and JPEG quality",
       "type": "request",
       "module": "screen_stream",
       "params": {
@@ -39,12 +40,16 @@
   "gateway_to_controller": {
 
     "frame_meta": {
-      "_desc": "Sent immediately BEFORE the binary JPEG frame. The next WebSocket message is the raw JPEG bytes.",
+      "_desc": "Sent immediately BEFORE the binary JPEG frame. Contains bounding box coordinates (x, y, w, h) and keyframe signal. is_keyframe is true if frame is a keyframe (full state); false if it only contains changed bounding box area relative to previous frame. Agent sends keyframe every 30 frames (KeyframeInterval) or when stream starts. Controller receiving keyframe resets canvas; non-keyframe applies partial diff rendering.",
       "type": "frame_meta",
       "module": "screen",
       "agent_id": "PC-Lab-01",
-      "w": 1920,
-      "h": 1080,
+      "command_id": "<uuid>",
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "is_keyframe": true,
       "len": 48320,
       "seq": 42,
       "timestamp_ms": 1720000000000
@@ -60,6 +65,7 @@
       "_desc": "Agent confirms stream has started",
       "type": "stream_started",
       "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
       "module": "screen"
     },
 
@@ -67,6 +73,7 @@
       "_desc": "Agent confirms stream has stopped",
       "type": "stream_stopped",
       "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
       "module": "screen"
     }
 
