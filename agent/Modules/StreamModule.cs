@@ -23,7 +23,10 @@ namespace AgentSystem.Modules
         private Graphics scaledGraphics;
         private Size lastScreenSize;
         private readonly Size TargetSize = new Size(1280, 720);
-        private byte[] lastFrameHash = null;
+        
+        private Bitmap previousBitmap = null;
+        private int framesSinceLastKeyframe = 0;
+        private const int KeyframeInterval = 30;
         
         private bool isStreaming = false;
         private string streamCommandId = string.Empty;
@@ -148,8 +151,9 @@ namespace AgentSystem.Modules
                 scaledGraphics = null;
                 scaledBitmap?.Dispose();
                 scaledBitmap = null;
+                previousBitmap?.Dispose();
+                previousBitmap = null;
                 lastScreenSize = Size.Empty;
-                lastFrameHash = null;
             }
             finally
             {
@@ -173,6 +177,68 @@ namespace AgentSystem.Modules
                 StopStream("auto_disconnect"); 
             }
         }
+
+        private unsafe Rectangle GetDifferenceBoundingBox(Bitmap current, Bitmap previous)
+        {
+            if (current.Width != previous.Width || current.Height != previous.Height)
+                return new Rectangle(0, 0, current.Width, current.Height);
+
+            int width = current.Width;
+            int height = current.Height;
+
+            BitmapData dataCur = current.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            BitmapData dataPrev = previous.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+
+            int minX = width, minY = height, maxX = 0, maxY = 0;
+            bool hasChanges = false;
+
+            try
+            {
+                byte* ptrCur = (byte*)dataCur.Scan0;
+                byte* ptrPrev = (byte*)dataPrev.Scan0;
+                int stride = dataCur.Stride;
+
+                for (int y = 0; y < height; y++)
+                {
+                    int* rowCur = (int*)(ptrCur + y * stride);
+                    int* rowPrev = (int*)(ptrPrev + y * stride);
+                    
+                    bool rowHasChange = false;
+                    int rowMinX = width;
+                    int rowMaxX = 0;
+
+                    for (int x = 0; x < width; x++)
+                    {
+                        if (rowCur[x] != rowPrev[x])
+                        {
+                            if (x < rowMinX) rowMinX = x;
+                            if (x > rowMaxX) rowMaxX = x;
+                            rowHasChange = true;
+                        }
+                    }
+
+                    if (rowHasChange)
+                    {
+                        hasChanges = true;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                        if (rowMinX < minX) minX = rowMinX;
+                        if (rowMaxX > maxX) maxX = rowMaxX;
+                    }
+                }
+            }
+            finally
+            {
+                current.UnlockBits(dataCur);
+                previous.UnlockBits(dataPrev);
+            }
+
+            if (!hasChanges)
+                return Rectangle.Empty;
+
+            return new Rectangle(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        }
+
         private async Task CaptureAndSendAsync(string commandId, int quality, bool isFromStream)
         {
             // Chờ tối đa 1000ms để vào vùng Critical Section (thay thế cho TryEnter)
@@ -217,19 +283,47 @@ namespace AgentSystem.Modules
                 captureGraphics.CopyFromScreen(Point.Empty, Point.Empty, bounds.Size);
                 scaledGraphics.DrawImage(captureBitmap, new Rectangle(0, 0, TargetSize.Width, TargetSize.Height));
                 
-                byte[] imageBytes = ImageUtils.CompressImageToJpeg(scaledBitmap, quality);
-                
+                Rectangle diffRect;
+                bool isKeyframe = false;
+
+                if (!isFromStream || previousBitmap == null || framesSinceLastKeyframe >= KeyframeInterval)
+                {
+                    diffRect = new Rectangle(0, 0, TargetSize.Width, TargetSize.Height);
+                    isKeyframe = true;
+                    if (isFromStream) framesSinceLastKeyframe = 0;
+                }
+                else
+                {
+                    diffRect = GetDifferenceBoundingBox(scaledBitmap, previousBitmap);
+                    if (diffRect == Rectangle.Empty) return; // Không có thay đổi
+                    framesSinceLastKeyframe++;
+                }
+
+                byte[] imageBytes;
+                if (diffRect.Width == TargetSize.Width && diffRect.Height == TargetSize.Height)
+                {
+                    imageBytes = ImageUtils.CompressImageToJpeg(scaledBitmap, quality);
+                }
+                else
+                {
+                    using (Bitmap diffBitmap = new Bitmap(diffRect.Width, diffRect.Height, PixelFormat.Format32bppArgb))
+                    using (Graphics g = Graphics.FromImage(diffBitmap))
+                    {
+                        g.DrawImage(scaledBitmap, new Rectangle(0, 0, diffRect.Width, diffRect.Height), diffRect, GraphicsUnit.Pixel);
+                        imageBytes = ImageUtils.CompressImageToJpeg(diffBitmap, quality);
+                    }
+                }
+
                 if (isFromStream)
                 {
-                    using (MD5 md5 = MD5.Create())
+                    if (previousBitmap == null || previousBitmap.Size != TargetSize)
                     {
-                        byte[] currentHash = md5.ComputeHash(imageBytes);
-                        if (lastFrameHash != null && currentHash.SequenceEqual(lastFrameHash))
-                        {
-                            // Màn hình không thay đổi, bỏ qua không gửi để tiết kiệm băng thông
-                            return;
-                        }
-                        lastFrameHash = currentHash;
+                        previousBitmap?.Dispose();
+                        previousBitmap = new Bitmap(TargetSize.Width, TargetSize.Height, PixelFormat.Format32bppArgb);
+                    }
+                    using (Graphics gPrev = Graphics.FromImage(previousBitmap))
+                    {
+                        gPrev.DrawImage(scaledBitmap, Point.Empty);
                     }
                 }
                 
@@ -239,8 +333,11 @@ namespace AgentSystem.Modules
                     module = "screen",
                     agent_id = context.AgentId,
                     command_id = commandId,
-                    w = TargetSize.Width,
-                    h = TargetSize.Height,
+                    x = diffRect.X,
+                    y = diffRect.Y,
+                    w = diffRect.Width,
+                    h = diffRect.Height,
+                    is_keyframe = isKeyframe,
                     len = imageBytes.Length,
                     seq = isFromStream ? currentSequence++ : 0, 
                     timestamp_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
