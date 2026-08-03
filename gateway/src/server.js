@@ -19,6 +19,7 @@ const logger = require('./utils/logger');
 const { verifyControllerAuth } = require('./middleware/auth');
 const handleAgent = require('./socket/agentHandler');
 const handleController = require('./socket/controllerHandler');
+const udpServer = require('./udp/udpServer');
 
 // ─── Express App ───────────────────────────────────────────────
 const cookieParser = require('cookie-parser');
@@ -220,6 +221,7 @@ function start() {
     logger.info(`  Controller: ${wsProtocol}://localhost:${config.port}/controller`);
     logger.info('═══════════════════════════════════════════════════');
   });
+  udpServer.start(9000);
 }
 
 // ─── Graceful Shutdown ─────────────────────────────────────────
@@ -234,6 +236,8 @@ function shutdown(signal) {
       // ignore
     }
   }
+  
+  udpServer.shutdown();
 
   // Close WebSocket server
   wss.close(() => {
