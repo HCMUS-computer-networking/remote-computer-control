@@ -181,6 +181,25 @@ function assertOneOf(value, allowed, field_name)
     }
 }
 
+// target_agents envelope: must be an array of non-empty strings.
+// Empty array is legal (meaning "broadcast to all agents"). null/undefined is
+// accepted at the callsite and normalised to [] there — this validator is only
+// reached with a real value.
+function assertAgentIdList(value, field_name)
+{
+    if (!Array.isArray(value))
+    {
+        throw new Error(`Protocol: ${field_name} must be an array (got ${JSON.stringify(value)})`)
+    }
+    for (let i = 0; i < value.length; i++)
+    {
+        if (typeof value[i] !== 'string' || value[i].length === 0)
+        {
+            throw new Error(`Protocol: ${field_name}[${i}] must be a non-empty string`)
+        }
+    }
+}
+
 // ─── Base builders ────────────────────────────────────────────────────────────
 
 // Merge type + payload into one object, then serialise to a JSON string.
@@ -507,10 +526,21 @@ export function buildListAgents()
 // targetAgents  — array of agent id strings; empty array means all agents.
 export function buildPolicyUpdate(app_whitelist, sandbox_path, targetAgents)
 {
+    if (!Array.isArray(app_whitelist))
+    {
+        throw new Error('Protocol: app_whitelist must be an array')
+    }
+    for (let i = 0; i < app_whitelist.length; i++)
+    {
+        assertNonEmptyString(app_whitelist[i], `app_whitelist[${i}]`)
+    }
+    assertSafePath(sandbox_path, 'sandbox_path')
+    const target_agents = targetAgents ?? []
+    assertAgentIdList(target_agents, 'target_agents')
     return buildMessage(MSG_TYPE.POLICY_UPDATE,
     {
         params        : { app_whitelist, sandbox_path },
-        target_agents : targetAgents ?? [],
+        target_agents,
     })
 }
 
@@ -524,30 +554,39 @@ export function buildPolicyUpdate(app_whitelist, sandbox_path, targetAgents)
 // Ask the given agents to grant a feature (triggers the Agent consent popup).
 export function buildPermissionRequest(feature, targetAgents)
 {
+    assertOneOf(feature, Object.values(FEATURE), 'feature')
+    const target_agents = targetAgents ?? []
+    assertAgentIdList(target_agents, 'target_agents')
     return buildMessage(MSG_TYPE.PERMISSION_REQUEST,
     {
         feature,
-        target_agents : targetAgents ?? [],
+        target_agents,
     })
 }
 
 // Withdraw a feature we no longer need (the Agent drops the granted consent).
 export function buildPermissionRevoke(feature, targetAgents)
 {
+    assertOneOf(feature, Object.values(FEATURE), 'feature')
+    const target_agents = targetAgents ?? []
+    assertAgentIdList(target_agents, 'target_agents')
     return buildMessage(MSG_TYPE.PERMISSION_REVOKE,
     {
         feature,
-        target_agents : targetAgents ?? [],
+        target_agents,
     })
 }
 
 // Tell the Agent to stop a currently running feature (e.g. stop the stream).
 export function buildStopModule(feature, targetAgents)
 {
+    assertOneOf(feature, Object.values(FEATURE), 'feature')
+    const target_agents = targetAgents ?? []
+    assertAgentIdList(target_agents, 'target_agents')
     return buildMessage(MSG_TYPE.STOP_MODULE,
     {
         feature,
-        target_agents : targetAgents ?? [],
+        target_agents,
     })
 }
 
@@ -559,11 +598,14 @@ export function buildStopModule(feature, targetAgents)
 // targetAgents — array of agent id strings; empty array means all agents.
 export function buildRequest(module, params, targetAgents)
 {
+    assertNonEmptyString(module, 'module')
+    const target_agents = targetAgents ?? []
+    assertAgentIdList(target_agents, 'target_agents')
     return buildMessage(MSG_TYPE.REQUEST,
     {
         module,
-        params        : params       ?? {},
-        target_agents : targetAgents ?? [],
+        params        : params ?? {},
+        target_agents,
     })
 }
 
@@ -737,9 +779,11 @@ export function buildSysInfo(targetAgents)
 export function buildPower(action, targetAgents)
 {
     assertOneOf(action, Object.values(POWER_ACTION), 'power action')
+    const target_agents = targetAgents ?? []
+    assertAgentIdList(target_agents, 'target_agents')
     return buildMessage(MSG_TYPE.POWER,
     {
         action,
-        target_agents : targetAgents ?? [],
+        target_agents,
     })
 }

@@ -303,7 +303,18 @@ disabled submit); these throws catch anything the UI let through.
 - `assertNonNegativeInt` — chunk_index, byte counts.
 - `assertNonEmptyString` — app name, base64 chunks, transfer_id.
 - `assertSafePath` — sandbox paths: non-empty, no NUL, starts with `/`, no `..`.
-- `assertOneOf` — enumerated values (POWER_ACTION).
+- `assertOneOf` — enumerated values (POWER_ACTION, FEATURE, module name).
+- `assertAgentIdList` — `target_agents` envelope: must be an array of
+  non-empty strings. Empty array is legal (broadcast); `null` / `undefined`
+  is normalised to `[]` at the callsite before validation.
+
+Every envelope builder that carries `target_agents`
+(`buildRequest`, `buildPower`, `buildPolicyUpdate`, `buildPermissionRequest`,
+`buildPermissionRevoke`, `buildStopModule`) runs the list through
+`assertAgentIdList`; the feature-bearing ones additionally check `feature`
+against `FEATURE`, `buildRequest` checks `module` is a non-empty string, and
+`buildPolicyUpdate` validates `app_whitelist` (array of non-empty strings)
+plus `sandbox_path` (`assertSafePath`).
 
 Callsites that receive user-typed input wrap the builder in try/catch and toast
 the message; callsites that pass row-data or constants let the throw propagate
