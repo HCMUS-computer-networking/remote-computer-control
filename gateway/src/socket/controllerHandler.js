@@ -25,7 +25,7 @@ function handleController(ws, req) {
   const ip =
     req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
   const controllerId = `ctrl-${++controllerCounter}`;
-  const issuer = ws._gwJwtPayload?.username || 'admin';
+  const issuer = ws._gwJwtPayload?.username || controllerId;
 
   // Add to controller store
   controllerStore.add(ws);

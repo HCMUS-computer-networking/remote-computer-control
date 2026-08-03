@@ -44,6 +44,10 @@ const VALID_MODULES = [
   'permission_request',
   'permission_revoke',
   'stop_module',
+  'input_mouse_move',
+  'input_mouse_click',
+  'input_key',
+  'input_type',
 ];
 
 // ─── Minimal Envelope Schema ──────────────────────────────────────────
