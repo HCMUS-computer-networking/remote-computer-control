@@ -11,21 +11,9 @@ const { v4: uuidv4 } = require('uuid');
 
 const config = require('../config');
 const logger = require('../utils/logger');
+const { queries } = require('../db');
 
 const router = express.Router();
-
-// Load users from JSON file (read once at startup)
-let users = [];
-try {
-  users = require(path.resolve(__dirname, '..', 'store', 'users.json'));
-  logger.info('[login] Loaded users.json', { count: users.length });
-} catch (err) {
-  logger.error('[login] Failed to load users.json', { error: err.message });
-}
-
-// In-memory Map to store valid refresh token JTIs for revocation
-// Map<jti, { username, createdAt }>
-const activeRefreshTokens = new Map();
 
 /**
  * POST /api/login
@@ -86,17 +74,20 @@ router.post('/login', async (req, res) => {
     });
   }
 
-  const payload = { username: user.username };
+  const role = user.role || 'admin';
+  const payload = { username: user.username, role };
 
-  // 1. Access token TTL reduced from 8h to 30 minutes
+  // 1. Access token TTL 30 minutes, embedding role
   const token = jwt.sign(payload, config.jwtSecret, { expiresIn: '30m' });
 
-  // 2. Issue refresh token with 7-day TTL and store JTI in Map
+  // 2. Issue refresh token with 7-day TTL and save JTI to SQLite
   const jti = uuidv4();
   const refreshPayload = { username: user.username, jti };
   const refreshToken = jwt.sign(refreshPayload, config.jwtSecret, { expiresIn: '7d' });
+  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
 
-  activeRefreshTokens.set(jti, { username: user.username, createdAt: Date.now() });
+  queries.insertRefreshToken(jti, user.id, expiresAt);
+  queries.cleanExpiredTokens(Date.now());
 
   // 4. Set refresh token via HttpOnly Cookie (NOT in response body)
   res.cookie('refreshToken', refreshToken, {
@@ -106,7 +97,7 @@ router.post('/login', async (req, res) => {
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
   });
 
-  logger.info('[login] Login SUCCESS & refresh token issued', { username, jti });
+  logger.info('[login] Login SUCCESS & refresh token saved to SQLite', { username, role, jti });
   return res.json({
     ok: true,
     token,
@@ -116,8 +107,8 @@ router.post('/login', async (req, res) => {
 
 /**
  * POST /api/refresh
- * Reads refreshToken from HttpOnly Cookie (or body fallback), verifies JTI,
- * issues a new 30m access token, and rotates the refresh token.
+ * Reads refreshToken from HttpOnly Cookie (or body fallback), verifies JTI in SQLite,
+ * issues a new 30m access token with role, and rotates the refresh token in DB.
  */
 router.post('/refresh', (req, res) => {
   const token = req.cookies?.refreshToken || req.body?.refreshToken;
@@ -139,20 +130,40 @@ router.post('/refresh', (req, res) => {
     const decoded = jwt.verify(token, config.jwtSecret);
     const jti = decoded.jti;
 
-    if (!jti || !activeRefreshTokens.has(jti)) {
-      logger.warn('[refresh] FAILED: Revoked or unrecognized JTI', { jti, username: decoded.username });
+    if (!jti) {
+      return res.status(401).json({ ok: false, token: null, message: 'Invalid refresh token' });
+    }
+
+    // Verify JTI exists and has not expired in SQLite
+    const tokenRecord = queries.getRefreshToken(jti);
+    if (!tokenRecord || tokenRecord.expires_at < Date.now()) {
+      logger.warn('[refresh] FAILED: Revoked or expired JTI in SQLite', { jti, username: decoded.username });
+      if (tokenRecord) {
+        queries.deleteRefreshToken(jti);
+      }
       return res.status(401).json({
         ok: false,
         token: null,
-        message: 'Invalid or revoked refresh token',
+        message: 'Invalid or expired refresh token',
       });
     }
 
-    // Rotate refresh token: revoke old JTI and generate a new one
-    activeRefreshTokens.delete(jti);
+    // Get latest user info from DB
+    const user = queries.getUserById(tokenRecord.user_id) || queries.getUserByUsername(decoded.username);
+    if (!user) {
+      logger.warn('[refresh] FAILED: User associated with token no longer exists in DB');
+      queries.deleteRefreshToken(jti);
+      return res.status(401).json({ ok: false, token: null, message: 'User no longer exists' });
+    }
+
+    const role = user.role || 'admin';
+
+    // Rotate refresh token: delete old JTI and generate a new one in SQLite
+    queries.deleteRefreshToken(jti);
     const newJti = uuidv4();
-    const newRefreshToken = jwt.sign({ username: decoded.username, jti: newJti }, config.jwtSecret, { expiresIn: '7d' });
-    activeRefreshTokens.set(newJti, { username: decoded.username, createdAt: Date.now() });
+    const newRefreshToken = jwt.sign({ username: user.username, jti: newJti }, config.jwtSecret, { expiresIn: '7d' });
+    const newExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    queries.insertRefreshToken(newJti, user.id, newExpiresAt);
 
     res.cookie('refreshToken', newRefreshToken, {
       httpOnly: true,
@@ -161,10 +172,10 @@ router.post('/refresh', (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // Issue new 30-minute access token
-    const newAccessToken = jwt.sign({ username: decoded.username }, config.jwtSecret, { expiresIn: '30m' });
+    // Issue new 30-minute access token embedding role
+    const newAccessToken = jwt.sign({ username: user.username, role }, config.jwtSecret, { expiresIn: '30m' });
 
-    logger.info('[refresh] Token refreshed & rotated successfully', { username: decoded.username, oldJti: jti, newJti });
+    logger.info('[refresh] Token refreshed & rotated successfully via SQLite', { username: user.username, role, oldJti: jti, newJti });
     return res.json({
       ok: true,
       token: newAccessToken,
@@ -190,9 +201,9 @@ router.post('/logout', (req, res) => {
   if (token && config.jwtSecret) {
     try {
       const decoded = jwt.decode(token);
-      if (decoded && decoded.jti && activeRefreshTokens.has(decoded.jti)) {
-        activeRefreshTokens.delete(decoded.jti);
-        logger.info('[logout] Revoked refresh token JTI', { jti: decoded.jti, username: decoded.username });
+      if (decoded && decoded.jti) {
+        queries.deleteRefreshToken(decoded.jti);
+        logger.info('[logout] Revoked refresh token JTI in SQLite', { jti: decoded.jti, username: decoded.username });
       }
     } catch (err) {
       logger.debug('[logout] Error decoding token during logout', { error: err.message });
@@ -210,8 +221,5 @@ router.post('/logout', (req, res) => {
     message: 'Đăng xuất thành công',
   });
 });
-
-// Attach activeRefreshTokens to router for test access and transparency
-router.activeRefreshTokens = activeRefreshTokens;
 
 module.exports = router;

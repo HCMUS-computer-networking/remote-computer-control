@@ -127,6 +127,30 @@ function routeToAgents(rawMessage, parsed, issuer = 'admin', controllerWs = null
     return false;
   }
 
+  // ── Role-based Access Control (RBAC) check ─────────────────────────
+  // admin: allowed to send commands down to Agents
+  // viewer: read-only (can only view agent list and receive streams via subscribe, cannot forward commands)
+  const userRole = controllerWs ? (controllerWs._gwUserRole || controllerWs._gwJwtPayload?.role) : 'admin';
+  if (userRole !== 'admin') {
+    logger.warn('[router] Rejected relay: controller role "viewer" is read-only and cannot execute commands on agents', {
+      issuer,
+      role: userRole,
+      type: msgObj?.type,
+      module: msgObj?.module,
+    });
+    if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
+      controllerWs.send(
+        JSON.stringify({
+          type: 'error_ack',
+          success: false,
+          error: 'Permission denied: role "viewer" is read-only and cannot execute commands on agents',
+          code: 403,
+        })
+      );
+    }
+    return false;
+  }
+
   // 1. Thêm field top-level `issuer` là string username (đơn giản — không dùng object)
   msgObj.issuer = String(issuer || 'admin');
 
