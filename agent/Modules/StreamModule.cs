@@ -327,23 +327,9 @@ namespace AgentSystem.Modules
                     }
                 }
                 
-                context.SendResponse(new
-                {
-                    type = "frame_meta",
-                    module = "screen",
-                    agent_id = context.AgentId,
-                    command_id = commandId,
-                    x = diffRect.X,
-                    y = diffRect.Y,
-                    w = diffRect.Width,
-                    h = diffRect.Height,
-                    is_keyframe = isKeyframe,
-                    len = imageBytes.Length,
-                    seq = isFromStream ? currentSequence++ : 0, 
-                    timestamp_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                });
-                
-                context.SendBinaryFrame(imageBytes);
+                long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                ushort seq = (ushort)(isFromStream ? currentSequence++ : 0);
+                await UdpStreamSender.SendFrameAsync(context.AgentId, commandId, 0, seq, imageBytes, timestamp, isKeyframe, diffRect);
             }
             catch (Exception ex)
             {

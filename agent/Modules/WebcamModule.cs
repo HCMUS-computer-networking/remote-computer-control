@@ -99,7 +99,7 @@ namespace AgentSystem.Modules
             webcamCts = new CancellationTokenSource();
 
             // Khởi động luồng chạy ngầm OpenCV (Vẫn dùng Task.Run vì capture.Read() có thể block)
-            _ = Task.Run(() => CaptureLoopAsync(webcamCts.Token));
+            _ = Task.Run(() => CaptureLoopAsync(webcamCts.Token, commandId));
 
             context.SendResponse(new 
             { 
@@ -109,7 +109,7 @@ namespace AgentSystem.Modules
             });
         }
 
-        private async Task CaptureLoopAsync(CancellationToken token)
+        private async Task CaptureLoopAsync(CancellationToken token, string commandId)
         {
             try
             {
@@ -119,7 +119,7 @@ namespace AgentSystem.Modules
                     {
                         if (capture.Read(frame) && !frame.Empty())
                         {
-                            await ProcessAndSendFrameAsync(frame);
+                            await ProcessAndSendFrameAsync(frame, commandId);
                         }
 
                         int sleepMs = 1000 / (currentFps > 0 ? currentFps : 15);
@@ -156,7 +156,7 @@ namespace AgentSystem.Modules
             }
         }
 
-        private async Task ProcessAndSendFrameAsync(Mat frame)
+        private async Task ProcessAndSendFrameAsync(Mat frame, string commandId)
         {
             bool lockTaken = await captureSemaphore.WaitAsync(0);
             if (!lockTaken) return;
@@ -167,19 +167,10 @@ namespace AgentSystem.Modules
                 {
                     byte[] frameBytes = ImageUtils.CompressImageToJpeg(bitmap, currentQuality);
 
-                    context.SendResponse(new
-                    {
-                        type = "frame_meta",
-                        module = "webcam",
-                        agent_id = context.AgentId,
-                        w = bitmap.Width,
-                        h = bitmap.Height,
-                        len = frameBytes.Length,
-                        seq = currentSequence++,
-                        timestamp_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                    });
-
-                    context.SendBinaryFrame(frameBytes);
+                    long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    ushort seq = (ushort)currentSequence++;
+                    Rectangle bounds = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+                    await UdpStreamSender.SendFrameAsync(context.AgentId, commandId, 1, seq, frameBytes, timestamp, true, bounds);
                 }
             }
             catch (Exception ex)
