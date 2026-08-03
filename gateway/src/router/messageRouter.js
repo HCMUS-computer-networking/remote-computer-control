@@ -13,6 +13,7 @@ const Ajv = require('ajv');
 const agentStore = require('../store/agentStore');
 const controllerStore = require('../store/controllerStore');
 const logger = require('../utils/logger');
+const { validateParams } = require('../validation/commandSchemas');
 
 
 const ajv = new Ajv({ allErrors: true });
@@ -125,6 +126,30 @@ function routeToAgents(rawMessage, parsed, issuer = 'admin', controllerWs = null
       );
     }
     return false;
+  }
+
+  // ── Validate specific params deep schema ─────────────────────────────
+  const commandKey = msgObj.action || msgObj.module || msgObj.type;
+  if (commandKey) {
+    const paramsValidResult = validateParams(commandKey, msgObj.params);
+    if (!paramsValidResult.valid) {
+      logger.warn('[router] Message failed deep params schema validation', {
+        errorText: paramsValidResult.errorText,
+        type: msgObj.type,
+        commandKey,
+      });
+      if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
+        controllerWs.send(
+          JSON.stringify({
+            type: 'ERROR',
+            command_id: msgObj.command_id || null,
+            message: `Input validation failed for params: ${paramsValidResult.errorText}`,
+            details: paramsValidResult.errors
+          })
+        );
+      }
+      return false;
+    }
   }
 
   // ── Role-based Access Control (RBAC) check ─────────────────────────
