@@ -73,12 +73,12 @@ namespace AgentSystem.Managers
             }
         }
 
-        // 2. Giao diện đếm ngược (Dùng cho Webcam)
-        public void ShowWebcamCountdown(int seconds)
+        // 2. Giao diện đếm ngược chung (Webcam, Screen)
+        public void ShowCountdown(int seconds, string title, string formatMessage)
         {
             Thread uiThread = new Thread(() =>
             {
-                using (var form = new CountdownForm(seconds))
+                using (var form = new CountdownForm(seconds, title, formatMessage))
                 {
                     form.ShowDialog();
                 }
@@ -225,11 +225,11 @@ namespace AgentSystem.Managers
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-        public CountdownForm(int seconds)
+        public CountdownForm(int seconds, string title, string formatMessage)
         {
             timeLeft = seconds;
 
-            this.Text = "Cảnh báo Ghi hình";
+            this.Text = title;
             this.Size = new Size(300, 150);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.TopMost = true;
@@ -245,9 +245,9 @@ namespace AgentSystem.Managers
 
             lblCount = new Label
             {
-                Text = $"Camera sẽ được kích hoạt sau {timeLeft} giây...",
+                Text = string.Format(formatMessage, timeLeft),
                 Location = new Point(10, 40),
-                Size = new Size(260, 30),
+                Size = new Size(260, 50),
                 TextAlign = ContentAlignment.MiddleCenter,
                 Font = new Font("Arial", 11, FontStyle.Bold),
                 ForeColor = Color.Red
@@ -265,7 +265,7 @@ namespace AgentSystem.Managers
                 }
                 else
                 {
-                    lblCount.Text = $"Camera sẽ được kích hoạt sau {timeLeft} giây...";
+                    lblCount.Text = string.Format(formatMessage, timeLeft);
                 }
             };
             countdownTimer.Start();

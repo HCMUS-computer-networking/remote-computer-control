@@ -78,7 +78,7 @@ namespace AgentSystem.Modules
             }
         }
 
-        private Task StartStreamAsync(int fps, int quality, string commandId)
+        private async Task StartStreamAsync(int fps, int quality, string commandId)
         {
             int safeFps = fps > 0 ? fps : 24;
             int intervalMs = 1000 / safeFps;
@@ -90,8 +90,12 @@ namespace AgentSystem.Modules
                 StopStream(commandId);
                 Log.Information("Đã điều chỉnh luồng Stream sang FPS: {Fps}, Quality: {Quality}", safeFps, quality);
             }
-
-
+            else
+            {
+                // Chỉ đếm ngược 10s nếu là phiên stream hoàn toàn mới
+                ui.ShowCountdown(10, "Cảnh báo Chia sẻ Màn hình", "Màn hình sẽ bị theo dõi sau {0} giây...");
+                await Task.Delay(10000);
+            }
 
             isStreaming = true;
             streamCommandId = commandId;
@@ -103,8 +107,6 @@ namespace AgentSystem.Modules
             // Khởi tạo và chạy vòng lặp Stream ngầm
             streamCts = new CancellationTokenSource();
             streamTask = StreamLoopAsync(intervalMs, streamCts.Token);
-            
-            return Task.CompletedTask;
         }
 
         private async Task StreamLoopAsync(int intervalMs, CancellationToken token)

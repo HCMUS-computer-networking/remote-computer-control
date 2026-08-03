@@ -63,9 +63,7 @@ namespace AgentSystem.Modules
                 return;
             }
 
-
-
-            ui.ShowWebcamCountdown(10);
+            ui.ShowCountdown(10, "Cảnh báo Ghi hình", "Camera sẽ được kích hoạt sau {0} giây...");
             await Task.Delay(10000);
 
             capture = new VideoCapture(0); 
