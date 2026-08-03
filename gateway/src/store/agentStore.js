@@ -8,39 +8,24 @@
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const logger = require('../utils/logger');
+const { queries } = require('../db');
 
 /** @type {Map<string, {agentId: string, ws: WebSocket, hostname: string, ip: string, os: string, connectedAt: number}>} */
 const agents = new Map();
 
-// ─── Load agent credentials from agents.json ──────────────────
-/** @type {Map<string, string>} agent_id → secretHash */
-const credentials = new Map();
-
-try {
-  const agentsFile = require(path.resolve(__dirname, 'agents.json'));
-  for (const entry of agentsFile) {
-    if (entry.agent_id && entry.secretHash) {
-      credentials.set(entry.agent_id, entry.secretHash);
-    }
-  }
-  logger.info('[agentStore] Loaded agent credentials', { count: credentials.size });
-} catch (err) {
-  logger.error('[agentStore] Failed to load agents.json', { error: err.message });
-}
-
 /**
- * Verify an agent's secret against the stored bcrypt hash.
+ * Verify an agent's secret against the stored bcrypt hash in SQLite database.
  * @param {string} agentId
  * @param {string} secret - Plaintext secret sent by the agent
  * @returns {Promise<boolean>} true if valid
  */
 async function verifySecret(agentId, secret) {
-  const hash = credentials.get(agentId);
-  if (!hash) {
-    logger.warn('[agentStore] Unknown agent_id — not in agents.json', { agentId });
+  const agent = queries.getAgentById(agentId);
+  if (!agent || !agent.secret_hash) {
+    logger.warn('[agentStore] Unknown agent_id — not found in SQLite database', { agentId });
     return false;
   }
-  return bcrypt.compare(secret, hash);
+  return bcrypt.compare(secret, agent.secret_hash);
 }
 
 /**
