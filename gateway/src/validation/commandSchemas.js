@@ -134,8 +134,10 @@ const schemas = {
       chunk_index: { type: 'integer', minimum: 0 },
       total_chunks: { type: 'integer', minimum: 1 },
       transfer_id: { type: 'string' },
+      total_size: { type: 'integer', minimum: 0 },
+      data_base64: { type: 'string' },
     },
-    required: ['path', 'chunk_index', 'total_chunks', 'transfer_id'],
+    required: ['path', 'chunk_index', 'total_chunks', 'transfer_id', 'data_base64'],
     additionalProperties: false,
   },
 
