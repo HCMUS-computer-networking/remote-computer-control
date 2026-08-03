@@ -192,6 +192,10 @@ namespace AgentSystem.Core
                             // Chuyển thông điệp cho MessageDispatcher phân tích
                             context.Dispatcher.Dispatch(message);
                         }
+                        else if (result.MessageType == WebSocketMessageType.Binary)
+                        {
+                            context.HandleBinaryFrame(ms.ToArray());
+                        }
                     }
                 }
             }

@@ -79,6 +79,7 @@ namespace AgentSystem
                 services.AddTransient<BaseModule, StreamModule>();
                 services.AddTransient<BaseModule, PowerModule>();
                 services.AddTransient<BaseModule, SysInfoModule>();
+                services.AddTransient<BaseModule, InputModule>();
 
                 services.AddSingleton<AgentClient>(provider => 
                 {

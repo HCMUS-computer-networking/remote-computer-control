@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -14,17 +15,37 @@ namespace AgentSystem.Modules
     {
         private readonly object _chunkLock = new object();
         private Dictionary<string, int> expectedChunks = new Dictionary<string, int>();
+        private readonly ConcurrentDictionary<string, TaskCompletionSource<byte[]>> _binaryWaiters = new ConcurrentDictionary<string, TaskCompletionSource<byte[]>>();
 
         public override string[] SupportedCommands => new[] { "fs_list", "fs_get", "fs_put" };
 
         public FileModule(IAgentContext context, SecurityManager security, UIManager ui) 
             : base(context, security, ui) { }
 
+        public void HandleBinaryChunk(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length < 2) return;
+
+            byte idLen = bytes[0];
+            if (bytes.Length >= 1 + idLen)
+            {
+                string transferId = System.Text.Encoding.UTF8.GetString(bytes, 1, idLen);
+                byte[] chunkData = new byte[bytes.Length - 1 - idLen];
+                Buffer.BlockCopy(bytes, 1 + idLen, chunkData, 0, chunkData.Length);
+
+                if (_binaryWaiters.TryRemove(transferId, out var tcs))
+                {
+                    tcs.SetResult(chunkData);
+                }
+            }
+        }
+
         public override async Task ExecuteAsync(string action, JsonElement parameters, string commandId)
         {
             try
             {
-                string relativePath = parameters.TryGetProperty("path", out var pathElement) ? pathElement.GetString() : "/";
+                bool isObj = parameters.ValueKind == JsonValueKind.Object;
+                string relativePath = isObj && parameters.TryGetProperty("path", out var pathElement) ? pathElement.GetString() : "/";
                 if (!security.IsPathInSandbox(relativePath))
                 {
                     SendError(commandId, action, relativePath, "Path is outside the sandbox");
@@ -39,16 +60,14 @@ namespace AgentSystem.Modules
                         ListDirectory(fullPath, relativePath, commandId);
                         break;
                     case "fs_get":
-                        await GetFileAsync(fullPath, relativePath, commandId);
+                        await GetFileAsync(fullPath, relativePath, commandId, parameters);
                         break;
                     case "fs_put":
-                        int chunkIndex = parameters.TryGetProperty("chunk_index", out var ci) ? ci.GetInt32() : 0;
-                        int totalChunks = parameters.TryGetProperty("total_chunks", out var tc) ? tc.GetInt32() : 1;
-                        
-                        // Lấy dữ liệu Base64 từ gói tin
-                        string base64Content = parameters.GetProperty("data_base64").GetString();
-                        
-                        await PutFileAsync(fullPath, relativePath, base64Content, chunkIndex, totalChunks, commandId);
+                        int chunkIndex = isObj && parameters.TryGetProperty("chunk_index", out var ci) ? ci.GetInt32() : 0;
+                        int totalChunks = isObj && parameters.TryGetProperty("total_chunks", out var tc) ? tc.GetInt32() : 1;
+                        string transferId = isObj && parameters.TryGetProperty("transfer_id", out var tid) ? tid.GetString() : commandId;
+
+                        await PutFileAsync(fullPath, relativePath, transferId, chunkIndex, totalChunks, commandId);
                         break;
                     default:
                         SendError(commandId, action, relativePath, $"Unknown file system action: {action}");
@@ -62,13 +81,29 @@ namespace AgentSystem.Modules
             }
         }
 
-        private async Task PutFileAsync(string fullPath, string relativePath, string base64Content, int chunkIndex, int totalChunks, string commandId)
+        private async Task PutFileAsync(string fullPath, string relativePath, string transferId, int chunkIndex, int totalChunks, string commandId)
         {
             string directoryPath = Path.GetDirectoryName(fullPath);
             if (!Directory.Exists(directoryPath)) Directory.CreateDirectory(directoryPath);
 
-            // Giải mã chuỗi Base64 thành mảng byte
-            byte[] fileBytes = Convert.FromBase64String(base64Content);
+            var tcs = new TaskCompletionSource<byte[]>();
+            _binaryWaiters[transferId] = tcs;
+
+            byte[] fileBytes;
+            try
+            {
+                var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(10000));
+                if (completedTask != tcs.Task)
+                {
+                    SendError(commandId, "fs_put", relativePath, "Timeout waiting for binary chunk.");
+                    return;
+                }
+                fileBytes = await tcs.Task;
+            }
+            finally
+            {
+                _binaryWaiters.TryRemove(transferId, out _);
+            }
 
             lock (_chunkLock)
             {
@@ -83,7 +118,6 @@ namespace AgentSystem.Modules
 
             FileMode mode = (chunkIndex == 0) ? FileMode.Create : FileMode.Append;
 
-            // Ghi file bất đồng bộ (Bật cờ useAsync: true)
             using (var stream = new FileStream(fullPath, mode, FileAccess.Write, FileShare.None, 4096, useAsync: true))
             {
                 await stream.WriteAsync(fileBytes, 0, fileBytes.Length);
@@ -94,6 +128,7 @@ namespace AgentSystem.Modules
                 type = "fs_put_result",
                 agent_id = context.AgentId,
                 command_id = commandId,
+                transfer_id = transferId,
                 path = relativePath,
                 chunk_index = chunkIndex,
                 success = true,
@@ -107,7 +142,6 @@ namespace AgentSystem.Modules
                 {
                     expectedChunks.Remove(fullPath);
                     
-                    // TÍNH MÃ BĂM SAU KHI ĐÃ GHI XONG TOÀN BỘ FILE XUỐNG ĐĨA
                     string fileHash = ComputeFileSHA256(fullPath);
 
                     context.SendResponse(new
@@ -115,9 +149,10 @@ namespace AgentSystem.Modules
                         type = "fs_put_complete",
                         agent_id = context.AgentId,
                         command_id = commandId,
+                        transfer_id = transferId,
                         path = relativePath,
                         success = true,
-                        sha256 = fileHash, // BỔ SUNG TRƯỜNG NÀY ĐỂ SERVER KIỂM TRA
+                        sha256 = fileHash,
                         message = "File saved successfully"
                     });
                 }
@@ -160,7 +195,7 @@ namespace AgentSystem.Modules
             });
         }
 
-        private async Task GetFileAsync(string fullPath, string relativePath, string commandId)
+        private async Task GetFileAsync(string fullPath, string relativePath, string commandId, JsonElement parameters)
         {
             if (!File.Exists(fullPath))
             {
@@ -169,14 +204,15 @@ namespace AgentSystem.Modules
             }
 
             const int CHUNK_SIZE = 512 * 1024; // 512 KB mỗi chunk
+            bool isObj = parameters.ValueKind == JsonValueKind.Object;
+            string transferId = isObj && parameters.TryGetProperty("transfer_id", out var tid) ? tid.GetString() : commandId;
 
-            // Tính SHA256 toàn file trước khi gửi
             string fileHash = ComputeFileSHA256(fullPath);
 
             using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
             long totalSize = stream.Length;
             int totalChunks = (int)Math.Ceiling((double)totalSize / CHUNK_SIZE);
-            if (totalChunks == 0) totalChunks = 1; // File rỗng vẫn gửi 1 chunk
+            if (totalChunks == 0) totalChunks = 1;
 
             byte[] buffer = new byte[CHUNK_SIZE];
             int chunkIndex = 0;
@@ -184,21 +220,30 @@ namespace AgentSystem.Modules
 
             while ((bytesRead = await stream.ReadAsync(buffer, 0, CHUNK_SIZE)) > 0)
             {
-                string chunkBase64 = Convert.ToBase64String(buffer, 0, bytesRead);
-                
                 context.SendResponse(new
                 {
                     type = "fs_get_result",
                     agent_id = context.AgentId,
                     command_id = commandId,
+                    transfer_id = transferId,
                     success = true,
                     path = relativePath,
                     total_size = totalSize,
                     chunk_index = chunkIndex,
                     total_chunks = totalChunks,
-                    data_base64 = chunkBase64,
-                    sha256 = (chunkIndex == totalChunks - 1) ? fileHash : null // SHA256 chỉ gửi ở chunk cuối
+                    sha256 = (chunkIndex == totalChunks - 1) ? fileHash : null
                 });
+
+                if (bytesRead == CHUNK_SIZE)
+                {
+                    context.SendBinaryFrame(buffer);
+                }
+                else
+                {
+                    byte[] chunkData = new byte[bytesRead];
+                    Buffer.BlockCopy(buffer, 0, chunkData, 0, bytesRead);
+                    context.SendBinaryFrame(chunkData);
+                }
 
                 chunkIndex++;
             }
@@ -234,6 +279,22 @@ namespace AgentSystem.Modules
                 byte[] hashBytes = sha256.ComputeHash(stream);
                 return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
             }
+        }
+
+        public override void OnDisconnected()
+        {
+            foreach (var kvp in _binaryWaiters)
+            {
+                kvp.Value.TrySetCanceled();
+            }
+            _binaryWaiters.Clear();
+
+            lock (_chunkLock)
+            {
+                expectedChunks.Clear();
+            }
+
+            base.OnDisconnected();
         }
     }
 }

