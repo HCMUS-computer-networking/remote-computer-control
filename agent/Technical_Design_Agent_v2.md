@@ -42,7 +42,7 @@
 
 ### 2.5 FileModule
 - **Commands:** `fs_list`, `fs_get`, `fs_put`
-- Chunking file nhị phân. Gắn cơ chế khóa `_chunkLock` bảo vệ thứ tự chunk. Tính toàn vẹn bằng băm SHA-256 sau khi hoàn tất. Hủy toàn bộ tiến trình tải dở dang khi ngắt kết nối.
+- Tải/Lưu file nhị phân thông qua giao thức **WebSocket Binary Frame**. Quy trình truyền (dual-phase): nhận/gửi JSON Metadata (`fs_get_result` / `fs_put`), sau đó là luồng Binary Frame chứa prefix `transfer_id`. Sử dụng `ConcurrentDictionary` để quản lý các luồng Upload đồng thời (`_binaryWaiters`). Tính toàn vẹn bằng băm SHA-256 sau khi hoàn tất. Hủy toàn bộ tiến trình tải dở dang khi ngắt kết nối (bắt sự kiện `OnDisconnected`).
 
 ### 2.6 WebcamModule
 - **Commands:** `webcam_start`, `webcam_stop`
@@ -62,5 +62,5 @@
 
 ## PHẦN 3: COMMUNICATION PROTOCOL
 - **Payload chuẩn:** JSON với trường `command_id`, `module`, `action`, `params`, `target_agents`.
-- **Metadata & Binary:** Dữ liệu lớn truyền theo 2 phase: Gói JSON báo Metadata trước, theo sau là dữ liệu Raw Binary.
+- **Metadata & Binary:** Dữ liệu lớn truyền theo 2 phase: Gói JSON báo Metadata trước (chứa `transfer_id`), theo sau là dữ liệu Raw Binary. Gói Binary bắt buộc có prefix chiều dài và chuỗi `transfer_id` ở đầu để bộ xử lý `FileModule` định tuyến đúng luồng file.
 - **Dynamic Policy:** Agent xử lý gói `policy_update` ở tầng Dispatcher để cập nhật Memory cho Whitelist/Sandbox mà không cần khởi động lại.

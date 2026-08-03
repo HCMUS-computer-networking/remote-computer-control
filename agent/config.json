@@ -1,5 +1,5 @@
 {
-  "agent_id": "DUY-5BCD",
+  "agent_id": "AUTO",
   "gateway_url": "ws://127.0.0.1:8080",
   "auth_key": "agent-secret-key-2024",
   "app_whitelist": [

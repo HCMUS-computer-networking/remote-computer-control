@@ -22,7 +22,7 @@ Khai thác GDI+ stream ảnh JPEG (ép về 1280x720). Được tối ưu siêu 
 Giám sát văn bản qua API Hệ điều hành (`WH_KEYBOARD_LL`). Tối ưu truyền tải bằng cách khóa dữ liệu vào Buffer và xả lên Server chu kỳ 3 giây (`PeriodicTimer`).
 
 ### 2.5 Phân hệ Quản trị Tệp tin (File Sandbox Module)
-Tải/Lưu file kích thước lớn thông qua Chunking song công. Chỉ cho phép các thao tác nội bộ trong Sandbox quy định (khóa Path Traversal). Băm SHA-256 sau khi ghép mảnh thành công.
+Tải/Lưu file kích thước lớn thông qua giao thức **WebSocket Binary Frame**. Quá trình truyền chia làm 2 giai đoạn: gửi gói JSON chứa Metadata trước (bao gồm `transfer_id`), sau đó truyền tuần tự các chunk nhị phân gắn tiền tố `transfer_id`. Tính toàn vẹn được đảm bảo bằng băm SHA-256 sau khi ghép mảnh thành công. Hỗ trợ Concurrent Uploads. Chỉ cho phép các thao tác nội bộ trong Sandbox quy định (khóa Path Traversal).
 
 ### 2.6 Phân hệ Quan sát Camera (Webcam Module)
 Ghi hình OpenCV chuẩn 720p. Tích hợp tính năng an toàn: tự động dọn dẹp tài nguyên phần cứng (Release) nếu Gateway rớt mạng.
@@ -31,7 +31,7 @@ Ghi hình OpenCV chuẩn 720p. Tích hợp tính năng an toàn: tự động d�
 Hỗ trợ Sleep, Restart, Shutdown, Lock screen thông qua tập lệnh CLI của Windows (rundll32/shutdown).
 
 ### 2.8 Phân hệ Điều khiển Từ xa (Input Module)
-Cho phép Controller can thiệp vào máy nạn nhân bằng cách tiêm sự kiện (Inject Input) chuột và bàn phím thông qua `user32.dll`. Ràng buộc cấp phép chung với quyền `screen`.
+Cho phép Controller can thiệp vào máy nạn nhân bằng cách tiêm sự kiện chuột và bàn phím thông qua P/Invoke `user32.dll` (`SetCursorPos`, `SendInput`). Hỗ trợ 4 lệnh cơ bản: `input_mouse_move` (Fire-and-forget), `input_mouse_click`, `input_key`, và `input_type`. Ràng buộc cấp phép chung với quyền `screen`.
 
 ### 2.9 Phân hệ Cấu hình Hệ thống (SysInfo Module)
 Truy xuất nhanh các thông số tổng quan: OS Version, Uptime, Local IP Address, bộ nhớ RAM, tình trạng Disk và hiệu suất CPU hiện hành.
