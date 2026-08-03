@@ -1,15 +1,22 @@
 // src/server.js
-// 1 HTTP server (Express for REST) + 1 ws.WebSocketServer ({ noServer: true }).
+// Phase 1: Security Hardening — HTTPS/WSS + CORS Whitelist + Rate Limiting.
+//
+// 1 HTTP/HTTPS server (Express for REST) + 1 ws.WebSocketServer ({ noServer: true }).
 // Upgrade event routes by pathname: /agent and /controller.
+// Automatically selects HTTPS/WSS when SSL_CERT_PATH and SSL_KEY_PATH are configured.
 
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
 const express = require('express');
+
+const rateLimit = require('express-rate-limit');
 const { WebSocketServer } = require('ws');
 const { URL } = require('url');
 
 const config = require('./config');
 const logger = require('./utils/logger');
-const { verifyAgentKey, verifyControllerAuth } = require('./middleware/auth');
+const { verifyControllerAuth } = require('./middleware/auth');
 const handleAgent = require('./socket/agentHandler');
 const handleController = require('./socket/controllerHandler');
 
@@ -17,15 +24,70 @@ const handleController = require('./socket/controllerHandler');
 const app = express();
 app.use(express.json());
 
-// ─── CORS (for Controller web app) ─────────────────────────────
-app.use((_req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+// ─── CORS Whitelist (Phase 1: Security Hardening) ──────────────
+// Hand-rolled middleware — reads ALLOWED_ORIGINS from config (comma-separated).
+// Preflight OPTIONS returns 403 if the origin is not in the whitelist.
+const allowedOriginsList = config.allowedOrigins
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin && allowedOriginsList.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+
+  // Preflight: respond immediately
+  if (req.method === 'OPTIONS') {
+    if (!origin || !allowedOriginsList.includes(origin)) {
+      logger.warn('[cors] Preflight BLOCKED — origin not in whitelist', { origin });
+      return res.status(403).json({ ok: false, message: 'CORS: origin not allowed' });
+    }
+    return res.sendStatus(204);
+  }
+
   next();
 });
 
-// Health check
+logger.info('[security] CORS configured', {
+  allowedOrigins: allowedOriginsList,
+});
+
+// ─── Rate Limiting — Login only (Phase 1: Security Hardening) ──
+// 10 requests per minute per IP on POST /api/login.
+// NOT applied globally — avoids blocking WS handshake or normal traffic.
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,             // 10 attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    ok: false,
+    token: null,
+    message: 'Too many login attempts. Please try again later.',
+  },
+  handler: (req, res, _next, options) => {
+    logger.warn('[rate-limit] Login brute-force protection triggered', {
+      ip: req.ip,
+      username: req.body?.username || 'unknown',
+    });
+    res.status(options.statusCode).json(options.message);
+  },
+});
+app.use('/api/login', loginLimiter);
+
+logger.info('[security] Rate limiting configured', {
+  loginLimit: '10 attempts / 60s per IP',
+});
+
+
+
+// ─── Health check ──────────────────────────────────────────────
 app.get('/', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
@@ -43,17 +105,46 @@ app.get('/api/agents', (_req, res) => {
 const loginRouter = require('./auth/login');
 app.use('/api', loginRouter);
 
-// ─── HTTP Server ───────────────────────────────────────────────
-const httpServer = http.createServer(app);
+// ─── HTTP / HTTPS Server (Phase 1: TLS Support) ───────────────
+// TLS_ENABLED=true  → https.createServer (wss://)
+// TLS_ENABLED=false → http.createServer  (ws://)  — dev mode
+let server;
+let protocol;
+
+if (config.tlsEnabled) {
+  try {
+    const tlsOptions = {
+      cert: fs.readFileSync(config.tlsCertPath),
+      key: fs.readFileSync(config.tlsKeyPath),
+    };
+    server = https.createServer(tlsOptions, app);
+    protocol = 'https';
+    logger.info('[security] TLS enabled — running in HTTPS/WSS mode', {
+      cert: config.tlsCertPath,
+      key: config.tlsKeyPath,
+    });
+  } catch (err) {
+    logger.error('[security] TLS_ENABLED=true but failed to load certificates — aborting', {
+      error: err.message,
+      certPath: config.tlsCertPath,
+      keyPath: config.tlsKeyPath,
+    });
+    process.exit(1);
+  }
+} else {
+  server = http.createServer(app);
+  protocol = 'http';
+  logger.warn('[security] TLS disabled — running in plain HTTP/WS mode (dev only)');
+}
 
 // ─── WebSocket Server (noServer mode) ──────────────────────────
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
 
 // ─── Upgrade Handler ───────────────────────────────────────────
 // Parse URL → route by pathname → authenticate → handleUpgrade.
-httpServer.on('upgrade', (req, socket, head) => {
+server.on('upgrade', (req, socket, head) => {
   // Parse the request URL (req.url is relative, e.g. "/agent?key=xxx")
-  const baseUrl = `http://${req.headers.host || 'localhost'}`;
+  const baseUrl = `${protocol}://${req.headers.host || 'localhost'}`;
   let parsedUrl;
   try {
     parsedUrl = new URL(req.url, baseUrl);
@@ -69,13 +160,8 @@ httpServer.on('upgrade', (req, socket, head) => {
   const query = parsedUrl.searchParams;
 
   // ── /agent path ────────────────────────────────────────────
+  // Authentication moves to REGISTER message handshake with { agent_id, secret }
   if (pathname === '/agent') {
-    if (!verifyAgentKey(query)) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-
     wss.handleUpgrade(req, socket, head, (ws) => {
       // Tag the socket so handlers can distinguish agent vs controller
       ws._gwRole = 'agent';
@@ -120,13 +206,16 @@ wss.on('connection', (ws, req, role) => {
 });
 
 // ─── Start ─────────────────────────────────────────────────────
+const wsProtocol = protocol === 'https' ? 'wss' : 'ws';
+
 function start() {
-  httpServer.listen(config.port, () => {
+  server.listen(config.port, () => {
     logger.info('═══════════════════════════════════════════════════');
     logger.info(`  Gateway Server started on port ${config.port}`);
-    logger.info(`  Health:     http://localhost:${config.port}/health`);
-    logger.info(`  Agent:      ws://localhost:${config.port}/agent`);
-    logger.info(`  Controller: ws://localhost:${config.port}/controller`);
+    logger.info(`  Mode:       ${protocol.toUpperCase()} / ${wsProtocol.toUpperCase()}`);
+    logger.info(`  Health:     ${protocol}://localhost:${config.port}/health`);
+    logger.info(`  Agent:      ${wsProtocol}://localhost:${config.port}/agent`);
+    logger.info(`  Controller: ${wsProtocol}://localhost:${config.port}/controller`);
     logger.info('═══════════════════════════════════════════════════');
   });
 }
@@ -148,9 +237,9 @@ function shutdown(signal) {
   wss.close(() => {
     logger.info('[server] WebSocket server closed');
 
-    // Close HTTP server
-    httpServer.close(() => {
-      logger.info('[server] HTTP server closed — goodbye');
+    // Close HTTP/HTTPS server
+    server.close(() => {
+      logger.info('[server] HTTP/HTTPS server closed — goodbye');
       process.exit(0);
     });
   });
@@ -165,4 +254,4 @@ function shutdown(signal) {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-module.exports = { app, httpServer, wss, start };
+module.exports = { app, httpServer: server, wss, start };

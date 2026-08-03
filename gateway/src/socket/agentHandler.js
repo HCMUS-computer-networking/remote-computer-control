@@ -1,11 +1,15 @@
 // src/socket/agentHandler.js
-// Handle Agent WebSocket connections (raw-WS, already authenticated at handshake).
+// Handle Agent WebSocket connections.
 //
 // Protocol:
-//   Binary  → forward NGUYÊN Buffer tới MỌI controller (broadcast).
-//   Text REGISTER → lưu store + broadcast agent_status online.
-//   Text other    → CHÈN/GHI ĐÈ agent_id → broadcast JSON tới mọi controller.
-//   Close         → removeByWs + broadcast agent_status offline.
+//   Text REGISTER { agent_id, secret, hostname, ip, os }
+//     → verify secret (bcrypt) against agents.json
+//     → if invalid secret → close 1008 (Policy Violation)
+//     → if already online  → close 1008 "already_online"
+//     → if ok → store + broadcast agent_status online
+//   Binary  → forward raw Buffer to all controllers (broadcast).
+//   Text other → stamp agent_id → broadcast JSON to all controllers.
+//   Close      → removeByWs + broadcast agent_status offline.
 
 const agentStore = require('../store/agentStore');
 const controllerStore = require('../store/controllerStore');
@@ -13,8 +17,8 @@ const heartbeat = require('../store/heartbeat');
 const logger = require('../utils/logger');
 
 /**
- * Attach event handlers to an authenticated Agent WebSocket.
- * @param {WebSocket} ws - The Agent WebSocket (already upgraded & authenticated)
+ * Attach event handlers to an Agent WebSocket.
+ * @param {WebSocket} ws - The Agent WebSocket (already upgraded)
  * @param {import('http').IncomingMessage} req - The original HTTP upgrade request
  */
 function handleAgent(ws, req) {
@@ -30,7 +34,7 @@ function handleAgent(ws, req) {
   const hb = heartbeat.attach(ws, `agent:${ip}`);
 
   // ─── message ─────────────────────────────────────────────────
-  ws.on('message', (data, isBinary) => {
+  ws.on('message', async (data, isBinary) => {
     // ── Binary frame → broadcast raw to all controllers ──────
     if (isBinary) {
       logger.debug('[agent] Binary frame relay', {
@@ -57,19 +61,37 @@ function handleAgent(ws, req) {
 
     // ── REGISTER ─────────────────────────────────────────────
     if (msg.type === 'REGISTER') {
-      agentId = msg.agent_id;
+      const id = msg.agent_id;
+      const secret = msg.secret;
 
-      if (!agentId) {
-        logger.warn('[agent] REGISTER missing agent_id', { ip });
+      if (!id || !secret) {
+        logger.warn('[agent] REGISTER missing agent_id or secret', { ip });
+        ws.close(1008, 'missing_credentials');
         return;
       }
 
-      // Store in registry
-      agentStore.register(agentId, ws, {
-        hostname: msg.hostname || agentId,
+      // Verify secret against bcrypt hash in agents.json
+      const valid = await agentStore.verifySecret(id, secret);
+      if (!valid) {
+        logger.warn('[agent] REGISTER failed — invalid secret', { agentId: id, ip });
+        ws.close(1008, 'invalid_secret');
+        return;
+      }
+
+      // Try to register (will be rejected if already online)
+      const registered = agentStore.register(id, ws, {
+        hostname: msg.hostname || id,
         ip: msg.ip || ip,
         os: msg.os || 'unknown',
       });
+
+      if (!registered) {
+        logger.warn('[agent] REGISTER rejected — agent already online', { agentId: id, ip });
+        ws.close(1008, 'already_online');
+        return;
+      }
+
+      agentId = id;
 
       // Update heartbeat label now that we know the agentId
       hb.clear();

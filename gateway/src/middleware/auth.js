@@ -1,33 +1,11 @@
 // src/middleware/auth.js
 // Authentication helpers for WebSocket handshake.
-// D4: Auth key ở query-param khi handshake.
+// Note: Agent authentication now happens during the REGISTER message via bcrypt (agentStore.js), not at HTTP upgrade.
 // D8: Controller xác thực JWT ở query ?token=, fallback ?key=CONTROLLER_KEY.
-// D9: Bỏ gatewayKey per-lệnh, xác thực chỉ ở handshake.
 
 const jwt = require('jsonwebtoken');
 const config = require('../config');
 const logger = require('../utils/logger');
-
-/**
- * Verify Agent connection key from query params.
- * @param {URLSearchParams} query - Parsed query parameters from upgrade URL
- * @returns {boolean} true if key is valid
- */
-function verifyAgentKey(query) {
-  const key = query.get('key');
-
-  if (!key) {
-    logger.warn('[auth] Agent connection REJECTED: missing ?key parameter');
-    return false;
-  }
-
-  if (key !== config.agentKey) {
-    logger.warn('[auth] Agent connection REJECTED: invalid key');
-    return false;
-  }
-
-  return true;
-}
 
 /**
  * Verify Controller connection auth from query params.
@@ -72,4 +50,4 @@ function verifyControllerAuth(query) {
   return { ok: false, payload: null };
 }
 
-module.exports = { verifyAgentKey, verifyControllerAuth };
+module.exports = { verifyControllerAuth };

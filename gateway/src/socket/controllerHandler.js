@@ -25,11 +25,12 @@ function handleController(ws, req) {
   const ip =
     req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
   const controllerId = `ctrl-${++controllerCounter}`;
+  const issuer = ws._gwJwtPayload?.username || 'admin';
 
   // Add to controller store
   controllerStore.add(ws);
 
-  logger.info('[controller] Connected', { controllerId, ip });
+  logger.info('[controller] Connected', { controllerId, ip, issuer });
 
   // Attach heartbeat
   const hb = heartbeat.attach(ws, `controller:${controllerId}`);
@@ -96,12 +97,13 @@ function handleController(ws, req) {
     // ── Relay to agent(s) ────────────────────────────────────────
     logger.info('[controller→agent] Relay', {
       controllerId,
+      issuer,
       type: msg.type,
       module: msg.module,
       targetAgents: msg.target_agents,
     });
 
-    messageRouter.routeToAgents(data.toString(), msg);
+    messageRouter.routeToAgents(data.toString(), msg, issuer, ws);
   });
 
   // ─── close ───────────────────────────────────────────────────

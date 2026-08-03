@@ -21,10 +21,38 @@ const config = {
 
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',
+
+  // ─── TLS (Phase 1: Security Hardening) ─────────────────────────
+  // Set TLS_ENABLED=true to start in HTTPS/WSS mode.
+  // When false (default), server runs plain HTTP/WS (dev mode).
+  //
+  // Generate a self-signed certificate for local testing:
+  //   openssl req -x509 -newkey rsa:2048 -nodes \
+  //     -keyout certs/server.key -out certs/server.cert \
+  //     -days 365 -subj "/CN=localhost"
+  //
+  tlsEnabled: process.env.TLS_ENABLED === 'true',
+  tlsCertPath: process.env.TLS_CERT_PATH || './certs/server.cert',
+  tlsKeyPath: process.env.TLS_KEY_PATH || './certs/server.key',
+
+  // ─── CORS Whitelist (Phase 1: Security Hardening) ────────────
+  // Comma-separated list of allowed origins for CORS.
+  // Example: "http://localhost:5173,https://controller.example.com"
+  // Default: Vite dev server port for Controller.
+  allowedOrigins: process.env.ALLOWED_ORIGINS || 'http://localhost:5173',
+
+  // ─── Rate Limiting (Phase 1: Security Hardening) ─────────────
+  // Window duration (ms) and max requests per window for REST API.
+  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 minutes
+  rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,       // 100 requests per window
+
+  // Stricter limit specifically for /api/login (anti brute-force).
+  loginRateLimitWindowMs: parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 minutes
+  loginRateLimitMaxRequests: parseInt(process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS, 10) || 10,       // 10 attempts per window
 };
 
 // --- Validation ---
-const required = ['agentKey', 'controllerKey'];
+const required = ['controllerKey'];
 const missing = required.filter((key) => !config[key]);
 
 if (missing.length > 0) {

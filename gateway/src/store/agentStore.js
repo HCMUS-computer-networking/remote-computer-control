@@ -1,31 +1,70 @@
-// src/managers/agentStore.js
+// src/store/agentStore.js
 // Registry of connected Agent WebSocket clients.
 // Key: agentId (string) → Value: { agentId, ws, hostname, ip, os, connectedAt }
-// No socketId concept — raw WebSocket only.
+//
+// Credential verification: agents.json maps agent_id → secretHash (bcrypt).
+// Duplicate rejection: if agent_id is already online, NEW connection is refused.
 
+const path = require('path');
+const bcrypt = require('bcryptjs');
 const logger = require('../utils/logger');
 
 /** @type {Map<string, {agentId: string, ws: WebSocket, hostname: string, ip: string, os: string, connectedAt: number}>} */
 const agents = new Map();
 
+// ─── Load agent credentials from agents.json ──────────────────
+/** @type {Map<string, string>} agent_id → secretHash */
+const credentials = new Map();
+
+try {
+  const agentsFile = require(path.resolve(__dirname, 'agents.json'));
+  for (const entry of agentsFile) {
+    if (entry.agent_id && entry.secretHash) {
+      credentials.set(entry.agent_id, entry.secretHash);
+    }
+  }
+  logger.info('[agentStore] Loaded agent credentials', { count: credentials.size });
+} catch (err) {
+  logger.error('[agentStore] Failed to load agents.json', { error: err.message });
+}
+
+/**
+ * Verify an agent's secret against the stored bcrypt hash.
+ * @param {string} agentId
+ * @param {string} secret - Plaintext secret sent by the agent
+ * @returns {Promise<boolean>} true if valid
+ */
+async function verifySecret(agentId, secret) {
+  const hash = credentials.get(agentId);
+  if (!hash) {
+    logger.warn('[agentStore] Unknown agent_id — not in agents.json', { agentId });
+    return false;
+  }
+  return bcrypt.compare(secret, hash);
+}
+
 /**
  * Register an agent after it sends the REGISTER message.
+ * If agent_id is already online → REJECT the new connection (return false).
+ *
  * @param {string} agentId
  * @param {WebSocket} ws
  * @param {{ hostname: string, ip: string, os: string }} meta
+ * @returns {boolean} true if registered, false if rejected (already online)
  */
 function register(agentId, ws, meta) {
-  // If an agent with the same id already exists, close the old socket
+  // If an agent with the same id is already connected → REJECT the NEW socket
   if (agents.has(agentId)) {
-    const old = agents.get(agentId);
-    logger.warn('[agentStore] Duplicate agent_id, closing old connection', {
-      agentId,
-    });
-    try {
-      old.ws.close(1000, 'Replaced by new connection');
-    } catch {
-      // ignore
+    const existing = agents.get(agentId);
+    if (existing.ws.readyState === existing.ws.OPEN) {
+      logger.warn('[agentStore] Agent already online — rejecting NEW connection', {
+        agentId,
+      });
+      return false; // Caller must close the NEW socket
     }
+    // Existing socket is not OPEN (stale entry) — clean it up and allow
+    agents.delete(agentId);
+    logger.info('[agentStore] Cleaned stale entry for agent', { agentId });
   }
 
   agents.set(agentId, {
@@ -43,6 +82,8 @@ function register(agentId, ws, meta) {
     ip: meta.ip,
     os: meta.os,
   });
+
+  return true;
 }
 
 /**
@@ -136,6 +177,7 @@ function size() {
 }
 
 module.exports = {
+  verifySecret,
   register,
   unregister,
   removeByWs,
