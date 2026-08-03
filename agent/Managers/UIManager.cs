@@ -4,6 +4,7 @@ using System.Threading;
 using System.Windows.Forms;
 using Timer = System.Windows.Forms.Timer;
 using Serilog;
+using System.Runtime.InteropServices;
 
 namespace AgentSystem.Managers
 {
@@ -140,6 +141,13 @@ namespace AgentSystem.Managers
             this.MinimizeBox = false;
             this.BackColor = Color.White;
 
+            this.Shown += (s, e) =>
+            {
+                this.Activate();
+                SetForegroundWindow(this.Handle);
+                this.Focus();
+            };
+
             // Nhãn thông báo
             lblMessage = new Label
             {
@@ -200,6 +208,10 @@ namespace AgentSystem.Managers
             };
             timeoutTimer.Start();
         }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
     }
 
     // 2. Form Đếm ngược (Webcam)
@@ -208,6 +220,10 @@ namespace AgentSystem.Managers
         private int timeLeft;
         private Label lblCount;
         private Timer countdownTimer;
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         public CountdownForm(int seconds)
         {
@@ -219,6 +235,13 @@ namespace AgentSystem.Managers
             this.TopMost = true;
             this.FormBorderStyle = FormBorderStyle.FixedToolWindow;
             this.BackColor = Color.FromArgb(255, 240, 240);
+
+            this.Shown += (s, e) =>
+            {
+                this.Activate();
+                SetForegroundWindow(this.Handle);
+                this.Focus();
+            };
 
             lblCount = new Label
             {

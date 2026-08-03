@@ -10,6 +10,8 @@ using System.Threading.Tasks;
 using System.Threading;
 using AgentSystem.Managers;
 using System.Management;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
 
 namespace AgentSystem.Modules
 {
@@ -96,24 +98,7 @@ namespace AgentSystem.Modules
                     catch (Win32Exception) { }
                     catch (InvalidOperationException) { }
 
-                    string username = "Unknown";
-                    try
-                    {
-                        string query = "Select * From Win32_Process Where ProcessID = " + p.Id;
-                        using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(query))
-                        {
-                            foreach (ManagementObject obj in searcher.Get())
-                            {
-                                string[] argList = new string[] { string.Empty, string.Empty };
-                                int returnVal = Convert.ToInt32(obj.InvokeMethod("GetOwner", argList));
-                                if (returnVal == 0)
-                                {
-                                    username = (string.IsNullOrEmpty(argList[1]) ? "" : argList[1] + "\\") + argList[0];
-                                }
-                            }
-                        }
-                    }
-                    catch { }
+                    string username = GetProcessOwner(p);
 
                     processList.Add(new
                     {
@@ -202,6 +187,46 @@ namespace AgentSystem.Modules
                     message = $"Failed to terminate process: {ex.Message}"
                 });
             }
+        }
+
+        private static string GetProcessOwner(Process process)
+        {
+            IntPtr tokenHandle = IntPtr.Zero;
+            try
+            {
+                if (NativeMethods.OpenProcessToken(process.Handle, NativeMethods.TOKEN_QUERY, out tokenHandle))
+                {
+                    using (var identity = new WindowsIdentity(tokenHandle))
+                    {
+                        return identity.Name;
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback for system or protected processes
+            }
+            finally
+            {
+                if (tokenHandle != IntPtr.Zero)
+                {
+                    NativeMethods.CloseHandle(tokenHandle);
+                }
+            }
+            return "Unknown";
+        }
+
+        private static class NativeMethods
+        {
+            public const uint TOKEN_QUERY = 0x0008;
+
+            [DllImport("advapi32.dll", SetLastError = true)]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool CloseHandle(IntPtr hObject);
         }
     }
 }
