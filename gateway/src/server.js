@@ -21,8 +21,10 @@ const handleAgent = require('./socket/agentHandler');
 const handleController = require('./socket/controllerHandler');
 
 // ─── Express App ───────────────────────────────────────────────
+const cookieParser = require('cookie-parser');
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
 
 // ─── CORS Whitelist (Phase 1: Security Hardening) ──────────────
 // Hand-rolled middleware — reads ALLOWED_ORIGINS from config (comma-separated).

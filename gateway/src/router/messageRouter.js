@@ -11,7 +11,9 @@
 
 const Ajv = require('ajv');
 const agentStore = require('../store/agentStore');
+const controllerStore = require('../store/controllerStore');
 const logger = require('../utils/logger');
+
 
 const ajv = new Ajv({ allErrors: true });
 
@@ -123,6 +125,12 @@ function routeToAgents(rawMessage, parsed, issuer = 'admin', controllerWs = null
 
   // 1. Thêm field top-level `issuer` là string username (đơn giản — không dùng object)
   msgObj.issuer = String(issuer || 'admin');
+
+  // Register command ID or req_id so responses from Agent can be routed directly back to this Controller
+  const reqId = msgObj.command_id || msgObj.req_id || msgObj.id;
+  if (reqId && typeof reqId === 'string' && controllerWs) {
+    controllerStore.registerCommand(reqId, controllerWs);
+  }
 
   // 2. Serialize lại trước khi gửi
   const forwardMessage = JSON.stringify(msgObj);

@@ -76,6 +76,27 @@ function handleController(ws, req) {
       return;
     }
 
+    // ── subscribe / unsubscribe → handle directly (không xuống Agent) ───
+    if (msg.type === 'subscribe') {
+      if (msg.agent_id && typeof msg.agent_id === 'string') {
+        controllerStore.subscribe(ws, msg.agent_id);
+        logger.info('[controller] Subscribed to agent', { controllerId, agentId: msg.agent_id });
+      } else {
+        logger.warn('[controller] subscribe missing agent_id', { controllerId });
+      }
+      return;
+    }
+
+    if (msg.type === 'unsubscribe') {
+      if (msg.agent_id && typeof msg.agent_id === 'string') {
+        controllerStore.unsubscribe(ws, msg.agent_id);
+        logger.info('[controller] Unsubscribed from agent', { controllerId, agentId: msg.agent_id });
+      } else {
+        logger.warn('[controller] unsubscribe missing agent_id', { controllerId });
+      }
+      return;
+    }
+
     // ── Whitelist of relay-able types ─────────────────────────────
     const RELAY_TYPES = new Set([
       'request',

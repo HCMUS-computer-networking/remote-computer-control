@@ -33,6 +33,22 @@ function attach(ws, label) {
 
     isAlive = false;
 
+    // ── Check access token expiration (for JWT authenticated sessions) ──
+    if (ws._gwJwtPayload && typeof ws._gwJwtPayload.exp === 'number') {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      if (nowSeconds >= ws._gwJwtPayload.exp) {
+        logger.warn('[auth] Access token expired during active WebSocket session', { label, exp: ws._gwJwtPayload.exp });
+        try {
+          ws.send(JSON.stringify({ type: 'auth_expired' }));
+        } catch (err) {
+          // ignore send error on closing socket
+        }
+        ws.close(4001, 'auth_expired');
+        clearInterval(interval);
+        return;
+      }
+    }
+
     try {
       ws.ping();
     } catch (err) {
