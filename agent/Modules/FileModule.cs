@@ -24,20 +24,8 @@ namespace AgentSystem.Modules
 
         public void HandleBinaryChunk(byte[] bytes)
         {
-            if (bytes == null || bytes.Length < 2) return;
-
-            byte idLen = bytes[0];
-            if (bytes.Length >= 1 + idLen)
-            {
-                string transferId = System.Text.Encoding.UTF8.GetString(bytes, 1, idLen);
-                byte[] chunkData = new byte[bytes.Length - 1 - idLen];
-                Buffer.BlockCopy(bytes, 1 + idLen, chunkData, 0, chunkData.Length);
-
-                if (_binaryWaiters.TryRemove(transferId, out var tcs))
-                {
-                    tcs.SetResult(chunkData);
-                }
-            }
+            // Luồng dữ liệu Binary Frame (hiện tại fs_put đã chuyển qua dùng Base64).
+            // Hàm này giữ lại để đảm bảo tương thích AgentClient.
         }
 
         public override async Task ExecuteAsync(string action, JsonElement parameters, string commandId)
@@ -67,7 +55,10 @@ namespace AgentSystem.Modules
                         int totalChunks = isObj && parameters.TryGetProperty("total_chunks", out var tc) ? tc.GetInt32() : 1;
                         string transferId = isObj && parameters.TryGetProperty("transfer_id", out var tid) ? tid.GetString() : commandId;
 
-                        await PutFileAsync(fullPath, relativePath, transferId, chunkIndex, totalChunks, commandId);
+                        string base64Data = isObj && parameters.TryGetProperty("data_base64", out var b64) ? b64.GetString() : "";
+                        byte[] fileBytes = string.IsNullOrEmpty(base64Data) ? Array.Empty<byte>() : Convert.FromBase64String(base64Data);
+
+                        await PutFileAsync(fullPath, relativePath, transferId, chunkIndex, totalChunks, fileBytes, commandId);
                         break;
                     default:
                         SendError(commandId, action, relativePath, $"Unknown file system action: {action}");
@@ -81,29 +72,10 @@ namespace AgentSystem.Modules
             }
         }
 
-        private async Task PutFileAsync(string fullPath, string relativePath, string transferId, int chunkIndex, int totalChunks, string commandId)
+        private async Task PutFileAsync(string fullPath, string relativePath, string transferId, int chunkIndex, int totalChunks, byte[] fileBytes, string commandId)
         {
             string directoryPath = Path.GetDirectoryName(fullPath);
             if (!Directory.Exists(directoryPath)) Directory.CreateDirectory(directoryPath);
-
-            var tcs = new TaskCompletionSource<byte[]>();
-            _binaryWaiters[transferId] = tcs;
-
-            byte[] fileBytes;
-            try
-            {
-                var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(10000));
-                if (completedTask != tcs.Task)
-                {
-                    SendError(commandId, "fs_put", relativePath, "Timeout waiting for binary chunk.");
-                    return;
-                }
-                fileBytes = await tcs.Task;
-            }
-            finally
-            {
-                _binaryWaiters.TryRemove(transferId, out _);
-            }
 
             lock (_chunkLock)
             {
