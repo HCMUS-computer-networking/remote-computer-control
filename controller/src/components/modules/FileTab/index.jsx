@@ -11,7 +11,9 @@ import {
 
 import useModuleStore                      from '../../../store/ModuleStore'
 import usePolicyStore                      from '../../../store/PolicyStore'
+import useUiStore                          from '../../../store/UiStore'
 import useAgentSocket                      from '../../../hooks/UseAgentSocket'
+import { useGuardedSend, usePendingConsent } from '../../PermissionGate'
 import { buildFsList, buildFsGet, buildFsPut } from '../../../services/Protocol'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -28,7 +30,17 @@ const DEPTH_PX = 16
 
 // ── Stable defaults ───────────────────────────────────────────────────────────
 
-const EMPTY_FILE_STATE = { tree: {}, path: '/' }   // avoids new object on every selector call
+const EMPTY_FILE_STATE      = { tree: {}, path: '/' }   // avoids new object on every selector call
+const EMPTY_FILE_DOWNLOADS  = {}                          // stable identity for empty map slice
+
+// How long to keep the Blob URL alive after triggering the browser download.
+// Long enough for slow save dialogs; short enough that memory is reclaimed.
+const BLOB_URL_TTL_MS = 60 * 1000
+
+// If a download job goes this long without a new chunk arriving (WS drop /
+// Agent hang), abandon it: mark error, toast, and free the buffered bytes.
+const DOWNLOAD_STALE_MS      = 15 * 1000
+const DOWNLOAD_SCAN_EVERY_MS = 5  * 1000
 
 // ── File-type icon map ────────────────────────────────────────────────────────
 
@@ -66,6 +78,19 @@ function normalizePath(p)
     return p.replace(/\/+/g, '/')
 }
 
+// Sandbox path validation used by the "Go to path" input. Returns an error
+// message string for display, or '' when the path is valid (or empty — the
+// button stays disabled instead of showing an error).
+function validateSandboxPath(raw)
+{
+    const value = raw.trim()
+    if (value === '')                    return ''   // untyped: not an error
+    if (value.indexOf('\0') !== -1)      return 'Path must not contain NUL bytes'
+    if (!value.startsWith('/'))          return 'Path must start with "/"'
+    if (value.split('/').includes('..')) return 'Path must not contain ".." segments'
+    return ''
+}
+
 // Encode a Uint8Array slice to a base64 string without using spread (avoids
 // stack overflow on large arrays that would blow the call stack in some engines).
 function uint8ToBase64(bytes)
@@ -76,22 +101,22 @@ function uint8ToBase64(bytes)
     return btoa(binary)
 }
 
-// Decode a base64 string and trigger a browser file download.
-function triggerBlobDownload(filename, data_base64)
+// Assemble the ordered Uint8Array chunks into a Blob, trigger the browser
+// download, then revoke the object URL after a delay so the save dialog has
+// time to grab the bytes (revoking immediately can abort slow downloads).
+function triggerBlobDownload(filename, byte_chunks)
 {
     try
     {
-        const binary = atob(data_base64)
-        const bytes  = new Uint8Array(binary.length)
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-
-        const blob = new Blob([bytes])
+        const blob = new Blob(byte_chunks)
         const url  = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.href     = url
         link.download = filename
+        document.body.appendChild(link)
         link.click()
-        URL.revokeObjectURL(url)
+        document.body.removeChild(link)
+        setTimeout(() => URL.revokeObjectURL(url), BLOB_URL_TTL_MS)
     }
     catch (err)
     {
@@ -104,26 +129,35 @@ function triggerBlobDownload(filename, data_base64)
 function FileTab({ agent })
 {
     const { sendToFocused } = useAgentSocket()
+    const guardedSend       = useGuardedSend()
+    const is_pending        = usePendingConsent()
 
     // Sandbox root comes from the pushed security policy (NOT hard-coded here).
     const sandbox_path = usePolicyStore((s) => s.sandbox_path)
 
     // Store slices — scoped to this agent only.
-    const file_state      = useModuleStore((s) => s.data[agent.id]?.file         ?? EMPTY_FILE_STATE)
-    const download_result = useModuleStore((s) => s.data[agent.id]?.file_download ?? null)
-    const put_ack         = useModuleStore((s) => s.data[agent.id]?.file_put_ack  ?? null)
-    const clearFileDownload = useModuleStore((s) => s.clearFileDownload)
-    const clearFilePutAck   = useModuleStore((s) => s.clearFilePutAck)
-    const clearModule       = useModuleStore((s) => s.clearModule)
+    const file_state       = useModuleStore((s) => s.data[agent.id]?.file           ?? EMPTY_FILE_STATE)
+    const download_jobs    = useModuleStore((s) => s.data[agent.id]?.file_downloads ?? EMPTY_FILE_DOWNLOADS)
+    const put_ack          = useModuleStore((s) => s.data[agent.id]?.file_put_ack   ?? null)
+    const removeFileDownload = useModuleStore((s) => s.removeFileDownload)
+    const clearFilePutAck    = useModuleStore((s) => s.clearFilePutAck)
+    const clearModule        = useModuleStore((s) => s.clearModule)
+    const addToast           = useUiStore((s) => s.addToast)
+
+    // ── "Go to path" form state ─────────────────────────────────────────
+    // Lets the operator jump the sandbox tree straight to a deep path
+    // (e.g. /reports/2024) instead of expanding folders one by one.
+    const [path_input, setPathInput] = useState('')
+    const path_error = validateSandboxPath(path_input)   // '' when valid or empty
 
     // ── Tree state ────────────────────────────────────────────────────────
     const [open_dirs,        setOpenDirs]        = useState(new Set(['/']))
     const [loading_path,     setLoadingPath]     = useState(null)
     const [downloading_path, setDownloadingPath] = useState(null)
 
-    // Buffer for assembling multi-chunk downloads: { [path]: { chunks, total_chunks } }
-    const dl_buf_ref      = useRef({})
-    const last_dl_seq_ref = useRef(null)
+    // Track which transfer_ids have already been handed to the browser so we
+    // don't double-download the same job if React re-runs the effect.
+    const finished_dl_ref = useRef(new Set())
 
     // ── Upload state ──────────────────────────────────────────────────────
     // Each job: { id, name, dest_path, total_size, total_chunks, sent_chunks, status, error }
@@ -145,8 +179,8 @@ function FileTab({ agent })
         setOpenDirs(new Set(['/']))
         setLoadingPath(null)
         setDownloadingPath(null)
-        dl_buf_ref.current  = {}
-        ul_chunks_ref.current = {}
+        finished_dl_ref.current = new Set()
+        ul_chunks_ref.current   = {}
 
         // Offline agents cannot answer — skip the sandbox request entirely.
         if (!agent.online) return
@@ -154,9 +188,11 @@ function FileTab({ agent })
         const current_tree = useModuleStore.getState().data[agent.id]?.file?.tree ?? {}
         if (!current_tree['/'])
         {
-            sendToFocused(buildFsList('/'))
+            // First list request auto-triggers consent when needed.
+            guardedSend(function () { sendToFocused(buildFsList('/')) })
             setLoadingPath('/')
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [agent.id, agent.online])
 
     // ── Clear loading spinner when the fetched path arrives in the tree ───
@@ -168,32 +204,51 @@ function FileTab({ agent })
         }
     }, [file_state.tree, loading_path])
 
-    // ── Consume fs_get_result: assemble chunks, trigger browser download ──
+    // ── Stale download GC: a WS drop mid-transfer would otherwise leave the
+    //    progress bar frozen forever. Every DOWNLOAD_SCAN_EVERY_MS, look for
+    //    incomplete jobs whose most recent chunk (`_seq`) is older than
+    //    DOWNLOAD_STALE_MS and drop them with an error toast.
     useEffect(function ()
     {
-        if (!download_result) return
-        if (download_result._seq === last_dl_seq_ref.current) return
-        last_dl_seq_ref.current = download_result._seq
-
-        const { path, data_base64, chunk_index, total_chunks } = download_result
-
-        if (!dl_buf_ref.current[path])
+        const timer = setInterval(function ()
         {
-            dl_buf_ref.current[path] = { chunks: new Array(total_chunks).fill(null), total_chunks }
-        }
-        dl_buf_ref.current[path].chunks[chunk_index] = data_base64
+            const jobs_now = useModuleStore.getState().data[agent.id]?.file_downloads ?? {}
+            const cutoff   = Date.now() - DOWNLOAD_STALE_MS
+            for (const transfer_id of Object.keys(jobs_now))
+            {
+                const job = jobs_now[transfer_id]
+                if (job.received_chunks >= job.total_chunks) continue   // completing next tick
+                if (job._seq > cutoff)                       continue   // still fresh
 
-        const all_done = dl_buf_ref.current[path].chunks.every((c) => c !== null)
-        if (all_done)
+                addToast(`Tải ${job.path.split('/').pop()} bị treo — huỷ.`, 'error')
+                removeFileDownload(agent.id, transfer_id)
+                if (downloading_path === job.path) setDownloadingPath(null)
+            }
+        }, DOWNLOAD_SCAN_EVERY_MS)
+        return () => clearInterval(timer)
+    }, [agent.id, addToast, removeFileDownload, downloading_path])
+
+    // ── Watch download jobs: when a job reaches total_chunks, assemble the
+    //    Blob, trigger the browser download, then drop the job from the store.
+    useEffect(function ()
+    {
+        for (const transfer_id of Object.keys(download_jobs))
         {
-            const full_b64 = dl_buf_ref.current[path].chunks.join('')
-            delete dl_buf_ref.current[path]
-            triggerBlobDownload(path.split('/').pop(), full_b64)
-            setDownloadingPath(null)
-        }
+            const job = download_jobs[transfer_id]
+            if (finished_dl_ref.current.has(transfer_id))       continue
+            if (job.received_chunks < job.total_chunks)         continue
 
-        clearFileDownload(agent.id)
-    }, [download_result])
+            finished_dl_ref.current.add(transfer_id)
+            triggerBlobDownload(job.path.split('/').pop(), job.chunks)
+
+            // Clear the "downloading" spinner on the file row if it was ours.
+            if (downloading_path === job.path) setDownloadingPath(null)
+
+            // Free the buffered bytes from the store; the browser owns the Blob now.
+            removeFileDownload(agent.id, transfer_id)
+            finished_dl_ref.current.delete(transfer_id)
+        }
+    }, [download_jobs, agent.id, downloading_path, removeFileDownload])
 
     // ── Consume fs_put_result / fs_put_complete: advance progress bar ─────
     useEffect(function ()
@@ -226,16 +281,32 @@ function FileTab({ agent })
                     : job
             ))
 
-            // If more chunks remain, send the next one now.
+            // If more chunks remain, send the next one now. Wrap the builder
+            // in try/catch: a defensive validator throw (bad base64, wrong
+            // transfer_id, etc.) would otherwise strand the job at 'sending'
+            // forever with no user feedback.
             if (info && next_index < info.total_chunks)
             {
-                sendToFocused(buildFsPut(path,
+                try
                 {
-                    total_size   : info.total_size,
-                    chunk_index  : next_index,
-                    total_chunks : info.total_chunks,
-                    data_base64  : info.chunks[next_index],
-                }))
+                    sendToFocused(buildFsPut(path,
+                    {
+                        transfer_id  : info.transfer_id,
+                        total_size   : info.total_size,
+                        chunk_index  : next_index,
+                        total_chunks : info.total_chunks,
+                        data_base64  : info.chunks[next_index],
+                    }))
+                }
+                catch (err)
+                {
+                    setUploads((prev) => prev.map((job) =>
+                        job.dest_path === path
+                            ? { ...job, status: 'error', error: err.message ?? 'Chunk build failed' }
+                            : job
+                    ))
+                    delete ul_chunks_ref.current[path]
+                }
             }
         }
         else
@@ -271,7 +342,10 @@ function FileTab({ agent })
                 chunks.push(uint8ToBase64(slice))
             }
 
-            ul_chunks_ref.current[dest_path] = { chunks, total_size: file.size, total_chunks }
+            // One transfer_id per file — every chunk of this upload carries the
+            // same id so the Agent can stitch them back together (File.json spec).
+            const transfer_id = crypto.randomUUID()
+            ul_chunks_ref.current[dest_path] = { chunks, total_size: file.size, total_chunks, transfer_id }
 
             // Add a job card to the upload list.
             setUploads((prev) =>
@@ -290,13 +364,19 @@ function FileTab({ agent })
             ])
 
             // Kick off the first chunk; the rest are sent after each ack arrives.
-            sendToFocused(buildFsPut(dest_path,
+            // First chunk is guarded — subsequent chunks (fired from the ack
+            // effect) skip the wrap since consent is already granted by then.
+            guardedSend(function ()
             {
-                total_size   : file.size,
-                chunk_index  : 0,
-                total_chunks,
-                data_base64  : chunks[0],
-            }))
+                sendToFocused(buildFsPut(dest_path,
+                {
+                    transfer_id,
+                    total_size   : file.size,
+                    chunk_index  : 0,
+                    total_chunks,
+                    data_base64  : chunks[0],
+                }))
+            })
         }
     }
 
@@ -334,7 +414,7 @@ function FileTab({ agent })
     function fetchDir(path)
     {
         setLoadingPath(path)
-        sendToFocused(buildFsList(path))
+        guardedSend(function () { sendToFocused(buildFsList(path)) })
     }
 
     function handleDirToggle(entry_name, parent_path)
@@ -361,7 +441,35 @@ function FileTab({ agent })
     function handleDownload(full_path)
     {
         setDownloadingPath(full_path)
-        sendToFocused(buildFsGet(full_path))
+        guardedSend(function () { sendToFocused(buildFsGet(full_path)) })
+    }
+
+    // Jump the tree to a user-typed sandbox path. Fetches its listing (if not
+    // cached) and expands every ancestor so the target row is visible.
+    function handleGoToPath(e)
+    {
+        e.preventDefault()
+        const value = normalizePath(path_input.trim())
+        if (path_error || value === '') return
+        try
+        {
+            guardedSend(function () { sendToFocused(buildFsList(value)) })
+            setLoadingPath(value)
+            const next_open = new Set(open_dirs)
+            const segments  = value.split('/').filter(Boolean)
+            let acc = ''
+            next_open.add('/')
+            for (const seg of segments)
+            {
+                acc += '/' + seg
+                next_open.add(acc)
+            }
+            setOpenDirs(next_open)
+        }
+        catch (err)
+        {
+            addToast(err.message ?? 'Invalid sandbox path', 'error')
+        }
     }
 
     function handleRefresh()
@@ -369,8 +477,10 @@ function FileTab({ agent })
         clearModule(agent.id, 'file')
         setOpenDirs(new Set(['/']))
         setLoadingPath('/')
-        dl_buf_ref.current = {}
-        sendToFocused(buildFsList('/'))
+        // Drop any in-flight download bookkeeping — the tree is being reset.
+        for (const tid of Object.keys(download_jobs)) removeFileDownload(agent.id, tid)
+        finished_dl_ref.current = new Set()
+        guardedSend(function () { sendToFocused(buildFsList('/')) })
     }
 
     // Remove jobs that have finished or errored from the upload list.
@@ -432,8 +542,8 @@ function FileTab({ agent })
                     <button
                         className="action-btn action-btn--neutral file-tab__dl-btn"
                         onClick={() => handleDownload(full_path)}
-                        disabled={is_downloading}
-                        title={`Download ${entry.name} from sandbox`}
+                        disabled={is_downloading || is_pending}
+                        title={is_pending ? 'Đang xin quyền...' : `Download ${entry.name} from sandbox`}
                     >
                         {is_downloading
                             ? <Loader2 size={12} className="file-tab__spin" />
@@ -467,12 +577,39 @@ function FileTab({ agent })
                 <button
                     className="action-btn action-btn--neutral"
                     onClick={handleRefresh}
-                    disabled={!agent.online}
-                    title={agent.online ? 'Refresh root listing' : 'Agent is offline'}
+                    disabled={!agent.online || is_pending}
+                    title={is_pending ? 'Đang xin quyền...' : agent.online ? 'Refresh root listing' : 'Agent is offline'}
                 >
                     <RefreshCw size={12} /> Refresh
                 </button>
             </div>
+
+            {/* ── Go-to-path form (jump to a sandbox path directly) ── */}
+            {agent.online && (
+                <form className="form-inline" onSubmit={handleGoToPath}>
+                    <label htmlFor="fs-goto-path" className="form-inline__label">Go to path:</label>
+                    <input
+                        id="fs-goto-path"
+                        className={`form-inline__input form-inline__input--wide${path_error ? ' form-inline__input--error' : ''}`}
+                        type="text"
+                        placeholder="/reports/2024"
+                        value={path_input}
+                        onChange={(e) => setPathInput(e.target.value)}
+                        aria-invalid={Boolean(path_error)}
+                        aria-describedby={path_error ? 'fs-goto-path-error' : undefined}
+                    />
+                    <button
+                        type="submit"
+                        className="action-btn action-btn--neutral"
+                        disabled={Boolean(path_error) || path_input.trim() === '' || is_pending}
+                    >
+                        Go
+                    </button>
+                    {path_error && (
+                        <span id="fs-goto-path-error" className="form-inline__error">{path_error}</span>
+                    )}
+                </form>
+            )}
 
             {/* ── Upload drop zone (hidden while the agent is offline) ── */}
             {agent.online && (
@@ -500,6 +637,46 @@ function FileTab({ agent })
                         style={{ display: 'none' }}
                         onChange={handleInputChange}
                     />
+                </div>
+            )}
+
+            {/* ── Download progress list (in-flight fs_get chunks) ───── */}
+            {Object.keys(download_jobs).length > 0 && (
+                <div className="file-tab__upload-list">
+                    <div className="file-tab__upload-list-header">
+                        <span className="file-tab__upload-list-title">Downloads</span>
+                    </div>
+
+                    {Object.values(download_jobs).map(function (job)
+                    {
+                        const pct       = job.total_chunks === 0
+                            ? 100
+                            : Math.round((job.received_chunks / job.total_chunks) * 100)
+                        const file_name = job.path.split('/').pop()
+
+                        return (
+                            <div key={job.transfer_id} className="file-tab__upload-job">
+                                <div className="file-tab__upload-info">
+                                    <Loader2 size={13} className="file-tab__spin file-tab__upload-icon" />
+                                    <span className="file-tab__upload-name" title={job.path}>
+                                        {file_name}
+                                    </span>
+                                    <span className="file-tab__upload-pct file-tab__upload-pct--sending">
+                                        {`${pct}%`}
+                                    </span>
+                                    <span className="file-tab__upload-size">
+                                        {formatSize(job.total_size)}
+                                    </span>
+                                </div>
+                                <div className="file-tab__progress-track">
+                                    <div
+                                        className="file-tab__progress-fill file-tab__progress-fill--sending"
+                                        style={{ width: `${pct}%` }}
+                                    />
+                                </div>
+                            </div>
+                        )
+                    })}
                 </div>
             )}
 

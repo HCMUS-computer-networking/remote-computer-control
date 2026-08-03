@@ -26,7 +26,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Video, VideoOff, ShieldCheck, WifiOff } from 'lucide-react'
 import useModuleStore                    from '../../../store/ModuleStore'
+import useUiStore                        from '../../../store/UiStore'
 import useAgentSocket                    from '../../../hooks/UseAgentSocket'
+import { useGuardedSend, usePendingConsent } from '../../PermissionGate'
 import
 {
     buildWebcamStart,
@@ -40,10 +42,37 @@ import FrameCanvas from '../../FrameCanvas'
 const WEBCAM_FPS     = 15   // per docs/formatjson/webcam.json default
 const WEBCAM_QUALITY = 60   // JPEG quality (0–100)
 
+// Allowed ranges — matched to Protocol.js buildWebcamStart guard.
+const FPS_MIN     = 1
+const FPS_MAX     = 30
+const QUALITY_MIN = 1
+const QUALITY_MAX = 100
+
+// Parse a form input string as a positive integer inside [min, max].
+function parseIntInRange(raw, min, max, field_label)
+{
+    const trimmed = String(raw).trim()
+    if (trimmed === '') return { value: NaN, error: `${field_label} is required` }
+    if (!/^\d+$/.test(trimmed)) return { value: NaN, error: `${field_label} must be an integer` }
+    const n = parseInt(trimmed, 10)
+    if (n < min || n > max) return { value: NaN, error: `${field_label} must be in [${min}, ${max}]` }
+    return { value: n, error: '' }
+}
+
 function WebcamTab({ agent })
 {
     const { sendCommand }   = useAgentSocket()
+    const addToast          = useUiStore((s) => s.addToast)
+    const guardedSend       = useGuardedSend()
+    const is_pending        = usePendingConsent()
     const [streaming, setStreaming] = useState(false)
+
+    // ── Stream settings form ─────────────────────────────────────────
+    const [fps_input,     setFpsInput]     = useState(String(WEBCAM_FPS))
+    const [quality_input, setQualityInput] = useState(String(WEBCAM_QUALITY))
+    const fps_parsed     = parseIntInRange(fps_input,     FPS_MIN,     FPS_MAX,     'FPS')
+    const quality_parsed = parseIntInRange(quality_input, QUALITY_MIN, QUALITY_MAX, 'Quality')
+    const form_valid     = !fps_parsed.error && !quality_parsed.error
 
     // Read this agent's webcam frame_buffer straight from ModuleStore.
     // The store slot is filled by UseAgentSocket's binary handler whenever
@@ -74,9 +103,20 @@ function WebcamTab({ agent })
 
     function handleStart()
     {
-        sendCommand(buildWebcamStart(WEBCAM_FPS, WEBCAM_QUALITY, [agent.id]))
-        streaming_agent_ref.current = agent.id
-        setStreaming(true)
+        if (!form_valid) return
+        guardedSend(function ()
+        {
+            try
+            {
+                sendCommand(buildWebcamStart(fps_parsed.value, quality_parsed.value, [agent.id]))
+                streaming_agent_ref.current = agent.id
+                setStreaming(true)
+            }
+            catch (err)
+            {
+                addToast(err.message ?? 'Invalid webcam settings', 'error')
+            }
+        })
     }
 
     function handleStop()
@@ -120,8 +160,12 @@ function WebcamTab({ agent })
                             <button
                                 className="screen-tab__btn screen-tab__btn--primary"
                                 onClick={handleStart}
-                                disabled={!agent.online}
-                                title="Ask the Agent for webcam consent and start streaming"
+                                disabled={!agent.online || !form_valid || is_pending}
+                                title={is_pending
+                                    ? 'Đang xin quyền...'
+                                    : form_valid
+                                        ? 'Ask the Agent for webcam consent and start streaming'
+                                        : 'Fix the settings error first'}
                             >
                                 <Video size={14} strokeWidth={2} />
                                 Bật webcam
@@ -130,6 +174,46 @@ function WebcamTab({ agent })
                     }
                 </div>
             </div>
+
+            {/* ── Stream settings (fps + quality) ─────────────── */}
+            <form
+                className="form-inline"
+                onSubmit={(e) => { e.preventDefault(); handleStart() }}
+            >
+                <label htmlFor="webcam-fps" className="form-inline__label">FPS:</label>
+                <input
+                    id="webcam-fps"
+                    className={`form-inline__input form-inline__input--num${fps_parsed.error ? ' form-inline__input--error' : ''}`}
+                    type="number"
+                    min={FPS_MIN}
+                    max={FPS_MAX}
+                    step="1"
+                    inputMode="numeric"
+                    value={fps_input}
+                    onChange={(e) => setFpsInput(e.target.value)}
+                    disabled={streaming}
+                    aria-invalid={Boolean(fps_parsed.error)}
+                />
+                <label htmlFor="webcam-quality" className="form-inline__label">Quality:</label>
+                <input
+                    id="webcam-quality"
+                    className={`form-inline__input form-inline__input--num${quality_parsed.error ? ' form-inline__input--error' : ''}`}
+                    type="number"
+                    min={QUALITY_MIN}
+                    max={QUALITY_MAX}
+                    step="1"
+                    inputMode="numeric"
+                    value={quality_input}
+                    onChange={(e) => setQualityInput(e.target.value)}
+                    disabled={streaming}
+                    aria-invalid={Boolean(quality_parsed.error)}
+                />
+                {(fps_parsed.error || quality_parsed.error) && (
+                    <span className="form-inline__error">
+                        {fps_parsed.error || quality_parsed.error}
+                    </span>
+                )}
+            </form>
 
             {/* ── Status bar ─────────────────────────────────── */}
             <div className="screen-tab__status">
@@ -142,7 +226,7 @@ function WebcamTab({ agent })
                         title="Agent granted consent — webcam is broadcasting"
                     >
                         <ShieldCheck size={12} strokeWidth={2.5} />
-                        ● CAM ON · {WEBCAM_FPS} fps
+                        ● CAM ON · {fps_parsed.value || WEBCAM_FPS} fps
                     </span>
                 )}
                 {streaming && !webcam_active && (

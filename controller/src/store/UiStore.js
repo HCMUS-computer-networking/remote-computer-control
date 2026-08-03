@@ -2,7 +2,7 @@
 import { create } from 'zustand'
 
 // Valid tab IDs — used by setActiveTab to reject unknown values.
-const MODULE_TABS = ['application', 'process', 'screen', 'keylog', 'file', 'webcam', 'power']
+const MODULE_TABS = ['sysinfo', 'application', 'process', 'screen', 'keylog', 'file', 'webcam', 'power']
 
 let _toast_id = 0
 

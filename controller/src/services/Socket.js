@@ -17,7 +17,7 @@
 
 import useConnectionStore from '../store/ConnectionStore'
 import useUiStore         from '../store/UiStore'
-import { logout }         from './AuthService'
+import { logout, refreshAccessToken } from './AuthService'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +73,35 @@ class Socket
     connect()
     {
         this._closed_by_user = false;
+        this._openSocket();
+    }
+
+    // Force-close the current underlying WebSocket without setting the
+    // "user closed" flag, then reconnect. Used after a successful token
+    // refresh so the next handshake carries the fresh JWT in the URL.
+    reopen()
+    {
+        // Cancel any pending backoff so we open immediately.
+        if (this._reconnect_timer)
+        {
+            clearTimeout(this._reconnect_timer);
+            this._reconnect_timer = null;
+        }
+        if (this._ws)
+        {
+            // Detach handlers so the close event does NOT trigger auto-reconnect;
+            // we open the new socket ourselves right after.
+            this._ws.onopen    = null;
+            this._ws.onmessage = null;
+            this._ws.onclose   = null;
+            this._ws.onerror   = null;
+            try { this._ws.close(); } catch (e) { /* ignore */ }
+            this._ws = null;
+        }
+        this._retry_count      = 0;
+        this._auth_fail_count  = 0;
+        this._opened_once      = false;
+        this._closed_by_user   = false;
         this._openSocket();
     }
 
@@ -212,12 +241,27 @@ class Socket
                 this._auth_fail_count++;
                 if (this._auth_fail_count >= Socket.AUTH_FAIL_THRESHOLD)
                 {
-                    useUiStore.getState().addToast(
-                        'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.',
-                        'error'
-                    );
-                    this._closed_by_user = true;   // stop the reconnect loop
-                    logout();                       // clears auth_token → App swaps to LoginScreen
+                    // Try one refresh (HttpOnly refresh cookie is what the
+                    // server needs — the browser sends it automatically). Only
+                    // give up and log out if the refresh itself fails.
+                    this._closed_by_user = true;   // pause the reconnect loop while we refresh
+                    refreshAccessToken().then((result) =>
+                    {
+                        if (result.ok)
+                        {
+                            this._auth_fail_count = 0;
+                            this._closed_by_user  = false;
+                            this._openSocket();    // handshake with the new JWT
+                        }
+                        else
+                        {
+                            useUiStore.getState().addToast(
+                                'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+                                'error'
+                            );
+                            logout();               // clears auth_token → LoginScreen
+                        }
+                    });
                     return;
                 }
             }

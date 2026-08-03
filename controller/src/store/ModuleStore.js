@@ -5,6 +5,9 @@ import { create } from 'zustand'
 // Hard limit on buffered keylog events to prevent unbounded memory growth.
 const MAX_KEYLOG_EVENTS = 1000
 
+// Number of sysinfo samples kept for the sparkline history (2s poll → ~2 min).
+const MAX_SYSINFO_HISTORY = 60
+
 // Return the default empty state for one agent's module slots.
 function createAgentModuleState()
 {
@@ -18,12 +21,20 @@ function createAgentModuleState()
         webcam_active : false,                      // true after Agent confirmed webcam_started (consent granted)
         screen_stream_active : false,               // true while Agent is streaming its screen (Livescreen)
         // file.tree caches directory listings keyed by path (sandbox only).
-        // file_download holds the latest fs_get_result so FileTab can trigger a download.
+        // file_downloads is a map keyed by transfer_id — each entry accumulates
+        //   raw chunk bytes (Uint8Array[]) so FileTab can render a progress bar
+        //   per job and assemble a Blob when all chunks have arrived. Kept as a
+        //   map (not a single slot) so bursts of chunks can never overwrite one
+        //   another before React consumes them.
         // file_put_ack holds the latest fs_put_result / fs_put_complete so FileTab
         //   can advance the progress bar after each acknowledged chunk.
-        file          : { tree: {}, path: '/' },
-        file_download : null,
-        file_put_ack  : null,
+        file           : { tree: {}, path: '/' },
+        file_downloads : {},
+        file_put_ack   : null,
+        // Latest sysinfo snapshot + a rolling history of samples for the sparkline.
+        // Each history point: { t, cpu_percent, ram_percent, disk_percent }
+        sysinfo         : null,
+        sysinfo_history : [],
     }
 }
 
@@ -126,16 +137,76 @@ const useModuleStore = create(function (set)
                 }
             }),
 
-        // Store the latest fs_get_result so FileTab can assemble and download the file.
-        // A monotonic _seq field is added so React's useEffect always detects a change.
-        setFileDownload: (agent_id, result) =>
+        // Append one raw chunk (Uint8Array) into the download job keyed by
+        // transfer_id. Creates the job on the first chunk. This preserves every
+        // chunk even when the Gateway bursts them faster than React can render.
+        // chunk_info = { transfer_id, chunk_index, total_chunks, path, total_size, bytes }
+        appendFileDownloadChunk: (agent_id, chunk_info) =>
             set(function (s)
             {
+                // Bounds guard: a buggy Agent or mis-paired binary frame could
+                // hand us an out-of-range chunk_index. Writing past the array
+                // would grow it silently and every() would never return true,
+                // leaving the job stuck. Drop the chunk with a warning instead.
+                const total  = chunk_info.total_chunks
+                const index  = chunk_info.chunk_index
+                if (!Number.isInteger(total) || total < 1
+                    || !Number.isInteger(index) || index < 0 || index >= total)
+                {
+                    console.warn(
+                        `[ModuleStore] appendFileDownloadChunk: out-of-range chunk ${index}/${total} ` +
+                        `for transfer_id=${chunk_info.transfer_id} — dropped`
+                    )
+                    return s   // no state change
+                }
+
                 const agent_data = s.data[agent_id] ?? createAgentModuleState()
+                const jobs       = agent_data.file_downloads ?? {}
+                const prev_job   = jobs[chunk_info.transfer_id]
+                const chunks     = prev_job
+                    ? prev_job.chunks.slice()
+                    : new Array(total).fill(null)
+
+                // Skip duplicates: if this chunk slot is already filled, keep the
+                // received count intact instead of double-counting.
+                const is_new     = chunks[index] == null
+                chunks[index] = chunk_info.bytes
+
+                const next_job =
+                {
+                    transfer_id     : chunk_info.transfer_id,
+                    path            : chunk_info.path,
+                    total_size      : chunk_info.total_size,
+                    total_chunks    : chunk_info.total_chunks,
+                    received_chunks : (prev_job?.received_chunks ?? 0) + (is_new ? 1 : 0),
+                    chunks,
+                    _seq            : Date.now(),
+                }
+
                 return {
                     data: {
                         ...s.data,
-                        [agent_id]: { ...agent_data, file_download: { ...result, _seq: Date.now() } },
+                        [agent_id]:
+                        {
+                            ...agent_data,
+                            file_downloads: { ...jobs, [chunk_info.transfer_id]: next_job },
+                        },
+                    },
+                }
+            }),
+
+        // Remove one download job (called after the Blob has been assembled +
+        // handed to the browser, or when the user cancels).
+        removeFileDownload: (agent_id, transfer_id) =>
+            set(function (s)
+            {
+                const agent_data = s.data[agent_id] ?? createAgentModuleState()
+                const next_jobs  = { ...(agent_data.file_downloads ?? {}) }
+                delete next_jobs[transfer_id]
+                return {
+                    data: {
+                        ...s.data,
+                        [agent_id]: { ...agent_data, file_downloads: next_jobs },
                     },
                 }
             }),
@@ -168,15 +239,37 @@ const useModuleStore = create(function (set)
                 }
             }),
 
-        // Clear file_download after the component has consumed it.
-        clearFileDownload: (agent_id) =>
+// Store the newest sysinfo snapshot and append a compact percent-only
+        // sample to the rolling history (trimmed to MAX_SYSINFO_HISTORY).
+        // The history keeps only percentages so the line charts have a single
+        // y-axis domain (0..100) shared across CPU / RAM / Disk.
+        appendSysInfo: (agent_id, snapshot) =>
             set(function (s)
             {
-                const agent_data = s.data[agent_id] ?? createAgentModuleState()
+                const agent_data   = s.data[agent_id] ?? createAgentModuleState()
+                const ram_percent  = snapshot.ram_total_mb  > 0
+                    ? (snapshot.ram_used_mb  / snapshot.ram_total_mb)  * 100
+                    : 0
+                const disk_percent = snapshot.disk_total_gb > 0
+                    ? (snapshot.disk_used_gb / snapshot.disk_total_gb) * 100
+                    : 0
+                const sample = {
+                    t            : snapshot.timestamp_ms ?? Date.now(),
+                    cpu_percent  : snapshot.cpu_percent ?? 0,
+                    ram_percent,
+                    disk_percent,
+                }
+                const merged  = [...agent_data.sysinfo_history, sample]
+                const trimmed = merged.slice(-MAX_SYSINFO_HISTORY)
                 return {
                     data: {
                         ...s.data,
-                        [agent_id]: { ...agent_data, file_download: null },
+                        [agent_id]:
+                        {
+                            ...agent_data,
+                            sysinfo         : snapshot,
+                            sysinfo_history : trimmed,
+                        },
                     },
                 }
             }),

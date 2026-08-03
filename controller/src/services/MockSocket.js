@@ -226,6 +226,18 @@ function randomDelay()
     return randomInt(REPLY_MIN_MS, REPLY_MAX_MS)
 }
 
+// Clamp a percentage into [0, 100] — used to keep the fake CPU sample bounded.
+function clampPercent(v)
+{
+    return Math.max(0, Math.min(100, parseFloat(v.toFixed(1))))
+}
+
+// Clamp any value into an arbitrary [min, max] range with one-decimal rounding.
+function clampRange(v, min, max)
+{
+    return Math.max(min, Math.min(max, parseFloat(v.toFixed(1))))
+}
+
 // Build a fresh process list with random cpu_percent / ram_mb values.
 // Uses the OS-specific pool so process names look realistic per platform.
 // Called each time proc_list is requested so numbers look "live".
@@ -260,6 +272,7 @@ class MockSocket
         // Keyed by agent_id. Lazily initialised on first request.
         this._app_state      = {};   // { [agent_id]: [ ...app objects ] }
         this._proc_state     = {};   // { [agent_id]: [ ...proc objects ] }
+        this._sysinfo_state  = {};   // { [agent_id]: { cpu_percent, ram_used_mb, ram_total_mb, disk_used_gb, disk_total_gb, started_at, hostname, ip, os } }
 
         // Per-agent uploaded files, keyed by parent directory path.
         // Shape: { [agent_id]: { [parent_path]: [ { name, type:'file', size, modified_ms } ] } }
@@ -379,6 +392,31 @@ class MockSocket
             this._proc_state[agent_id] = generateFakeProcs(getOsFamily(agent_id))
         }
         return this._proc_state[agent_id]
+    }
+
+    // Return (and lazily create) the mutable sysinfo snapshot for one agent.
+    // Different agents get different hardware profiles so the tab looks alive.
+    _getSysInfoState(agent_id)
+    {
+        if (!this._sysinfo_state[agent_id])
+        {
+            const agent = FAKE_AGENTS.find((a) => a.id === agent_id) ?? {}
+            // Vary hardware size across agents so RAM/Disk totals are not identical.
+            const ram_total  = randomInt(8192, 32768)
+            const disk_total = randomInt(256, 1024)
+            this._sysinfo_state[agent_id] = {
+                cpu_percent   : randomFloat(5, 40),
+                ram_used_mb   : randomFloat(2048, ram_total  * 0.6),
+                ram_total_mb  : ram_total,
+                disk_used_gb  : randomFloat(disk_total * 0.2, disk_total * 0.7),
+                disk_total_gb : disk_total,
+                started_at    : Date.now() - randomInt(60, 86400) * 1000,   // fake uptime seed
+                hostname      : agent.name ?? agent_id,
+                ip            : agent.ip   ?? '0.0.0.0',
+                os            : agent.os   ?? 'Unknown',
+            }
+        }
+        return this._sysinfo_state[agent_id]
     }
 
     // Return the merged directory listing for one agent + path.
@@ -529,6 +567,34 @@ class MockSocket
                 300);
                 break;
             }
+
+            // ── SysInfo (SysInfo.json) ─────────────────────────────────────
+            case 'sysinfo':
+                this._replyPerAgent(msg.target_agents, (agent_id) =>
+                {
+                    // Smoothly evolve fake metrics per agent so the sparkline
+                    // shows a plausible waveform instead of pure white noise.
+                    const state = this._getSysInfoState(agent_id)
+                    state.cpu_percent  = clampPercent(state.cpu_percent  + randomFloat(-6, 6))
+                    state.ram_used_mb  = clampRange(state.ram_used_mb + randomFloat(-150, 150), 1024, state.ram_total_mb - 512)
+                    state.disk_used_gb = clampRange(state.disk_used_gb + randomFloat(-0.3, 0.3), 20, state.disk_total_gb - 5)
+
+                    return {
+                        type           : 'sysinfo_result',
+                        agent_id,
+                        cpu_percent    : state.cpu_percent,
+                        ram_used_mb    : state.ram_used_mb,
+                        ram_total_mb   : state.ram_total_mb,
+                        disk_used_gb   : state.disk_used_gb,
+                        disk_total_gb  : state.disk_total_gb,
+                        uptime_seconds : Math.floor((Date.now() - state.started_at) / 1000),
+                        hostname       : state.hostname,
+                        ip             : state.ip,
+                        os             : state.os,
+                    }
+                },
+                200);
+                break;
 
             // ── Screen (livescreen.json) ───────────────────────────────────
             case 'screenshot':

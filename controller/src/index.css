@@ -2042,3 +2042,214 @@ input
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ─── SysInfo tab ─────────────────────────────────────────────────────────── */
+
+.sysinfo-tab
+{
+  display        : flex;
+  flex-direction : column;
+  gap            : var(--space-5);
+  padding        : var(--space-5);
+  overflow-y     : auto;
+  height         : 100%;
+}
+
+.sysinfo-tab__header
+{
+  display        : flex;
+  flex-direction : column;
+  gap            : var(--space-1);
+}
+
+.sysinfo-tab__title
+{
+  font-size   : 1rem;
+  font-weight : 600;
+  color       : var(--text);
+}
+
+.sysinfo-tab__meta
+{
+  display    : flex;
+  flex-wrap  : wrap;
+  gap        : var(--space-2);
+  font-size  : 0.8125rem;
+  color      : var(--text-muted);
+}
+
+.sysinfo-tab__meta-sep
+{
+  color : var(--border);
+}
+
+.sysinfo-tab__empty
+{
+  padding    : var(--space-6);
+  text-align : center;
+  color      : var(--text-muted);
+  background : var(--bg-elevated);
+  border     : 1px dashed var(--border);
+  border-radius : var(--radius-md);
+}
+
+.sysinfo-tab__tiles
+{
+  display               : grid;
+  grid-template-columns : repeat(3, 1fr);
+  gap                   : var(--space-4);
+}
+
+.sysinfo-tab__charts
+{
+  display               : grid;
+  grid-template-columns : repeat(3, 1fr);
+  gap                   : var(--space-4);
+}
+
+/* one stat tile ------------------------------------------------------------- */
+
+.sysinfo-tile
+{
+  display        : flex;
+  flex-direction : column;
+  gap            : var(--space-2);
+  padding        : var(--space-4);
+  background     : var(--bg-elevated);
+  border         : 1px solid var(--border);
+  border-radius  : var(--radius-md);
+}
+
+.sysinfo-tile__header
+{
+  display     : flex;
+  align-items : center;
+  gap         : var(--space-2);
+  color       : var(--text-muted);
+  font-size   : 0.8125rem;
+  font-weight : 500;
+}
+
+.sysinfo-tile__label
+{
+  text-transform : uppercase;
+  letter-spacing : 0.04em;
+}
+
+.sysinfo-tile__value
+{
+  font-size   : 1.75rem;
+  font-weight : 600;
+  color       : var(--text);
+  line-height : 1.1;
+}
+
+.sysinfo-tile__bar
+{
+  width         : 100%;
+  height        : 6px;
+  background    : var(--bg-surface);
+  border-radius : 999px;
+  overflow      : hidden;
+}
+
+.sysinfo-tile__bar-fill
+{
+  height        : 100%;
+  background    : var(--accent);
+  border-radius : 999px;
+  transition    : width 0.4s ease-out;
+}
+
+.sysinfo-tile__hint
+{
+  font-size : 0.75rem;
+  color     : var(--text-muted);
+}
+
+/* one mini chart card ------------------------------------------------------- */
+
+.sysinfo-chart
+{
+  display        : flex;
+  flex-direction : column;
+  gap            : var(--space-2);
+  padding        : var(--space-3);
+  background     : var(--bg-elevated);
+  border         : 1px solid var(--border);
+  border-radius  : var(--radius-md);
+}
+
+.sysinfo-chart__title
+{
+  font-size   : 0.75rem;
+  font-weight : 600;
+  color       : var(--text-muted);
+  text-transform : uppercase;
+  letter-spacing : 0.04em;
+}
+
+.sysinfo-chart__body
+{
+  width  : 100%;
+  height : 120px;
+}
+
+/* ── Inline form validation (used by ProcessTab, FileTab, ScreenTab, WebcamTab) ── */
+/* Shared style for a small "one row" form that lives inside a tab toolbar:
+   label + input + submit button, with an inline error message underneath. */
+
+.form-inline
+{
+  display        : flex;
+  align-items    : center;
+  gap            : var(--space-2);
+  flex-wrap      : wrap;
+  padding        : var(--space-2);
+}
+
+.form-inline__label
+{
+  font-size      : 0.85rem;
+  color          : var(--text);
+}
+
+.form-inline__input
+{
+  padding        : var(--space-1) var(--space-2);
+  border         : 1px solid var(--border);
+  border-radius  : var(--radius-sm);
+  background     : var(--bg-elevated);
+  color          : var(--text);
+  font-family    : var(--font-sans);
+  font-size      : 0.85rem;
+  min-width      : 96px;
+}
+
+/* Narrower input for compact numeric fields (fps / quality). */
+.form-inline__input--num
+{
+  min-width      : 72px;
+}
+
+/* Wider input for path / URL entry. */
+.form-inline__input--wide
+{
+  min-width      : 180px;
+}
+
+/* Red border when the current value is invalid — paired with the error text below. */
+.form-inline__input--error
+{
+  border-color   : var(--danger);
+  background     : var(--danger-bg);
+}
+
+.form-inline__error
+{
+  color        : var(--danger);
+  font-size    : 0.75rem;
+  margin-top   : var(--space-1);
+  width        : 100%;
+  flex-basis   : 100%;
+}

@@ -19,9 +19,11 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Lock, RotateCcw, Power, Moon, X, WifiOff } from 'lucide-react'
-import useAgentSocket from '../../../hooks/UseAgentSocket'
-import useUiStore     from '../../../store/UiStore'
-import { buildPower, POWER_ACTION } from '../../../services/Protocol'
+import useAgentSocket     from '../../../hooks/UseAgentSocket'
+import useUiStore         from '../../../store/UiStore'
+import usePermissionStore from '../../../store/PermissionStore'
+import { useGuardedSend, usePendingConsent } from '../../PermissionGate'
+import { buildPower, POWER_ACTION, FEATURE } from '../../../services/Protocol'
 
 const COUNTDOWN_SECONDS = 10   // matches spec — 10 s window to abort
 
@@ -133,6 +135,8 @@ function PowerTab({ agent })
 {
     const { sendCommand } = useAgentSocket()
     const addToast        = useUiStore((s) => s.addToast)
+    const guardedSend     = useGuardedSend()
+    const is_pending      = usePendingConsent()
 
     // When set, a countdown modal is showing for this action.
     // null means no modal is open.
@@ -141,19 +145,35 @@ function PowerTab({ agent })
     // Lock is immediate — no countdown, no modal.
     function handleLock()
     {
-        sendCommand(buildPower(POWER_ACTION.LOCK, [agent.id]))
-        addToast(`Lock sent to ${agent.name}`, 'info')
+        guardedSend(function ()
+        {
+            sendCommand(buildPower(POWER_ACTION.LOCK, [agent.id]))
+            addToast(`Lock sent to ${agent.name}`, 'info')
+        })
     }
 
     // Restart / Shutdown / Sleep all open the same modal — reuse.
+    // Consent is requested BEFORE the countdown starts, so the operator does
+    // not stare at a 10-second timer only to discover the Agent refused.
     function askConfirm(action, label)
     {
-        setPending({ action, label })
+        guardedSend(function () { setPending({ action, label }) })
     }
 
     // Called by the modal when its countdown expires.
+    // Consent was secured when the modal opened (askConfirm → guardedSend),
+    // but the operator may have revoked it during the 10 s window via the
+    // Disconnect button. Re-check now so a destructive power action is never
+    // sent silently after consent was withdrawn.
     function handleConfirm(action)
     {
+        const status = usePermissionStore.getState().permissions[agent.id]?.[FEATURE.POWER] ?? 'idle'
+        if (status !== 'granted')
+        {
+            addToast('Quyền Power đã bị thu hồi — hủy lệnh.', 'error')
+            setPending(null)
+            return
+        }
         sendCommand(buildPower(action, [agent.id]))
         setPending(null)
     }
@@ -192,7 +212,7 @@ function PowerTab({ agent })
                 <button
                     className="screen-tab__btn screen-tab__btn--secondary power-tab__btn"
                     onClick={handleLock}
-                    disabled={!agent.online}
+                    disabled={!agent.online || is_pending}
                     title="Lock the Agent screen immediately"
                 >
                     <Lock size={16} strokeWidth={2} />
@@ -202,7 +222,7 @@ function PowerTab({ agent })
                 <button
                     className="screen-tab__btn screen-tab__btn--primary power-tab__btn"
                     onClick={function () { askConfirm(POWER_ACTION.RESTART, 'Restart') }}
-                    disabled={!agent.online}
+                    disabled={!agent.online || is_pending}
                     title="Restart the Agent machine after a 10-second countdown"
                 >
                     <RotateCcw size={16} strokeWidth={2} />
@@ -212,7 +232,7 @@ function PowerTab({ agent })
                 <button
                     className="screen-tab__btn screen-tab__btn--danger power-tab__btn"
                     onClick={function () { askConfirm(POWER_ACTION.SHUTDOWN, 'Shutdown') }}
-                    disabled={!agent.online}
+                    disabled={!agent.online || is_pending}
                     title="Shut down the Agent machine after a 10-second countdown"
                 >
                     <Power size={16} strokeWidth={2} />
@@ -222,7 +242,7 @@ function PowerTab({ agent })
                 <button
                     className="screen-tab__btn screen-tab__btn--secondary power-tab__btn"
                     onClick={function () { askConfirm(POWER_ACTION.SLEEP, 'Sleep') }}
-                    disabled={!agent.online}
+                    disabled={!agent.online || is_pending}
                     title="Put the Agent machine to sleep after a 10-second countdown"
                 >
                     <Moon size={16} strokeWidth={2} />

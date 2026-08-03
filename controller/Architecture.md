@@ -1,65 +1,85 @@
 # Controller — Architecture
 
-Single-page React application that lets an operator monitor and control many Agent
-machines through one Gateway WebSocket. This document describes the code as it
-stands right now.
+Single-page React app that operates as the admin console of a consent-based
+remote administration tool. It talks to a Node.js Gateway over a raw WebSocket;
+the Gateway relays JSON messages and binary frames to/from C# .NET 8 Agents
+running on Windows machines in the lab. Controller is UI + state only — no
+business logic runs on the Agent's behalf here.
+
+The document describes the CURRENT state of the code only.
 
 ---
 
-## 1. Directory tree
+## 1. Tech stack
+
+- **React 19** — UI.
+- **Vite** — dev server + build.
+- **Zustand 5** — global state (one store per concern; components subscribe with a selector).
+- **lucide-react** — SVG icon set.
+- **recharts** — line charts for the SysInfo dashboard.
+- **Native WebSocket** — transport to the Gateway. No Socket.IO.
+- Plain JavaScript, no TypeScript.
+
+---
+
+## 2. Directory tree
 
 ```
 controller/
-├── index.html
-├── package.json
+├── docs/formatjson/              # authoritative JSON message specs (one file per module)
+│   ├── Application.json
+│   ├── Connection.json
+│   ├── File.json
+│   ├── Input.json                # remote input (not wired to any component)
+│   ├── Instruction.md
+│   ├── Keylog.json
+│   ├── Livescreen.json
+│   ├── PolicyUpdate.json
+│   ├── Power.json
+│   ├── Process.json
+│   ├── SysInfo.json
+│   └── Webcam.json
+├── Architecture.md               # this file
+├── README.md
+├── package.json                  # deps: react, react-dom, zustand, lucide-react, recharts
 ├── vite.config.js
-├── public/
-├── docs/
-│   ├── formatjson/          # JSON message templates (Application, Connection,
-│   │                        # File, Keylog, Livescreen, PolicyUpdate, Power,
-│   │                        # Process, Webcam)
-│   ├── diagram/
-│   ├── screenshot/
-│   ├── technical_explanation/
-│   └── wireframe/
 └── src/
-    ├── main.jsx              # ReactDOM.createRoot entry
-    ├── App.jsx               # login gate → ConsoleShell (socket owner) + toasts
-    ├── index.css, App.css    # design tokens + all component styles
-    ├── assets/               # static images
-    ├── store/                # Zustand global state (five stores)
+    ├── main.jsx                  # React root; mounts <App />
+    ├── App.jsx                   # login gate + console shell + toast layer
+    ├── App.css, index.css        # global styles + CSS custom properties (theme tokens)
+    ├── services/
+    │   ├── index.js              # picks MockSocket vs Socket via VITE_USE_MOCK
+    │   ├── Socket.js              # real WebSocket wrapper
+    │   ├── MockSocket.js          # in-process Gateway + Agent simulator
+    │   ├── Protocol.js            # JSON builders / parsers / normalizer / enums
+    │   └── AuthService.js         # login, refreshAccessToken, logout, apiFetch, getToken
+    ├── store/                    # Zustand stores (one file per concern)
     │   ├── AgentStore.js
     │   ├── ConnectionStore.js
     │   ├── ModuleStore.js
-    │   ├── PolicyStore.js    # pushed security policy (whitelist + sandbox path)
-    │   ├── PermissionStore.js# consent status per (agent_id, feature) — Plan B
+    │   ├── PermissionStore.js
+    │   ├── PolicyStore.js
     │   └── UiStore.js
     ├── hooks/
-    │   └── UseAgentSocket.js # singleton hook: owns socket + RX dispatch
-    ├── services/
-    │   ├── index.js         # single mock-vs-real switch (VITE_USE_MOCK)
-    │   ├── Protocol.js       # pure builders / parsers for JSON messages
-    │   ├── Socket.js         # real WebSocket wrapper (arraybuffer + reconnect)
-    │   ├── AuthService.js    # admin login (POST /api/login) + token storage
-    │   └── MockSocket.js     # in-process Gateway + Agent simulator
+    │   └── UseAgentSocket.js     # sole bridge between socket service and stores
     └── components/
-        ├── LoginScreen.jsx   # admin sign-in gate shown until a JWT is present
-        ├── FrameCanvas.jsx   # shared JPEG-frame → <canvas> primitive
-        ├── ModuleTable.jsx   # shared sortable table primitive
-        ├── PermissionGate.jsx# shared consent gate for every module tab (Plan B)
+        ├── LoginScreen.jsx        # admin sign-in gate
+        ├── ModuleTable.jsx        # shared sortable table template (App / Process)
+        ├── FrameCanvas.jsx        # shared JPEG-decode + canvas template (Screen / Webcam)
+        ├── PermissionGate.jsx     # consent context provider + status bar + Disconnect
         ├── agents/
-        │   ├── AgentCard.jsx     # one row in the sidebar list
-        │   ├── AgentList.jsx     # filtered list of AgentCards
-        │   └── MultiSelect.jsx   # "Select all online" + selection count toolbar
+        │   ├── AgentList.jsx
+        │   ├── AgentCard.jsx
+        │   └── MultiSelect.jsx
         ├── layout/
-        │   ├── Sidebar.jsx       # logo, search box, AgentList, gateway status
-        │   ├── TopBar.jsx        # breadcrumb, session badge, transparency badge,
-        │   │                     # view toggle, connection indicator, theme, admin
-        │   └── ThemeToggle.jsx   # sun/moon light-dark toggle
+        │   ├── Sidebar.jsx
+        │   ├── TopBar.jsx
+        │   └── ThemeToggle.jsx
         ├── livescreen/
-        │   ├── GridView.jsx      # tiled 2-fps overview of all online agents
-        │   └── FocusView.jsx     # 7-tab panel for the focused agent
-        └── modules/
+        │   ├── GridView.jsx       # all-agents grid preview
+        │   └── FocusView.jsx      # single-agent 8-tab console
+        └── modules/               # one folder per feature tab
+            ├── SysInfoTab/index.jsx
             ├── ApplicationTab/index.jsx
             ├── ProcessTab/index.jsx
             ├── ScreenTab/index.jsx
@@ -71,432 +91,310 @@ controller/
 
 ---
 
-## 2. Data flow
-
-```
-   ┌───────────────┐    read state       ┌──────────────┐
-   │  Components   │ ─────────────────►  │   Zustand    │
-   │ (tabs, views) │                     │   stores     │
-   └──────┬────────┘                     └──────▲───────┘
-          │ call action                         │ set state
-          │                                     │
-          ▼                                     │
-   ┌───────────────┐   send(json)        ┌─────┴────────┐
-   │useAgentSocket │ ──────────────────► │  MockSocket  │
-   │   (hook)      │ ◄────────────────── │  (or Socket) │
-   └───────────────┘   onMessage/binary  └──────────────┘
-```
-
-- Components read state through Zustand selectors and dispatch commands only
-  through `useAgentSocket` (never touch a service directly).
-- `useAgentSocket` is a singleton ref-counted hook: one WebSocket connection is
-  shared across every component that calls the hook.
-- Outgoing messages are built by `services/Protocol.js` (pure builders) and
-  handed to the socket by the hook.
-- Incoming messages are dispatched by the hook's `dispatchMessage()` routing
-  table straight into the correct store action.
-
----
-
 ## 3. Zustand stores
+
+Each store is created once at module load and exported as a hook. Components
+subscribe with `useStore((s) => s.x)` selectors — never the whole store.
 
 ### `AgentStore.js`
 State
-- `agents` — full list of `{ id, name, os, ip, online, in_session }`.
-- `selected_agent_ids` — IDs currently checked for multi-agent commands.
-- `focused_agent_id` — single agent open in FocusView.
-- `search_query` — current text in the sidebar search box.
+- `agents` — array of `{ id, name, os, ip, online, in_session }`.
+- `selected_agent_ids` — array of ids in the multi-select set.
+- `focused_agent_id` — id currently open in Focus view.
+- `search_query` — sidebar filter text.
 
 Actions
-- `setAgents(agents)` — replace the list when `agents_list` arrives.
-- `setAgentStatus(id, patch)` — patch one agent's `online` / `in_session` from
-  an `agent_status` push (no-op if the id is unknown).
-- `toggleSelect(id)` — add / remove one agent from the multi-select set.
-- `setSelectedIds(ids)` — replace the whole selection (used by "Select all").
-- `clearSelection()` — empty the multi-select set.
-- `setFocused(id)` — open one agent in FocusView.
-- `setSearchQuery(q)` — update the search box text.
-- `getFilteredAgents()` — agents whose name or IP match `search_query`.
-- `getFocusedAgent()` — object for `focused_agent_id` or `null`.
+- `setAgents(list)` — replace the whole list (from `agents_list`).
+- `toggleSelect(id)` — add / remove id from the multi-select set.
+- `setAgentStatus(id, patch)` — merge live online / in_session flags; no-op on unknown id.
+- `setFocusedAgent(id)`.
+- `setSelected(ids)` — bulk replace the selection (used by "select all").
+- `clearSelected()`.
+- `setSearchQuery(q)`.
+- `getFilteredAgents()` — non-reactive helper for filtering.
+- `getFocusedAgent()` — non-reactive helper.
 
 ### `ConnectionStore.js`
 State
 - `status` — `'idle' | 'connecting' | 'open' | 'closed'`.
-- `gateway_url` — destination WebSocket URL for the real `Socket.js`.
-- `token` — legacy handshake token field.
-- `auth_token` — JWT from `/api/login`, seeded from `sessionStorage`
-  (`controller_auth_token`) so a refresh keeps the operator signed in. `Socket.js`
-  reads it to build `?token=<JWT>`. Password is NEVER stored — only the token.
+- `gateway_url` — WS destination (`ws://localhost:8080` by default).
+- `auth_token` — access JWT held **in memory only**; never in
+  sessionStorage / localStorage. A page reload signs the operator out; the
+  Gateway's HttpOnly refresh cookie is what lets `refreshAccessToken()`
+  re-hydrate the token without a full login.
 
 Actions
-- `connect(url)`, `disconnect()`, `setStatus(s)`, `setGatewayUrl(url)`,
-  `setToken(t)`.
-- `setAuthToken(t)` — store the JWT after login. `clearAuthToken()` — drop it on
-  logout so the next reconnect falls back to `?key=`.
+- `connect(url?)`, `disconnect()` — state-only signals; `UseAgentSocket` reacts.
+- `setStatus(status)`, `setGatewayUrl(url)`.
+- `setAuthToken(token)`, `clearAuthToken()`.
 
 ### `ModuleStore.js`
-Root state: `data` keyed by `agent_id`. Each agent has:
+Shape `data[agent_id][module]` — one slot per agent per feature.
+
+Per-agent slots
 - `app` — array from `app_list_result`.
 - `process` — array from `proc_list_result`.
-- `keylog` — accumulated events (capped at 1000).
-- `keylog_active` — Agent is streaming keystrokes.
+- `keylog` — accumulated events (capped at `MAX_KEYLOG_EVENTS = 1000`).
+- `keylog_active` — `true` while the Agent is emitting events.
 - `screen` — `{ frame: ArrayBuffer|null, meta }` — latest screen JPEG.
 - `webcam` — `{ frame: ArrayBuffer|null, meta }` — latest webcam JPEG.
-- `webcam_active` — Agent confirmed `webcam_started` (consent granted).
-- `screen_stream_active` — Agent confirmed `stream_started`.
-- `file` — `{ tree: { [path]: entries }, path }`.
-- `file_download` — latest `fs_get_result` (consumed by FileTab).
-- `file_put_ack` — latest per-chunk / complete upload ack.
+- `webcam_active`, `screen_stream_active` — indicator flags.
+- `file` — `{ tree: { [path]: entries }, path }` — cached sandbox directory listings.
+- `file_downloads` — map keyed by `transfer_id`. Each entry:
+  `{ transfer_id, path, total_size, total_chunks, received_chunks, chunks: Uint8Array[], _seq }`.
+  Kept as a map (not a single slot) so bursts of chunks can never overwrite one another.
+- `file_put_ack` — latest `fs_put_result` / `fs_put_complete` with `_seq` for effect re-fire.
+- `sysinfo` — latest snapshot.
+- `sysinfo_history` — rolling `{ t, cpu_percent, ram_percent, disk_percent }`
+  samples (capped at `MAX_SYSINFO_HISTORY = 60`) that drives the sparkline charts.
 
 Actions
-- `setModuleData(agent_id, module, payload)` — merge / replace a slot.
+- `setModuleData(agent_id, module, payload)` — merge / replace one slot.
 - `appendKeylog(agent_id, events)` — append with buffer trim.
-- `setKeylogActive`, `setWebcamActive`, `setScreenStreamActive` — flip
-  transparency flags used by the red indicator.
+- `setKeylogActive`, `setWebcamActive`, `setScreenStreamActive` — flip indicator flags.
 - `setFsEntries(agent_id, path, entries)` — merge a directory listing.
-- `setFileDownload(agent_id, result)` / `clearFileDownload`.
-- `setFilePutAck(agent_id, result)` / `clearFilePutAck`.
+- `appendFileDownloadChunk(agent_id, { transfer_id, chunk_index, total_chunks, path, total_size, bytes })`
+  — append one raw chunk into the download job map. Guards against out-of-range indices
+  and duplicate slots.
+- `removeFileDownload(agent_id, transfer_id)` — free a completed / cancelled job.
+- `setFilePutAck(agent_id, result)` / `clearFilePutAck(agent_id)`.
+- `appendSysInfo(agent_id, snapshot)` — store latest + push a compact percent-only
+  sample into `sysinfo_history` (trimmed).
 - `clearModule(agent_id, module)`, `clearAgent(agent_id)`.
+
+### `PermissionStore.js`
+State
+- `permissions[agent_id][feature]` — one of `'idle' | 'requesting' | 'granted' | 'denied'`.
+
+Actions
+- `requestPermission(agent_id, feature)` — mark `'requesting'`.
+- `setPermissionResult(agent_id, feature, granted)` — Agent reply → `'granted'` or `'denied'`.
+- `revoke(agent_id, feature)` — reset to `'idle'`.
+- `getStatus(agent_id, feature)` — non-reactive read for hook / callback code.
 
 ### `PolicyStore.js`
 State
-- `app_whitelist` — app short-names allowed to Start/Stop (the policy the
-  Controller pushes to agents). Single source of truth — module tabs read this,
-  never a hard-coded list.
-- `sandbox_path` — Agent sandbox root pushed in the policy.
-- `results` — `{ [agent_id]: { success, message } }` from `policy_update_result`.
+- `app_whitelist` — array of short app names allowed to Start/Stop.
+- `sandbox_path` — Agent sandbox root that file operations are confined to.
+- `policy_results[agent_id]` — `{ success, message }` from each Agent's `policy_update_result`.
 
 Actions
-- `setWhitelist(list)`, `setSandboxPath(path)`, `setPolicyResult(agent_id, result)`.
-
-### `PermissionStore.js`
-Plan B requires Agent consent for a feature BEFORE any module command is sent.
-State
-- `permissions` — nested map `permissions[agent_id][feature] = status`, where
-  status is `'idle' | 'requesting' | 'granted' | 'denied'`.
-
-Actions
-- `requestPermission(agent_id, feature)` — mark the pair `'requesting'` after
-  sending `permission_request`.
-- `setPermissionResult(agent_id, feature, granted)` — apply the Agent reply
-  (`'granted'` / `'denied'`).
-- `revoke(agent_id, feature)` — reset the pair back to `'idle'`.
-- `getStatus(agent_id, feature)` — non-reactive read for hook / callback code.
+- `setAppWhitelist(list)`, `setSandboxPath(path)`.
+- `setPolicyResult(agent_id, result)`.
 
 ### `UiStore.js`
 State
 - `theme` — `'light' | 'dark'`.
-- `layout_mode` — `'grid' | 'focus'`.
-- `active_tab` — one of `'application' | 'process' | 'screen' | 'keylog' |
-  'file' | 'webcam' | 'power'` (also exported as `MODULE_TABS`).
-- `sidebar_open` — mobile sidebar visibility.
-- `toasts` — array of `{ id, message, variant, timestamp }`.
+- `view_mode` — `'grid' | 'focus'`.
+- `active_tab` — one of `'sysinfo' | 'application' | 'process' | 'screen' | 'keylog' | 'file' | 'webcam' | 'power'`.
+- `sidebar_open` — sidebar visibility.
+- `toasts` — array of `{ id, message, variant }` for the notification stack.
 
 Actions
-- `setTheme`, `toggleTheme`, `setLayoutMode`, `setActiveTab` (also flips
-  `layout_mode` to `'focus'`), `toggleSidebar`.
-- `addToast(message, variant)` — auto-dismissed after 3 s.
+- `toggleTheme()`, `setTheme(t)`.
+- `setViewMode(mode)`.
+- `setActiveTab(id)` — also flips `view_mode` to `'focus'`.
+- `toggleSidebar()`, `setSidebar(open)`.
+- `addToast(message, variant)` — auto-dismiss after ~4 s.
 - `dismissToast(id)`.
 
 ---
 
-## 4. `useAgentSocket` — the sole glue layer
+## 4. Data flow
 
-Singleton lifecycle
-- Module-level `_socket`, `_refcount`, `_pending_meta`.
-- The first component to call the hook creates one socket; the last to unmount
-  closes it. `_pending_meta` holds the last `frame_meta` until its binary
-  companion arrives.
-- On `onOpen` the hook sends `list_agents` and then pushes the security policy
-  (`buildPolicyUpdate` from `PolicyStore`, empty `target_agents` = all agents).
+```
+Component  →  UseAgentSocket (send*)  →  services/Socket|MockSocket  →  Gateway ⇄ Agent
+                                              │
+                        Gateway push          ↓
+Component  ←  Zustand store (selector)  ←  dispatchMessage(…)  ←  onMessage / onBinary
+```
 
-Fan-out model (Plan B — broadcast + Controller filter)
-- The Gateway does NOT fan out a single `target_agents=[id1, id2, ...]` message.
-  Every multi-agent module command is LOOP-EMITTED here: one message per agent,
-  each carrying `target_agents=[one_id]`. This is what lets the Controller apply
-  per-`(agent, feature)` consent before a command leaves the socket.
-- Private `fanoutSend(msg, target_ids)` does the loop. For a permission-gated
-  message (`request` / `power`) it emits only to agents whose matching feature
-  is `'granted'`; agents that have not granted are skipped and counted, then one
-  aggregate toast `"Đã bỏ qua N agent chưa cấp quyền"` is shown. `MODULE_FEATURE`
-  + `featureForMessage(msg)` map each command to its `FEATURE` (power → `power`).
+- **Outbound**: every component calls `useAgentSocket()` and invokes one of
+  `sendCommand / sendToFocused / sendToSelected / requestPermission /
+  revokePermission / stopModule`. Components never import a store's setter to
+  write outgoing data, and never touch the socket directly.
+- **Inbound**: `UseAgentSocket` registers `onMessage` and `onBinary` once when
+  the first hook consumer mounts. Every JSON message goes through
+  `Protocol.normalizeIncoming` (real ↔ canonical shape) and then
+  `dispatchMessage` routes it to the correct store action.
+- **Binary pairing**: an `ArrayBuffer` arrives immediately after either a
+  `frame_meta` (screen / webcam JPEG) or an `fs_get_result` metadata JSON with
+  no `data_base64` field (binary-chunk file download). The hook holds
+  `_pending_meta` and `_pending_fs_chunk` module-level slots and pairs each
+  binary with the correct pending JSON on arrival. `_pending_fs_chunk` takes
+  precedence because file transfers are request-driven and always paired 1:1.
 
-TX helpers returned by the hook
-- `sendCommand(json)` — resolves targets, then fans out:
-  - If `type` is not `"request"` or `"power"`, the message is passed through
-    unchanged (e.g. `list_agents`) — no fan-out, no filter.
-  - Targets = explicit non-empty `target_agents` if present; else frame-focus
-    modules (`screenshot`, `screen_stream`, `screen_stream_stop`, `webcam_start`,
-    `webcam_stop`) use `[focused_agent_id]`; every other command uses
-    `selected_agent_ids` (or `[focused_agent_id]` when nothing is selected).
-  - The resolved targets are handed to `fanoutSend` (loop-emit + consent filter).
-- `sendToFocused(json)` — loop-emit to `[focused_agent_id]` via `fanoutSend`.
-- `sendToSelected(json)` — loop-emit to every `selected_agent_ids` via `fanoutSend`.
-- `requestPermission(feature, agent_id)` / `revokePermission` / `stopModule` —
-  targets resolve to `[agent_id]` when given (per-agent `PermissionGate`), else
-  the whole `selected_agent_ids` set (bulk Connect / Disconnect), else
-  `[focused_agent_id]`. Each loop-emits ONE permission message per agent (these
-  are NOT consent-filtered — they establish or withdraw consent).
-  `requestPermission` marks each pair `'requesting'`; `revokePermission` resets
-  to `'idle'`; both revoke and stop call the private `stopLocalFeature`, which
-  maps `screen`/`keylog`/`webcam` to `ModuleStore.set*Active(id, false)` (other
-  features no-op).
+### Multi-agent fan-out
+`sendCommand` / `sendToFocused` / `sendToSelected` all funnel into a private
+`fanoutSend(msg, target_ids)` that emits **one message per agent** with
+`target_agents: [one_id]`. Agents whose `(agent_id, feature)` status is not
+`'granted'` are skipped; the count of skipped agents is surfaced as one
+aggregate error toast so a bulk action does not spam N warnings.
 
-Binary frame dispatch
-- When `frame_meta` arrives it is stored in `_pending_meta`.
-- The next `onBinary` ArrayBuffer is paired with that meta and pushed into
-  `ModuleStore.data[agent_id].screen` or `.webcam` depending on `meta.module`.
-
-RX routing table (`dispatchMessage`)
-
-| Message `type`         | Effect |
-|------------------------|--------|
-| `agents_list`          | `AgentStore.setAgents(agents)` |
-| `agent_status`         | `AgentStore.setAgentStatus(id, {online, in_session})`; unknown id → resync `list_agents` |
-| `app_list_result`      | `ModuleStore.setModuleData(id, 'app', apps)` |
-| `app_action_result`    | toast (success or error) |
-| `proc_list_result`     | `ModuleStore.setModuleData(id, 'process', procs)` |
-| `proc_kill_result`     | toast (success or error) |
-| `keylog`               | `ModuleStore.appendKeylog(id, events)` |
-| `keylog_started`       | `setKeylogActive(id, true)` |
-| `keylog_stopped`       | `setKeylogActive(id, false)` |
-| `keylog_denied`        | `setKeylogActive(id, false)` + toast |
-| `frame_meta`           | held in `_pending_meta` for the next binary |
-| `stream_started`       | `setScreenStreamActive(id, true)` |
-| `stream_stopped`       | `setScreenStreamActive(id, false)` |
-| `webcam_started`       | `setWebcamActive(id, true)` |
-| `webcam_stopped`       | `setWebcamActive(id, false)` |
-| `webcam_denied`        | `setWebcamActive(id, false)` + toast |
-| `fs_list_result`       | `setFsEntries(id, path, entries)` |
-| `fs_get_result`        | `setFileDownload(id, result)` |
-| `fs_put_result`        | `setFilePutAck(id, { ..., complete: false })` |
-| `fs_put_complete`      | `setFilePutAck(id, { ..., complete: true })` |
-| `fs_error`             | toast |
-| `power_result`         | toast (confirmed or cancelled) |
-| `policy_update_result` | `PolicyStore.setPolicyResult`; toast only on failure |
-| `permission_result`    | `PermissionStore.setPermissionResult(id, feature, granted)` + toast |
-| binary (ArrayBuffer)   | paired with `_pending_meta` → `setModuleData(id, meta.module, { frame, meta })` |
+Some modules (screen / screenshot / webcam) only make sense for one agent at a
+time — `sendCommand` routes them to `focused_agent_id` even when a multi-select
+set is present (`FRAME_FOCUS_MODULES` set inside the hook).
 
 ---
 
-## 5. Protocol — supported messages
+## 5. Auth flow
 
-`services/Protocol.js` exports constants and builders. All formats mirror the
-templates in `docs/formatjson/*.json`.
+Login and token lifecycle live in `services/AuthService.js`. All fetches use
+`credentials: 'include'` so the browser attaches the HttpOnly refresh cookie
+the Gateway sets on login.
 
-Every outgoing message carries a short random `command_id` field auto-injected
-by `buildMessage(type, payload)` (the Agent's `ValidatePacket` rejects packets
-without one). A caller-supplied `command_id` inside `payload` overrides the
-default.
+- `login(username, password)` — `POST /api/login`. Success writes the short-lived
+  access JWT to `ConnectionStore.auth_token`.
+- `refreshAccessToken()` — `POST /api/refresh`. Concurrent callers are
+  deduplicated onto a single in-flight promise (`_refresh_in_flight`) so the
+  Gateway sees exactly one refresh at a time. Snapshots a monotonic
+  `_session_epoch` at start; if `logout()` bumped the epoch mid-fetch, the
+  result is silently dropped instead of un-logging the operator out.
+- `logout()` — bumps `_session_epoch`, clears `auth_token` synchronously (UI
+  drops to LoginScreen this tick), then fires `POST /api/logout` in the
+  background best-effort so the Gateway can revoke the refresh cookie.
+- `apiFetch(url, opts)` — interceptor around `fetch`. Injects
+  `Authorization: Bearer <token>` + `credentials: 'include'`. On `401` it
+  runs one refresh + one retry; on refresh failure it logs out.
+- `getToken()` — non-reactive read from the store.
 
-### TX message types (Controller → Gateway)
-- `list_agents` — `buildListAgents()`.
-- `request` — generic envelope with `{ module, params, target_agents }` for
-  every module command. Built by module-specific helpers below.
-- `power` — separate top-level type carrying `{ action, target_agents }`.
-- `policy_update` — separate top-level type carrying
-  `{ params: { app_whitelist, sandbox_path }, target_agents }`. Built by
-  `buildPolicyUpdate`; pushed on connect.
-- `permission_request` / `permission_revoke` / `stop_module` — Plan B consent
-  flow, each carrying `{ feature, target_agents }`. Built by
-  `buildPermissionRequest` / `buildPermissionRevoke` / `buildStopModule`.
+### Access-token expiry mid-session
+Two paths converge on the same result:
 
-### Feature constants (`FEATURE`, D6 vocab — value of the `feature` field)
-`application`, `process`, `screen`, `keylog`, `file`, `webcam`, `power`.
-Distinct from the module command names below (e.g. `FEATURE.SCREEN` vs
-`MODULE.SCREENSHOT`); used only by the permission flow.
+- `Socket.js` — on repeated failed opens with a token set
+  (`AUTH_FAIL_THRESHOLD = 2`), calls `refreshAccessToken()` once. Success →
+  `_openSocket()` again with the new JWT. Failure → toast + `logout()`.
+- `UseAgentSocket.dispatchMessage(auth_expired)` — Gateway push during an open
+  session. Refresh → `_socket.reopen()` (force-close then reopen without
+  setting the "user closed" flag). Failure → toast + `logout()`.
 
-### Module constants (value of `request.module`)
-Application: `app_list`, `app_start`, `app_stop`.
-Process:     `proc_list`, `proc_kill`.
-Screen:      `screenshot`, `screen_stream`, `screen_stream_stop`.
-Keylog:      `keylog_start`, `keylog_stop`.
-File:        `fs_list`, `fs_get`, `fs_put`.
-Webcam:      `webcam_start`, `webcam_stop`.
+---
 
-### Power actions
-`lock` (immediate), `restart`, `shutdown`, `sleep`.
+## 6. `services/Protocol.js`
 
-### RX message types (Gateway / Agent → Controller)
-`agents_list`, `agent_status`, `frame_meta`, `app_list_result`,
-`app_action_result`, `proc_list_result`, `proc_kill_result`, `keylog`,
-`keylog_started`, `keylog_stopped`, `keylog_denied`, `stream_started`,
-`stream_stopped`, `webcam_started`, `webcam_stopped`, `webcam_denied`,
-`fs_list_result`, `fs_get_result`, `fs_put_result`, `fs_put_complete`,
-`fs_error`, `power_result`, `policy_update_result`, `permission_result`.
+Pure JSON builders + parsers + type constants. No network calls, no store
+touch. The four exported enum objects are the vocabulary the rest of the app
+uses:
 
-### Binary channel
-Screen and webcam frames arrive as a pair:
-1. JSON `frame_meta { type, module, agent_id, w, h, len, seq, timestamp_ms }`.
-2. Raw JPEG bytes as an `ArrayBuffer` on the socket's binary handler.
+- `MSG_TYPE` — every wire `type` string: `LIST_AGENTS, REQUEST, POWER,
+  POLICY_UPDATE, PERMISSION_REQUEST, PERMISSION_REVOKE, STOP_MODULE,
+  AGENTS_LIST, AGENT_STATUS, FRAME_META, APP_LIST_RESULT, APP_ACTION_RESULT,
+  PROC_LIST_RESULT, PROC_KILL_RESULT, KEYLOG, KEYLOG_STARTED, KEYLOG_STOPPED,
+  KEYLOG_DENIED, STREAM_STARTED, STREAM_STOPPED, WEBCAM_STARTED,
+  WEBCAM_STOPPED, WEBCAM_DENIED, FS_LIST_RESULT, FS_GET_RESULT, FS_PUT_RESULT,
+  FS_PUT_COMPLETE, FS_ERROR, POWER_RESULT, POLICY_UPDATE_RESULT,
+  PERMISSION_RESULT, SYSINFO_RESULT, AUTH_EXPIRED`.
+- `FEATURE` — consent vocabulary: `APPLICATION, PROCESS, SCREEN, KEYLOG,
+  FILE, WEBCAM, POWER`. One per sensitive capability.
+- `MODULE` — value of the `"module"` field inside a REQUEST envelope:
+  `APP_LIST, APP_START, APP_STOP, PROC_LIST, PROC_KILL, SCREENSHOT,
+  SCREEN_STREAM, SCREEN_STREAM_STOP, KEYLOG_START, KEYLOG_STOP, FS_LIST,
+  FS_GET, FS_PUT, WEBCAM_START, WEBCAM_STOP, SYSINFO`.
+- `POWER_ACTION` — `LOCK, RESTART, SHUTDOWN, SLEEP`.
 
-**Gateway ordering contract (REQUIRED):** the relay MUST forward each frame's
-binary IMMEDIATELY after its `frame_meta`, with NO other message interleaved on
-the controller socket. The hook holds one `_pending_meta` slot and pairs the next
-binary with it, so an out-of-order relay (e.g. `meta(A) meta(B) bin(A) bin(B)`
-when GridView streams many agents at once) would draw a frame into the wrong
-agent/module slot. Two runtime guards warn when this happens: a fresh
-`frame_meta` arriving while one is still unpaired, and a `meta.len` vs
-`ArrayBuffer.byteLength` mismatch. If those warnings fire, the Gateway relay is
-interleaving frames and must serialise each (meta, binary) pair per socket.
+### Input validators (defense-in-depth)
+Every builder that receives external input runs its arguments through small
+assertion helpers before shaping the JSON — bad type or range throws a plain
+`Error`. Primary validation still lives in the tab form UIs (inline red error +
+disabled submit); these throws catch anything the UI let through.
+
+- `assertPositiveInt` — PID, chunk counts.
+- `assertIntInRange(v, min, max)` — fps, quality.
+- `assertNonNegativeInt` — chunk_index, byte counts.
+- `assertNonEmptyString` — app name, base64 chunks, transfer_id.
+- `assertSafePath` — sandbox paths: non-empty, no NUL, starts with `/`, no `..`.
+- `assertOneOf` — enumerated values (POWER_ACTION).
+
+Callsites that receive user-typed input wrap the builder in try/catch and toast
+the message; callsites that pass row-data or constants let the throw propagate
+— an invalid value there is a bug.
 
 ### Exported builders
 `buildListAgents`, `buildRequest`, `buildAppList`, `buildAppStart`,
 `buildAppStop`, `buildProcList`, `buildProcKill`, `buildScreenshot`,
 `buildStreamStart`, `buildStreamStop`, `buildKeylogStart`, `buildKeylogStop`,
-`buildFsList`, `buildFsGet`, `buildFsPut`, `buildWebcamStart`,
-`buildWebcamStop`, `buildPower`, `buildPolicyUpdate`, `buildPermissionRequest`,
-`buildPermissionRevoke`, `buildStopModule`. Plus `buildMessage` /
-`parseMessage`.
+`buildFsList`, `buildFsGet`, `buildFsPut` (params: `transfer_id`, `total_size`,
+`chunk_index`, `total_chunks`, `data_base64`), `buildWebcamStart`,
+`buildWebcamStop`, `buildSysInfo`, `buildPower`, `buildPolicyUpdate`,
+`buildPermissionRequest`, `buildPermissionRevoke`, `buildStopModule`. Plus
+`buildMessage` / `parseMessage`.
+
+Every outgoing message auto-includes a short random `command_id` (the Agent's
+validator rejects packets with empty command_id).
 
 ### Incoming adapter — `normalizeIncoming(raw_msg)`
 Rewrites a real Gateway/Agent JSON message into the ONE canonical shape the
-store + `dispatchMessage` already expect, so the wire format can differ from the
-mock without touching any component or store. `UseAgentSocket` runs it on every
-JSON message before dispatch; already-canonical mock messages pass through
-unchanged.
+stores + `dispatchMessage` expect. `UseAgentSocket` runs it on every JSON
+message before dispatch; canonical mock messages pass through unchanged.
+
 - `TYPE_ALIASES` — real `type` string → canonical `MSG_TYPE` (identity if absent).
 - Shared field aliases: `agent_id` ⟵ `agentId`/`agentID`/`machine_id`;
   `timestamp_ms` ⟵ `ts`/`time`/`timestamp`.
 - Per-type `NORMALIZERS` reshape list/record types: `agents_list`,
   `agent_status`, `app_list_result`, `proc_list_result`, `keylog`, `frame_meta`,
-  `fs_list_result`, `fs_get_result`, `power_result`, `policy_update_result`,
-  `permission_result`.
-  Types with no normalizer keep their body and only get `agent_id` +
+  `fs_list_result`, `fs_get_result` (extracts `transfer_id`), `fs_put_result`,
+  `fs_put_complete`, `power_result`, `policy_update_result`,
+  `permission_result`, `sysinfo_result`.
+- Types with no normalizer keep their body and only get `agent_id` +
   `timestamp_ms` fixed.
-- All lookups use `pickField(obj, aliases, fallback)` (first match wins), so
-  unknown messages degrade to a safe pass-through. Alias arrays are the single
-  "EDIT POINT" to extend when a new real field name appears.
+- All lookups use `pickField(obj, aliases, fallback)`.
 
 ---
 
-## 6. Feature status per module
+## 7. `hooks/UseAgentSocket.js`
 
-### Application (`ApplicationTab/index.jsx`)
-- Table via `ModuleTable`: App Name (`display_name`), Status (badge), CPU %,
-  RAM (MB).
-- Start / Stop buttons per row, disabled for non-whitelisted apps. The
-  whitelist is NOT hard-coded: each row's `in_whitelist` (from the Agent, which
-  applies the pushed policy) is used, falling back to `PolicyStore.app_whitelist`.
-- 3-second polling loop dispatching `buildAppList`.
-- Toast on Start / Stop confirmation from `app_action_result`.
+Singleton pattern — ref-counted so multiple components can call the hook
+without opening extra WebSocket connections. The socket is created when
+`_refcount` goes 0→1 and closed when it goes 1→0.
 
-### Process (`ProcessTab/index.jsx`)
-- Table via `ModuleTable`: Process Name, PID, CPU %, RAM (MB).
-- Kill button per row, dispatching `buildProcKill`.
-- 3-second polling loop dispatching `buildProcList`.
-- Toast on Kill confirmation from `proc_kill_result`.
+### TX helpers returned to callers
+- `sendCommand(json_string)` — raw send. `request` / `power` messages get
+  auto-target-resolution and fan-out; everything else (list_agents, etc.)
+  passes through as-is.
+- `sendToFocused(json_string)` — inject `[focused_agent_id]` as target.
+- `sendToSelected(json_string)` — inject the whole `selected_agent_ids` set.
+- `requestPermission(feature, agent_id?)` — loop-emit one `permission_request`
+  per agent; marks each pair `'requesting'` locally.
+- `revokePermission(feature, agent_id?)` — loop-emit one `permission_revoke`
+  per agent, reset consent to `'idle'`, drop the live indicator for that
+  feature on that agent.
+- `stopModule(feature, agent_id?)` — loop-emit `stop_module` and drop the
+  local indicator (`screen_stream_active` / `keylog_active` / `webcam_active`).
 
-### Screen (`ScreenTab/index.jsx`)
-- "Chụp 1 lần" → `buildScreenshot`.
-- "Bắt đầu / Dừng stream" → `buildStreamStart(24, 70, [id])` and
-  `buildStreamStop([id])`.
-- Renders frames via `FrameCanvas` (shared primitive).
-- Cleanup effect stops the stream on tab switch or agent change.
-- Status bar shows resolution, sequence, and a `● LIVE` badge.
+### Message dispatch (`dispatchMessage`)
+Routes each incoming canonical message to the correct store action:
 
-### Grid live-screen (`livescreen/GridView.jsx`)
-- Tiled thumbnails of every online agent via `FrameCanvas`.
-- Low-fps continuous stream (2 fps by default).
+| Incoming `type` | Store action |
+| --- | --- |
+| `agents_list` | `AgentStore.setAgents(agents)` |
+| `agent_status` | `AgentStore.setAgentStatus(id, patch)`; unknown id → resync `list_agents` |
+| `app_list_result` | `ModuleStore.setModuleData(id, 'app', apps)` |
+| `app_action_result` | toast (success / error) |
+| `proc_list_result` | `ModuleStore.setModuleData(id, 'process', procs)` |
+| `proc_kill_result` | toast |
+| `keylog` | `ModuleStore.appendKeylog(id, events)` |
+| `keylog_started` / `stopped` / `denied` | `setKeylogActive` + toast on denied |
+| `stream_started` / `stopped` | `setScreenStreamActive(id, …)` |
+| `webcam_started` / `stopped` / `denied` | `setWebcamActive` + toast on denied |
+| `frame_meta` | stored in `_pending_meta` for the next binary |
+| `fs_list_result` | `setFsEntries(id, path, entries)` |
+| `fs_get_result` | JSON mode: decode `data_base64` → bytes → `appendFileDownloadChunk`; binary mode: stash meta in `_pending_fs_chunk`, next binary frame is the raw chunk |
+| `fs_put_result` | `setFilePutAck(id, { ..., complete: false })` |
+| `fs_put_complete` | `setFilePutAck(id, { ..., complete: true })` |
+| `fs_error` | toast |
+| `power_result` | toast |
+| `policy_update_result` | `setPolicyResult(id, …)`; toast on failure |
+| `permission_result` | `setPermissionResult(id, feature, granted)` + toast |
+| `sysinfo_result` | `appendSysInfo(id, snapshot)` |
+| `auth_expired` | `refreshAccessToken()`; success → `_socket.reopen()`; failure → toast + `logout()` |
+| binary `ArrayBuffer` | pair with `_pending_fs_chunk` first (file chunk); otherwise with `_pending_meta` (screen / webcam frame) |
 
-### Focus live-screen (`livescreen/FocusView.jsx`)
-- 7-tab bar (Application / Process / Screen / Keylog / File / Webcam / Power)
-  and the active module panel for `focused_agent_id`.
-- The active panel is always rendered inside `<PermissionGate feature={active_tab}
-  agent_id={focused_agent.id}>`, so the tab id doubles as the FEATURE constant
-  used by the consent flow — the seven tab ids match the seven `FEATURE` values
-  one-to-one.
-
-### Keylog (`KeylogTab/index.jsx`)
-- Start / Stop buttons dispatching `buildKeylogStart` / `buildKeylogStop`.
-- Terminal-style scrollable log fed by `appendKeylog`.
-- Uses `keylog_active` for the running / consent-denied UI state.
-
-### File (`FileTab/index.jsx`)
-- Sandbox-only browser of `fs_list_result` under `data[id].file.tree`. The
-  "sandbox only" badge tooltip shows `PolicyStore.sandbox_path` (from the pushed
-  policy, not hard-coded).
-- Download via `buildFsGet` (single-chunk base64 → Blob download).
-- Chunked upload via `buildFsPut`, progress bar advances on each
-  `fs_put_result`, marked complete on `fs_put_complete`.
-- Toast on `fs_error`.
-
-### Webcam (`WebcamTab/index.jsx`)
-- "Bật / Tắt webcam" → `buildWebcamStart(15, 60, [id])` and
-  `buildWebcamStop([id])`.
-- Renders frames via `FrameCanvas` with `module="webcam"` and label
-  `"WEBCAM"`.
-- Consent indicator: red "● CAM ON" badge when `webcam_active` is `true`,
-  amber "Waiting for consent…" while `streaming && !webcam_active`.
-- Cleanup effect stops the stream on unmount to release the camera LED.
-
-### Power (`PowerTab/index.jsx`)
-- Four buttons: Lock, Restart, Shutdown, Sleep.
-- Lock dispatches `buildPower(POWER_ACTION.LOCK, [id])` immediately.
-- Restart / Shutdown / Sleep open a reusable `<CountdownModal>` (10 s
-  countdown, Cancel button, Esc, click-outside).
-- On countdown reaching 0 the corresponding `buildPower(action, [id])` is
-  sent; on cancel nothing is sent (the countdown lives Controller-side).
-- Toast on `power_result`.
-
-### Empty / loading / offline states
-- Each module tab distinguishes three states through a friendly message and
-  disabled controls: loading (waiting for the first reply), agent offline
-  (`agent.online === false`), and Gateway disconnected (`ConnectionStore.status
-  !== 'open'`). Offline agents are not polled and their action buttons /
-  upload zone / power actions are disabled.
-- `ApplicationTab` / `ProcessTab` pass a computed `empty_label` to `ModuleTable`
-  and hide the poll badge when offline.
-- `ScreenTab` / `WebcamTab` / `FileTab` / `PowerTab` show a `WifiOff`
-  placeholder when offline; `KeylogTab` shows an `OFFLINE` indicator.
-- `App.jsx` renders a full-width `ConnectionBanner` above the TopBar while the
-  socket is `connecting` (warning) or `closed` (danger); hidden when open.
-- Sidebar `AgentCard` dims offline agents and adds an `OFFLINE` text pill next
-  to the gray status dot.
-
-### Transparency indicators
-- `AgentCard.jsx` shows a pulsing red dot (`.transparency-dot`) next to the online dot whenever any
-  of `screen_stream_active`, `webcam_active`, `keylog_active`, or `in_session`
-  is true for that agent.
-- `TopBar.jsx` shows a global red badge `● SENSITIVE · N` listing every agent
-  id currently in a sensitive state; always visible across Grid and Focus.
-  The badge subscribes to `ModuleStore` through `useShallow` on a derived
-  per-agent boolean map so incoming frames do not re-render the top bar.
-
----
-
-## 7. Shared primitives
-
-### `FrameCanvas.jsx`
-- Decodes a JPEG `ArrayBuffer` with `createImageBitmap`, draws it onto a
-  `<canvas>`, and releases GPU memory with `bitmap.close()` on every frame
-  and on unmount.
-- One-shot `cancelled` flag guards against late decode callbacks on stale
-  frames.
-- Props: `frame_buffer`, `module` (`"screen" | "webcam"`), `label`, `width`,
-  `height`. When `label` is passed, wraps the canvas in a positioned
-  container with a corner badge — used by WebcamTab. Without `label`, renders
-  the bare canvas — used by GridView / FocusView / ScreenTab that already
-  have their own status badges.
-
-### `ModuleTable.jsx`
-- Pure-UI sortable table used by ApplicationTab and ProcessTab.
-- Props: `columns`, `rows`, `actionColumn`, `empty_label`, `title`,
-  `poll_badge`, `row_key`.
-- Sort state is local; click a header to toggle direction or switch column.
-- Never imports any store or service.
-
-### `PermissionGate.jsx`
-- Shared Plan-B consent wrapper. `FocusView` applies it uniformly around every
-  active module panel, so no module tab needs its own gate wiring.
-- Props: `feature`, `agent_id`, `disabled`, `children`.
-- Reads the `(agent_id, feature)` status from `PermissionStore` (selector) and
-  drives the transport only through `useAgentSocket` — never the socket.
-- Shows a Connect button (`requestPermission`) until `granted`, then a
-  Disconnect button (`revokePermission` + `stopModule`). Shows
-  "Chờ cấp quyền..." while `requesting`; the denied toast comes from the hook.
-- Wraps `children` in a `<fieldset disabled={!granted}>` so every module command
-  button inside stays disabled until consent is granted — no per-tab wiring.
+### Guards
+- Every per-agent message must carry `agent_id` after normalization. Missing
+  `agent_id` is dropped with a warning. `AGENTS_LIST` and `AUTH_EXPIRED` are
+  exempt.
+- `agent_status` for an unknown id triggers a `list_agents` resync so the
+  sidebar picks up the new agent's `name / os / ip`, not just the flag.
 
 ---
 
@@ -504,117 +402,203 @@ unchanged.
 
 `services/Socket.js` (real) and `services/MockSocket.js` (simulator) expose the
 identical API surface (`connect`, `close`, `send`, `onOpen`, `onMessage`,
-`onBinary`, `onClose`, `onError`). `services/index.js` picks one and exports it
-as `AgentSocket`; `UseAgentSocket` imports only from `../services`.
+`onBinary`, `onClose`, `onError`, plus `reopen` on the real Socket).
+`services/index.js` picks one and exports it as `AgentSocket`; the hook imports
+only from `../services`.
 
 ### `Socket.js` (real WebSocket)
 - Base URL from `import.meta.env.VITE_GATEWAY_URL`, fallback `ws://localhost:8080`.
 - `_buildEndpoint()` appends `/controller?token=<auth_token>` when
   `ConnectionStore.auth_token` is set; before login it falls back to
   `/controller?key=<VITE_CONTROLLER_KEY>`.
-- `binaryType = "arraybuffer"` so image/video frames arrive as `ArrayBuffer`.
+- `binaryType = "arraybuffer"` so image/video/chunk payloads arrive as `ArrayBuffer`.
 - `onmessage` splits `typeof data === 'string'` (JSON → `onMessage`) from
-  binary (`ArrayBuffer` → `onBinary`), matching the frame_meta + binary pair.
+  binary (`ArrayBuffer` → `onBinary`).
 - Auto-reconnect with exponential backoff (500 ms base, 8 s cap); reset on a
-  clean open; suppressed after a user `close()`.
-- Keeps `ConnectionStore.status` in sync (`connecting` / `open` / `closed`).
+  clean `close()`.
+- Auth-fail handling: repeated failed opens with a token set (`AUTH_FAIL_THRESHOLD = 2`)
+  triggers one `refreshAccessToken()`. Success → `_openSocket()` again with the
+  new JWT. Failure → toast + `logout()`.
+- `reopen()` — force-close the current underlying WebSocket without setting
+  `_closed_by_user`, then open a fresh one. Used after a successful token
+  refresh from `auth_expired`.
 
-### MockSocket
+### `MockSocket.js` (dev simulator)
+- Same public API as `Socket.js`. Simulates 5 agents (Windows / Ubuntu / macOS)
+  with realistic `agents_list`, `agent_status`, `app_list_result`,
+  `proc_list_result`, sysinfo, keylog, screenshot, screen stream, webcam,
+  file list / download (single JSON chunk), file upload, and power messages.
+- Streams frames as raw JPEG `ArrayBuffer` paired with a `frame_meta` JSON.
+- Used when `VITE_USE_MOCK !== 'false'` — the default for `npm run dev`.
 
-- 7 fake agents cover every UI state: Windows online / offline,
-  in-session, Ubuntu, macOS, and one agent (`agent-06`) that always denies
-  consent for keylog and webcam.
-- Per-agent mutable state so Start / Stop / Kill / Upload have visible
-  effects across polls (`_app_state`, `_proc_state`, `_uploaded_files`).
-- Frame stream engine (`_startFrameStream`) draws a coloured test card on an
-  off-screen `<canvas>`, encodes to JPEG, and emits `frame_meta` + binary
-  pair at the requested fps. Reused by screen and webcam (only
-  `frame_meta.module` differs).
-- Keylog stream engine emits random batches every 1.5 s from a fixed pool.
-- Sandbox file tree is static, extended with per-agent uploaded files on the
-  next `fs_list`.
-- Consent-denied agents reply `keylog_denied` / `webcam_denied` instead of
-  the corresponding `*_started`.
-- Power replies `power_result` with `confirmed: true`.
-- `policy_update` is stored in RAM; the whitelist then drives each app's
-  `in_whitelist` in `app_list_result`, and the mock replies
-  `policy_update_result` per agent — a full end-to-end policy demo.
-- All timers (frame streams, keylog streams, connect timer) are cancelled on
-  `close()`.
-
-### `AuthService.js` (admin login — D8)
-- `login(username, password)` POSTs JSON `{ username, password }` to
-  `${gatewayHttpUrl}/api/login`, where `gatewayHttpUrl` is `VITE_GATEWAY_URL`
-  with the scheme swapped `ws→http` / `wss→https`. Gateway reply contract:
-  `{ ok, token, message }`.
-  - Success → saves the JWT to `sessionStorage['controller_auth_token']` and
-    `ConnectionStore.setAuthToken(token)`; returns `{ ok:true, token, message }`.
-  - Network error or `ok:false` → returns a friendly `{ ok:false, message }`.
-- `logout()` clears the token from `sessionStorage` and the store.
-- `getToken()` reads the current JWT from the store.
-- The REAL credential check (bcrypt password + JWT signing) lives on the
-  GATEWAY; the client only stores and forwards the token, never the password.
-
-### Login gate (`App.jsx` + `LoginScreen.jsx`)
-- `App` reads `ConnectionStore.auth_token`: no token → renders `<LoginScreen>`;
-  with a token → renders `<ConsoleShell>`, which is the ONLY component that calls
-  `useAgentSocket`. So the socket opens only after login and, on logout, the
-  shell unmounts and the ref-counted hook closes the socket.
-- `LoginScreen` holds `username` / `password` in local state, calls
-  `AuthService.login`, and shows the returned message on failure. On success the
-  updated `auth_token` re-renders `App` into the console.
-- `TopBar`'s Logout button calls `AuthService.logout()` → token cleared →
-  `App` swaps back to `LoginScreen` and the socket closes.
+Swapping mock ↔ real requires changing only `VITE_USE_MOCK`; no component or
+hook code changes.
 
 ---
 
-## 9. Conventions
+## 9. Component layer
 
-- **State**: Zustand only. No Redux, no Context API for continuous state.
-  Actions live inside the store; components read via selectors.
-- **File naming**: `PascalCase.jsx` for components, `camelCase.js` for
-  hooks / services / stores. Module tabs live in their own folder as
-  `<Name>Tab/index.jsx`.
-- **Formatting**: Allman braces, single quotes, no semicolons in JSX.
-  Comments in English, one line above the code they describe.
-- **Component structure**: one selector per state slice used, effects at the
-  top, event handlers next, JSX at the bottom.
-- **Styling**: CSS in `src/index.css` and `src/App.css`. Tokens live at the
-  top of `index.css` and are flipped by the `data-theme="dark"` attribute
-  set by `App.jsx`. A spacing scale (`--space-1..6`) and radius scale
-  (`--radius-sm/md/lg`) are theme-independent and used by newer rules.
-  Shared helpers: `.spin` (generic icon spinner), `.transparency-dot`
-  (red pulsing sensitive-activity dot), `.conn-banner` (offline strip),
-  `.module-offline` (offline module state), `.screen-tab__consent-badge`
-  (webcam consent), and the `.power-tab__grid` / `.power-modal__*` classes.
-  Two palette groups coexist:
-  - Theme-tinted tokens (`--danger`, `--warning`, `--accent`, ...) shift
-    between light and dark.
-  - Solid alert tokens (`--danger-solid`, `--danger-solid-glow`,
-    `--danger-deep`, `--warning-solid`, `--on-danger`, `--on-warning-solid`,
-    `--overlay-scrim`, `--shadow-modal`) stay identical in both themes so
-    sensitive-activity dots and modal chrome keep the same vivid look
-    regardless of theme.
-  Components never inline hex or rgba values — they always reference a token.
-- **Socket access**: components never import a service directly; they use
-  `useAgentSocket`. Only `useAgentSocket` and `Protocol` know about the
-  wire format.
+### `App.jsx` — login gate + console shell + toast layer
+- Reads `ConnectionStore.auth_token`: no token → renders `<LoginScreen>`;
+  with a token → renders `<ConsoleShell>`. `ConsoleShell` is the only component
+  that calls `useAgentSocket`, so the socket opens only after login and, on
+  logout, unmounts the shell → the ref-counted hook closes the socket.
+- Renders the toast stack from `UiStore.toasts`.
+
+### `LoginScreen.jsx`
+Local `username / password` state, calls `AuthService.login`, shows the returned
+message on failure. Success writes `auth_token` → App re-renders into the console.
+
+### `layout/`
+- `Sidebar.jsx` — search box + `<AgentList>` + a "select all online" checkbox
+  + gateway status footer.
+- `TopBar.jsx` — view-mode toggle (Grid / Focus), sensitive-activity banner,
+  connection indicator, theme toggle, Logout button.
+- `ThemeToggle.jsx` — light / dark theme switch driven by `UiStore.theme`.
+
+### `agents/`
+- `AgentList.jsx` — renders one `<AgentCard>` per filtered agent.
+- `AgentCard.jsx` — name, OS, IP, online dot, sensitive-activity dot, selection
+  checkbox. Clicking the card focuses the agent + switches to Focus view.
+- `MultiSelect.jsx` — small "select all online" checkbox helper.
+
+### `livescreen/`
+- `GridView.jsx` — 6-up grid of live thumbnails for every online agent. Owns
+  the cross-agent `stream_start` broadcast on mount and `stream_stop` on
+  unmount so the wall is always live while shown.
+- `FocusView.jsx` — 8-tab navigation bar + active module panel for the focused
+  agent. `sysinfo` renders directly (read-only); every other tab is wrapped by
+  `<PermissionGate feature={active_tab} agent_id={focused_agent.id}>`.
+
+### Shared templates
+- `ModuleTable.jsx` — sortable table with a toolbar, empty state, and one
+  optional action column. Used by `ApplicationTab` and `ProcessTab`.
+- `FrameCanvas.jsx` — decodes an `ArrayBuffer` JPEG via `createImageBitmap`,
+  paints it to a `<canvas>`, revokes the bitmap on the next frame. Used by
+  `ScreenTab`, `WebcamTab`, and every `GridView` tile.
+
+### `PermissionGate.jsx`
+Shared consent wrapper. `FocusView` applies it uniformly around every active
+module panel. Module tabs do not import it directly — they import its two
+hooks.
+
+- Bar: shows badge status. When `granted` and not currently requesting, shows
+  a **Disconnect** button (`revokePermission` + `stopModule` + reset queue).
+  There is no separate "Connect" button — consent is driven from action clicks.
+- Provides React Context `{ guardedSend, is_pending_consent }`:
+  - **`useGuardedSend()`** — every module action wraps its `sendFn` here.
+    Already `granted` → run `sendFn` immediately. Not granted → queue
+    `sendFn`, fire `permission_request`, start a 30 s timer; on `granted`
+    drain the queue in order; on `denied` or timeout, toast an error and
+    clear the queue.
+  - **`usePendingConsent()`** — `true` while awaiting consent; action buttons
+    use it to disable themselves and show "Đang xin quyền..." in the title.
+- Children are NOT wrapped in a disabled fieldset — buttons stay clickable and
+  drive the consent flow themselves via the hooks above.
+- Ctx value is memoized so consumers only re-render when `guardedSend` or
+  `is_pending_consent` actually change identity.
+
+### Module tabs
+
+Every sensitive tab: subscribes to its own store slice with a selector, wraps
+every action send in `guardedSend(() => ...)`, disables its buttons while
+`is_pending_consent` is true, and has a `useEffect` cleanup for any timer /
+subscription / stream it started.
+
+| Tab | Store slice | Send helper | Notable UI |
+| --- | --- | --- | --- |
+| **SysInfoTab** | `sysinfo`, `sysinfo_history` | `sendToFocused` (no consent — read-only) | 3 stat tiles + 3 recharts sparklines (CPU / RAM / Disk), 2 s polling. |
+| **ApplicationTab** | `app`, `PolicyStore.app_whitelist` | `sendToFocused` | Sortable table via `<ModuleTable>`; Start / Stop per row disabled when out-of-whitelist. 3 s polling. |
+| **ProcessTab** | `process` | `sendToFocused` | `<ModuleTable>` + Kill per row + **"Kill by PID"** form (number input, integer > 0, inline error). 3 s polling. |
+| **ScreenTab** | `screen.frame` / `screen.meta`, `screen_stream_active` | `sendCommand` | `<FrameCanvas>`, "Chụp 1 lần" button, "Bắt đầu / Dừng stream" toggle, editable FPS / Quality fields (fps 1–60, quality 1–100). |
+| **KeylogTab** | `keylog`, `keylog_active` | `sendToFocused` | Terminal-style log, LIVE indicator, Clear + Export .txt buttons. |
+| **FileTab** | `file`, `file_downloads`, `file_put_ack`, `PolicyStore.sandbox_path` | `sendToFocused` | Sandbox tree browser, per-file download button with progress bar per `transfer_id`, drag-drop upload with per-file progress bar, "Go to path" form (validated non-empty / no NUL / starts `/` / no `..`). Assembles binary or base64 chunks into a Blob on completion; TTL 15 s auto-drops stale jobs. |
+| **WebcamTab** | `webcam.frame` / `webcam.meta`, `webcam_active` | `sendCommand` | `<FrameCanvas>`, consent-confirmed indicator, editable FPS / Quality fields (fps 1–30, quality 1–100). |
+| **PowerTab** | — | `sendCommand` | 4 buttons: Lock (immediate), Restart / Shutdown / Sleep (10 s countdown modal with Cancel). `handleConfirm` re-checks consent status right before send. |
 
 ---
 
-## 10. Mock → real switch
+## 10. Message catalog
 
-- `services/index.js` is the ONLY place that chooses mock vs real. It reads
-  `import.meta.env.VITE_USE_MOCK`: any value other than the string `"false"`
-  keeps the mock (default), `"false"` uses the real `Socket`. No import edit is
-  needed to switch — just the env flag.
-- `hooks/UseAgentSocket.js` imports `AgentSocket` from `../services` and never
-  references `MockSocket` or `Socket` directly.
-- Both socket classes expose the same surface (`connect`, `close`, `send`,
-  `onOpen`, `onMessage`, `onBinary`, `onClose`, `onError`), so no component or
-  store change is ever needed.
-- Real Gateway URL comes from `VITE_GATEWAY_URL` (fallback `ws://localhost:8080`);
-  `ConnectionStore.gateway_url` mirrors the same default for display.
-- Fan-out is done Controller-side (Plan B): the hook loop-emits one message per
-  agent instead of relying on server-side `target_agents` fan-out, so the
-  Gateway only ever needs to route single-target messages.
+Full specs live in `docs/formatjson/*.json`. Types actually implemented in the
+Controller code:
+
+Outbound envelopes
+- `list_agents` — bare.
+- `{ type: "request", command_id, module, params, target_agents }` — the
+  generic wrapper for every module command.
+- `{ type: "power", command_id, action, target_agents }`.
+- `{ type: "policy_update", command_id, params: { app_whitelist, sandbox_path },
+  target_agents }`.
+- `{ type: "permission_request" | "permission_revoke" | "stop_module",
+  command_id, feature, target_agents }`.
+
+Modules per feature
+- Application: `app_list`, `app_start`, `app_stop`.
+- Process: `proc_list`, `proc_kill`.
+- Screen: `screenshot`, `screen_stream`, `screen_stream_stop`.
+- Keylog: `keylog_start`, `keylog_stop`.
+- File: `fs_list`, `fs_get` (optional `transfer_id`), `fs_put` (required
+  `transfer_id`, `chunk_index`, `total_chunks`, `total_size`, `data_base64`).
+- Webcam: `webcam_start`, `webcam_stop`.
+- SysInfo: `sysinfo` (no consent).
+- Power: `lock`, `restart`, `shutdown`, `sleep`.
+
+Inbound
+- `agents_list`, `agent_status`.
+- `app_list_result`, `app_action_result`, `proc_list_result`, `proc_kill_result`.
+- `keylog`, `keylog_started`, `keylog_stopped`, `keylog_denied`.
+- `stream_started`, `stream_stopped`, `webcam_started`, `webcam_stopped`,
+  `webcam_denied`.
+- `frame_meta` — always followed by exactly one binary `ArrayBuffer` (JPEG).
+- `fs_list_result`, `fs_get_result` (JSON-chunk mode with `data_base64` OR
+  binary-chunk mode where the next `ArrayBuffer` carries the raw bytes),
+  `fs_put_result`, `fs_put_complete`, `fs_error`.
+- `power_result`, `policy_update_result`, `permission_result`.
+- `sysinfo_result`.
+- `auth_expired` — triggers refresh + WS reopen.
+
+The Gateway stamps `agent_id` onto every message coming from an Agent.
+
+---
+
+## 11. Conventions
+
+Enforced across every file the Controller owns:
+
+- **File names** — PascalCase (`ConnectionStore.js`, `FileTab/index.jsx`).
+- **Identifiers** — snake_case variables, camelCase functions, PascalCase
+  classes / components / enums, UPPER_SNAKE_CASE for true constants.
+- **Braces** — Allman style (opening `{` on its own line, aligned with the
+  statement that opens the block).
+- **Comments** — English, concise, explain WHY not WHAT. Adjacent trailing
+  `//` comments align the `//` into a single column.
+- **No hardcoded colors / font-sizes / spacing** — use the CSS custom
+  properties in `index.css` (`--danger`, `--space-*`, `--radius-*`, `--text`,
+  `--bg-elevated`, `--border`, `--font-sans`, …). Two themes (`:root` +
+  `[data-theme='dark']`) share the same tokens.
+- **Zustand** — subscribe with a selector: `useStore((s) => s.x)`. Never
+  subscribe to the whole store.
+- **useEffect cleanup** — mandatory for `setInterval` polls, event listeners,
+  WS handlers, `ImageBitmap.close`, revoked Object URLs, and any per-job GC
+  timer.
+- **No new dependencies** without necessity. The current list is:
+  `react, react-dom, zustand, lucide-react, recharts`.
+- **Transport only through the hook + service layer**. Components never import
+  `Socket`, `MockSocket`, or call `fetch` directly (except through
+  `AuthService`).
+- **Whitelisted app list + sandbox path** come from `PolicyStore` (which was
+  seeded from a Controller-side default and can be replaced by the future
+  admin UI or a server-pushed policy). Never hard-coded inside a tab.
+
+---
+
+## 12. Mock ↔ real transport
+
+- `VITE_USE_MOCK` (env var, default treated as `true` unless the string
+  `"false"`) picks which implementation `services/index.js` re-exports.
+- Both `Socket.js` and `MockSocket.js` expose the same public methods, so
+  swapping is a one-line change. The rest of the app is transport-agnostic.
+- `MockSocket` runs a small in-process Gateway + Agent simulation with 5
+  fake agents and realistic replies so the UI is fully driveable without a
+  real Gateway or Agent.

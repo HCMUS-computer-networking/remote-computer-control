@@ -6,6 +6,7 @@ import { Keyboard, Circle, Trash2, Download, Play, Square } from 'lucide-react'
 
 import useModuleStore                    from '../../../store/ModuleStore'
 import useAgentSocket                    from '../../../hooks/UseAgentSocket'
+import { useGuardedSend, usePendingConsent } from '../../PermissionGate'
 import { buildKeylogStart, buildKeylogStop } from '../../../services/Protocol'
 
 // Distance (px) from the bottom; within this range auto-scroll stays active.
@@ -36,6 +37,8 @@ function formatTime(ts_ms)
 function KeylogTab({ agent })
 {
     const { sendToFocused } = useAgentSocket()
+    const guardedSend       = useGuardedSend()
+    const is_pending        = usePendingConsent()
 
     // Subscribe to just this agent's keylog slice — no re-render for other agents.
     const events      = useModuleStore((s) => s.data[agent.id]?.keylog        ?? EMPTY_EVENTS)
@@ -67,8 +70,8 @@ function KeylogTab({ agent })
         setScrollPaused(dist_from_bottom > SCROLL_THRESHOLD)
     }
 
-    function handleStart()  { sendToFocused(buildKeylogStart()) }
-    function handleStop()   { sendToFocused(buildKeylogStop())  }
+    function handleStart()  { guardedSend(() => sendToFocused(buildKeylogStart())) }
+    function handleStop()   { sendToFocused(buildKeylogStop())  }   // stop needs no fresh consent
     function handleClear()  { clearModule(agent.id, 'keylog')   }
 
     // Trigger a browser download of the buffered log as plain text.
@@ -120,8 +123,8 @@ function KeylogTab({ agent })
                             <button
                                 className="action-btn action-btn--start"
                                 onClick={handleStart}
-                                disabled={!agent.online}
-                                title={agent.online ? 'Start keylog (requires Agent consent)' : 'Agent is offline'}
+                                disabled={!agent.online || is_pending}
+                                title={is_pending ? 'Đang xin quyền...' : agent.online ? 'Start keylog (requires Agent consent)' : 'Agent is offline'}
                             >
                                 <Play size={12} /> Start
                             </button>

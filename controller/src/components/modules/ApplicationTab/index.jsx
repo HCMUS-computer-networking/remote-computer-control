@@ -11,6 +11,7 @@ import useConnectionStore from '../../../store/ConnectionStore'
 import usePolicyStore     from '../../../store/PolicyStore'
 import useAgentSocket     from '../../../hooks/UseAgentSocket'
 import ModuleTable        from '../../ModuleTable'
+import { useGuardedSend, usePendingConsent } from '../../PermissionGate'
 import { buildAppList, buildAppStart, buildAppStop } from '../../../services/Protocol'
 
 // How often the tab asks the agent for a fresh snapshot (makes % look live).
@@ -51,6 +52,8 @@ function ApplicationTab({ agent })
     // sendToFocused auto-injects [focused_agent_id] into target_agents,
     // so tabs never need to thread agent.id into every builder call.
     const { sendToFocused } = useAgentSocket()
+    const guardedSend       = useGuardedSend()
+    const is_pending        = usePendingConsent()
 
     // Select only this agent's app slice — no re-render when other agents update.
     // EMPTY_APPS (module-level const) keeps the reference stable when data is absent.
@@ -71,7 +74,11 @@ function ApplicationTab({ agent })
     {
         if (!agent.online) return
 
-        sendToFocused(buildAppList())
+        // Wrap the FIRST fetch so opening the tab auto-triggers the consent
+        // popup. Later polls skip the wrapper — the socket layer already
+        // filters ungranted messages, so extra guardedSend calls each 3s
+        // would just enqueue duplicate sendFns.
+        guardedSend(function () { sendToFocused(buildAppList()) })
 
         const timer = setInterval(function ()
         {
@@ -79,6 +86,7 @@ function ApplicationTab({ agent })
         }, POLL_INTERVAL_MS)
 
         return () => clearInterval(timer)   // stop polling when tab unmounts or agent changes
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [agent.id, agent.online])
 
     // Friendly empty state: distinguish offline agent, dead link, and loading.
@@ -100,9 +108,9 @@ function ApplicationTab({ agent })
             return (
                 <button
                     className="action-btn action-btn--stop"
-                    disabled={!is_whitelisted}
-                    title={is_whitelisted ? 'Stop this application' : disabled_tip}
-                    onClick={() => sendToFocused(buildAppStop(row.name))}
+                    disabled={!is_whitelisted || is_pending}
+                    title={is_pending ? 'Đang xin quyền...' : is_whitelisted ? 'Stop this application' : disabled_tip}
+                    onClick={() => guardedSend(() => sendToFocused(buildAppStop(row.name)))}
                 >
                     Stop
                 </button>
@@ -112,9 +120,9 @@ function ApplicationTab({ agent })
         return (
             <button
                 className="action-btn action-btn--start"
-                disabled={!is_whitelisted}
-                title={is_whitelisted ? 'Start this application' : disabled_tip}
-                onClick={() => sendToFocused(buildAppStart(row.name))}
+                disabled={!is_whitelisted || is_pending}
+                title={is_pending ? 'Đang xin quyền...' : is_whitelisted ? 'Start this application' : disabled_tip}
+                onClick={() => guardedSend(() => sendToFocused(buildAppStart(row.name)))}
             >
                 Start
             </button>

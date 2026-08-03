@@ -1,8 +1,9 @@
 /* FocusView.jsx — single-agent view: 7-tab bar + active module panel */
-import { AppWindow, Cpu, MonitorPlay, Keyboard, FolderTree, Video, Power, MousePointerClick } from 'lucide-react'
+import { AppWindow, Cpu, MonitorPlay, Keyboard, FolderTree, Video, Power, MousePointerClick, Activity } from 'lucide-react'
 import useUiStore    from '../../store/UiStore'
 import useAgentStore from '../../store/AgentStore'
 
+import SysInfoTab     from '../modules/SysInfoTab'
 import ApplicationTab from '../modules/ApplicationTab'
 import ProcessTab     from '../modules/ProcessTab'
 import ScreenTab      from '../modules/ScreenTab'
@@ -12,11 +13,18 @@ import WebcamTab      from '../modules/WebcamTab'
 import PowerTab       from '../modules/PowerTab'
 import PermissionGate from '../PermissionGate'
 
+// Tabs that read only non-sensitive metrics and therefore skip the consent
+// handshake entirely — no permission_request is ever sent for them.
+const NO_PERMISSION_TABS = new Set(['sysinfo'])
+
 /* tab definitions — order matches wireframe left-to-right.
-   NOTE: each tab id MUST match a FEATURE constant in Protocol.js — PermissionGate
-   uses it verbatim as the `feature` field of permission_request / revoke / stop. */
+   NOTE: each tab id MUST match a FEATURE constant in Protocol.js (used verbatim
+   as the `feature` field of permission_request / revoke / stop). The only
+   exception is any id listed in NO_PERMISSION_TABS, which renders directly
+   without a PermissionGate wrapper. */
 const TABS =
 [
+  { id: 'sysinfo',     label: 'SysInfo',     Icon: Activity   },
   { id: 'application', label: 'Application', Icon: AppWindow  },
   { id: 'process',     label: 'Process',     Icon: Cpu        },
   { id: 'screen',      label: 'Screen',      Icon: MonitorPlay },
@@ -29,6 +37,7 @@ const TABS =
 /* map tab id → module component */
 const TAB_PANELS =
 {
+  sysinfo     : SysInfoTab,
   application : ApplicationTab,
   process     : ProcessTab,
   screen      : ScreenTab,
@@ -84,11 +93,16 @@ function FocusView()
         })}
       </nav>
 
-      {/* active module panel */}
+      {/* active module panel — sysinfo skips PermissionGate (read-only metrics) */}
       <div className="focus-view__panel" role="tabpanel">
-        <PermissionGate feature={active_tab} agent_id={focused_agent.id}>
-          <ActivePanel key={focused_agent.id} agent={focused_agent} />
-        </PermissionGate>
+        {NO_PERMISSION_TABS.has(active_tab)
+          ? <ActivePanel key={focused_agent.id} agent={focused_agent} />
+          : (
+              <PermissionGate feature={active_tab} agent_id={focused_agent.id}>
+                <ActivePanel key={focused_agent.id} agent={focused_agent} />
+              </PermissionGate>
+            )
+        }
       </div>
     </div>
   )

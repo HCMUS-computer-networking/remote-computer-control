@@ -28,6 +28,7 @@ import { useEffect } from 'react'
 
 import AgentSocket                       from '../services'   // mock or real, chosen by VITE_USE_MOCK in services/index.js
 import { buildListAgents, buildPolicyUpdate, buildPermissionRequest, buildPermissionRevoke, buildStopModule, normalizeIncoming, MSG_TYPE, MODULE, FEATURE } from '../services/Protocol'
+import { refreshAccessToken, logout }    from '../services/AuthService'
 
 // Modules that only make sense against ONE agent at a time (the operator is
 // watching a single feed). sendCommand routes these to focused_agent_id even
@@ -81,9 +82,10 @@ import usePermissionStore                from '../store/PermissionStore'
 
 // ── Singleton state (module-level, shared across all hook invocations) ────────
 
-let _socket       = null   // the one shared socket instance
-let _refcount     = 0      // how many mounted components hold a reference
-let _pending_meta = null   // last frame_meta awaiting its binary companion
+let _socket           = null   // the one shared socket instance
+let _refcount         = 0      // how many mounted components hold a reference
+let _pending_meta     = null   // last frame_meta awaiting its binary companion
+let _pending_fs_chunk = null   // last fs_get_result (binary mode) awaiting its bytes
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -100,11 +102,12 @@ export default function useAgentSocket()
     const setAgentStatus   = useAgentStore.getState().setAgentStatus
     const setModuleData    = useModuleStore.getState().setModuleData
     const appendKeylog     = useModuleStore.getState().appendKeylog
+    const appendSysInfo    = useModuleStore.getState().appendSysInfo
     const setKeylogActive   = useModuleStore.getState().setKeylogActive
     const setWebcamActive   = useModuleStore.getState().setWebcamActive
     const setScreenStreamActive = useModuleStore.getState().setScreenStreamActive
     const setFsEntries      = useModuleStore.getState().setFsEntries
-    const setFileDownload   = useModuleStore.getState().setFileDownload
+    const appendFileDownloadChunk = useModuleStore.getState().appendFileDownloadChunk
     const setFilePutAck     = useModuleStore.getState().setFilePutAck
     const setPolicyResult   = usePolicyStore.getState().setPolicyResult
     const setPermissionResult = usePermissionStore.getState().setPermissionResult
@@ -139,7 +142,7 @@ export default function useAgentSocket()
                 // first, so dispatchMessage + stores stay unchanged. Mock messages
                 // are already canonical and pass through untouched.
                 const msg = normalizeIncoming(raw_msg)
-                dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleData, appendKeylog, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, setFileDownload, setFilePutAck, setPolicyResult, setPermissionResult, addToast })
+                dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleData, appendKeylog, appendSysInfo, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, appendFileDownloadChunk,setFilePutAck, setPolicyResult, setPermissionResult, addToast })
             })
 
             // Binary callback — pair incoming ArrayBuffer with the pending frame_meta.
@@ -147,9 +150,28 @@ export default function useAgentSocket()
             // so _pending_meta is guaranteed to be the matching header.
             socket.onBinary(function (buffer)
             {
+                // File-transfer binary chunk takes priority: fs_get_result is
+                // request-driven and always paired 1:1 with the next binary,
+                // whereas frame_meta belongs to a continuous stream.
+                if (_pending_fs_chunk)
+                {
+                    const meta = _pending_fs_chunk
+                    _pending_fs_chunk = null
+                    appendFileDownloadChunk(meta.agent_id,
+                    {
+                        transfer_id  : meta.transfer_id,
+                        chunk_index  : meta.chunk_index,
+                        total_chunks : meta.total_chunks,
+                        path         : meta.path,
+                        total_size   : meta.total_size,
+                        bytes        : new Uint8Array(buffer),
+                    })
+                    return
+                }
+
                 if (!_pending_meta)
                 {
-                    console.warn('[useAgentSocket] binary arrived without pending frame_meta — dropped')
+                    console.warn('[useAgentSocket] binary arrived without pending frame_meta / fs_chunk — dropped')
                     return
                 }
 
@@ -175,8 +197,8 @@ export default function useAgentSocket()
 
             // Drop any half-received frame_meta so the next reconnect's first
             // binary cannot pair with a stale header from a prior session.
-            socket.onClose(function () { _pending_meta = null; setStatus('closed') })
-            socket.onError(function () { _pending_meta = null; setStatus('closed') })
+            socket.onClose(function () { _pending_meta = null; _pending_fs_chunk = null; setStatus('closed') })
+            socket.onError(function () { _pending_meta = null; _pending_fs_chunk = null; setStatus('closed') })
 
             socket.connect()
         }
@@ -186,7 +208,8 @@ export default function useAgentSocket()
             _refcount--
             if (_refcount === 0 && _socket !== null)
             {
-                _pending_meta = null
+                _pending_meta     = null
+                _pending_fs_chunk = null
                 _socket.close()
                 _socket = null
             }
@@ -484,20 +507,22 @@ function stopLocalFeature(agent_id, feature)
 //   webcam_started/stopped/denied → ModuleStore.setWebcamActive(id, …) (+ toast on denied)
 //   frame_meta         → stored in _pending_meta; paired with next binary
 //   fs_list_result     → ModuleStore.setFsEntries(id, path, entries)
-//   fs_get_result      → ModuleStore.setFileDownload(id, result)
+//   fs_get_result      → ModuleStore.appendFileDownloadChunk(id, chunk_info)
+//                        (JSON mode: decode data_base64 → bytes here;
+//                         binary mode: stash meta, pair with next binary frame)
 //   fs_put_result / fs_put_complete → ModuleStore.setFilePutAck(id, …)
 //   fs_error           → toast
 //   power_result       → toast (confirmed / cancelled)
 //   policy_update_result → PolicyStore.setPolicyResult(id, …); toast on failure
 //   permission_result  → PermissionStore.setPermissionResult(id, feature, granted) + toast
 
-function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleData, appendKeylog, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, setFileDownload, setFilePutAck, setPolicyResult, setPermissionResult, addToast })
+function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleData, appendKeylog, appendSysInfo, setKeylogActive, setWebcamActive, setScreenStreamActive, setFsEntries, appendFileDownloadChunk,setFilePutAck, setPolicyResult, setPermissionResult, addToast })
 {
     // Every per-agent message MUST carry an agent_id after normalization.
     // Drop malformed messages so we never write into ModuleStore under an
     // "undefined" key. Types without agent_id (agents_list) are listed first
     // and are exempt from this guard.
-    const AGENT_ID_EXEMPT = new Set([MSG_TYPE.AGENTS_LIST])
+    const AGENT_ID_EXEMPT = new Set([MSG_TYPE.AGENTS_LIST, MSG_TYPE.AUTH_EXPIRED])
     if (!AGENT_ID_EXEMPT.has(msg.type) && !msg.agent_id)
     {
         console.warn('[useAgentSocket] dropped message missing agent_id:', msg.type)
@@ -637,9 +662,42 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
             break
 
         case MSG_TYPE.FS_GET_RESULT:
-            // Store the result; FileTab watches this slot and triggers a browser download.
-            setFileDownload(msg.agent_id, msg)
+        {
+            // Two chunk formats are supported (see docs/formatjson/File.json):
+            //   1) JSON mode  — the chunk bytes are inside data_base64.
+            //   2) Binary mode — this JSON is only metadata; the next WS binary
+            //                    frame carries the raw bytes. We stash the meta
+            //                    into _pending_fs_chunk so onBinary can pair it.
+            if (msg.data_base64)
+            {
+                // Decode base64 → Uint8Array once at the boundary so downstream
+                // (store + UI) only ever holds raw bytes.
+                const binary = atob(msg.data_base64)
+                const bytes  = new Uint8Array(binary.length)
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+                appendFileDownloadChunk(msg.agent_id,
+                {
+                    transfer_id  : msg.transfer_id,
+                    chunk_index  : msg.chunk_index,
+                    total_chunks : msg.total_chunks,
+                    path         : msg.path,
+                    total_size   : msg.total_size,
+                    bytes,
+                })
+            }
+            else
+            {
+                if (_pending_fs_chunk)
+                {
+                    console.warn(
+                        '[useAgentSocket] fs_get_result arrived while a previous fs chunk was still ' +
+                        'unpaired — Gateway may be interleaving binary chunks out of order'
+                    )
+                }
+                _pending_fs_chunk = msg
+            }
             break
+        }
 
         case MSG_TYPE.FS_PUT_RESULT:
             // Per-chunk ack — FileTab advances the progress bar when this arrives.
@@ -680,6 +738,13 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
             )
             break
 
+        // ── SysInfo ───────────────────────────────────────────────────────
+        case MSG_TYPE.SYSINFO_RESULT:
+            // Store latest snapshot AND append a percent-only sample to history
+            // so the sparkline updates without re-computing anything downstream.
+            appendSysInfo(msg.agent_id, msg)
+            break
+
         // ── Power ─────────────────────────────────────────────────────────
         case MSG_TYPE.POWER_RESULT:
             // Show a toast so the operator sees the Agent's confirmation.
@@ -689,6 +754,26 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
                     : `${msg.agent_id}: ${msg.action} cancelled`,
                 msg.confirmed ? 'success' : 'error'
             )
+            break
+
+        // ── Auth: access token expired mid-session ────────────────────────
+        case MSG_TYPE.AUTH_EXPIRED:
+            // Gateway told us our access JWT is no longer valid. Try one
+            // refresh using the HttpOnly refresh cookie; on success reopen
+            // the WS so the new handshake carries the fresh token; on
+            // failure log the operator out.
+            refreshAccessToken().then((result) =>
+            {
+                if (result.ok && _socket && typeof _socket.reopen === 'function')
+                {
+                    _socket.reopen()
+                }
+                else
+                {
+                    addToast('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'error')
+                    logout()
+                }
+            })
             break
 
         // ── Catch-all ─────────────────────────────────────────────────────

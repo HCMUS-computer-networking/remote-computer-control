@@ -41,6 +41,8 @@ export const MSG_TYPE =
     POWER_RESULT      : "power_result",       // agent confirms or denies the power action
     POLICY_UPDATE_RESULT : "policy_update_result", // agent confirms it applied the pushed policy
     PERMISSION_RESULT : "permission_result",  // agent grants or denies a permission_request
+    SYSINFO_RESULT    : "sysinfo_result",     // reply to sysinfo request (CPU / RAM / Disk metrics)
+    AUTH_EXPIRED      : "auth_expired",       // Gateway signals the access JWT is no longer valid — refresh + reopen
 }
 
 // ─── Feature constants (D6 vocab — used for permission request / revoke / stop) ─
@@ -89,6 +91,9 @@ export const MODULE =
     // Webcam (docs/formatjson/webcam.json)
     WEBCAM_START : "webcam_start",   // start webcam stream (requires Agent consent)
     WEBCAM_STOP  : "webcam_stop",    // stop webcam stream
+
+    // SysInfo (docs/formatjson/SysInfo.json) — no consent required, read-only metrics
+    SYSINFO : "sysinfo",   // request current CPU / RAM / Disk / uptime snapshot
 }
 
 // ─── Power action constants (docs/formatjson/power.json) ─────────────────────
@@ -99,6 +104,81 @@ export const POWER_ACTION =
     RESTART  : "restart",   // restart — send only after 10 s countdown on Controller
     SHUTDOWN : "shutdown",  // shutdown — send only after 10 s countdown on Controller
     SLEEP    : "sleep",     // sleep — send only after 10 s countdown on Controller
+}
+
+// ─── Input validators (defense-in-depth) ──────────────────────────────────────
+//
+// Every builder that receives a value from OUTSIDE (a UI form, a store row,
+// dev-console) runs its inputs through these validators before shaping the
+// JSON. On failure they throw a plain Error — the callsite (button onClick,
+// form submit) is expected to catch and surface a toast. This is the SECOND
+// line of defense: the primary line is inline form validation in the module
+// tabs. Bugs that let bad data through the UI still get stopped here rather
+// than reaching the Agent as malformed JSON.
+
+// Integer greater than zero (used for PID, chunk counts, etc.).
+function assertPositiveInt(value, field_name)
+{
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0)
+    {
+        throw new Error(`Protocol: ${field_name} must be a positive integer (got ${JSON.stringify(value)})`)
+    }
+}
+
+// Integer inside an inclusive [min, max] range (fps, quality, etc.).
+function assertIntInRange(value, min, max, field_name)
+{
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max)
+    {
+        throw new Error(`Protocol: ${field_name} must be an integer in [${min}, ${max}] (got ${JSON.stringify(value)})`)
+    }
+}
+
+// Non-negative integer (chunk_index, byte counts, etc.).
+function assertNonNegativeInt(value, field_name)
+{
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0)
+    {
+        throw new Error(`Protocol: ${field_name} must be a non-negative integer (got ${JSON.stringify(value)})`)
+    }
+}
+
+// Non-empty string (app names, base64 chunks, etc.).
+function assertNonEmptyString(value, field_name)
+{
+    if (typeof value !== 'string' || value.length === 0)
+    {
+        throw new Error(`Protocol: ${field_name} must be a non-empty string`)
+    }
+}
+
+// Sandbox path. Must start with '/', have no NUL byte, and contain no ".."
+// segment (belt-and-suspenders — the Agent already enforces sandbox root).
+function assertSafePath(value, field_name)
+{
+    assertNonEmptyString(value, field_name)
+    if (value.indexOf('\0') !== -1)
+    {
+        throw new Error(`Protocol: ${field_name} must not contain NUL bytes`)
+    }
+    if (!value.startsWith('/'))
+    {
+        throw new Error(`Protocol: ${field_name} must start with '/' (sandbox-relative)`)
+    }
+    const segments = value.split('/')
+    if (segments.includes('..'))
+    {
+        throw new Error(`Protocol: ${field_name} must not contain '..' segments`)
+    }
+}
+
+// Value must be one of the enumerated allowed strings (POWER_ACTION, etc.).
+function assertOneOf(value, allowed, field_name)
+{
+    if (!allowed.includes(value))
+    {
+        throw new Error(`Protocol: ${field_name} must be one of [${allowed.join(', ')}] (got ${JSON.stringify(value)})`)
+    }
 }
 
 // ─── Base builders ────────────────────────────────────────────────────────────
@@ -304,11 +384,41 @@ const NORMALIZERS =
     [MSG_TYPE.FS_GET_RESULT]: (m) =>
         withAgentId({
             type         : MSG_TYPE.FS_GET_RESULT,
+            // transfer_id groups all chunks of one download; fall back to
+            // command_id (Gateway guarantees one of the two is present).
+            transfer_id  : pickField(m, ['transfer_id', 'transferId', 'command_id', 'commandId']),
             path         : pickField(m, ['path', 'filepath']),
             total_size   : pickField(m, ['total_size', 'size', 'totalSize']),
             chunk_index  : pickField(m, ['chunk_index', 'chunkIndex', 'index'], 0),
             total_chunks : pickField(m, ['total_chunks', 'totalChunks', 'chunks'], 1),
+            // Present only in JSON-chunk mode. Absent in binary-chunk mode —
+            // in that case the next WS binary frame carries the raw bytes.
             data_base64  : pickField(m, ['data_base64', 'data', 'base64', 'content']),
+        }, m),
+
+    // Per-chunk ack for uploads. transfer_id lets FileTab match this ack to
+    // the correct upload job — required once multiple uploads to the same
+    // path can be in flight at once (rename-on-conflict, retries, etc.).
+    [MSG_TYPE.FS_PUT_RESULT]: (m) =>
+        withAgentId({
+            type        : MSG_TYPE.FS_PUT_RESULT,
+            transfer_id : pickField(m, ['transfer_id', 'transferId', 'command_id', 'commandId']),
+            path        : pickField(m, ['path', 'filepath']),
+            chunk_index : pickField(m, ['chunk_index', 'chunkIndex', 'index'], 0),
+            success     : pickField(m, ['success', 'ok'], false),
+            message     : pickField(m, ['message', 'msg', 'detail'], ''),
+        }, m),
+
+    // Final ack when the Agent has stored the whole file. sha256 is optional
+    // (spec says the Agent may include an integrity checksum).
+    [MSG_TYPE.FS_PUT_COMPLETE]: (m) =>
+        withAgentId({
+            type        : MSG_TYPE.FS_PUT_COMPLETE,
+            transfer_id : pickField(m, ['transfer_id', 'transferId', 'command_id', 'commandId']),
+            path        : pickField(m, ['path', 'filepath']),
+            success     : pickField(m, ['success', 'ok'], true),
+            sha256      : pickField(m, ['sha256', 'checksum'], null),
+            message     : pickField(m, ['message', 'msg', 'detail'], ''),
         }, m),
 
     [MSG_TYPE.POWER_RESULT]: (m) =>
@@ -324,6 +434,21 @@ const NORMALIZERS =
             type    : MSG_TYPE.POLICY_UPDATE_RESULT,
             success : pickField(m, ['success', 'ok', 'applied'], false),
             message : pickField(m, ['message', 'msg', 'detail'], ''),
+        }, m),
+
+    [MSG_TYPE.SYSINFO_RESULT]: (m) =>
+        withAgentId({
+            type           : MSG_TYPE.SYSINFO_RESULT,
+            cpu_percent    : pickField(m, ['cpu_percent', 'cpu', 'cpuPercent'], 0),
+            ram_used_mb    : pickField(m, ['ram_used_mb', 'ramUsedMb', 'ram_used'], 0),
+            ram_total_mb   : pickField(m, ['ram_total_mb', 'ramTotalMb', 'ram_total'], 0),
+            disk_used_gb   : pickField(m, ['disk_used_gb', 'diskUsedGb', 'disk_used'], 0),
+            disk_total_gb  : pickField(m, ['disk_total_gb', 'diskTotalGb', 'disk_total'], 0),
+            uptime_seconds : pickField(m, ['uptime_seconds', 'uptimeSeconds', 'uptime'], 0),
+            hostname       : pickField(m, ['hostname', 'host', 'machine_name'], ''),
+            ip             : pickField(m, ['ip', 'ip_addr', 'address'], ''),
+            os             : pickField(m, ['os', 'os_name', 'platform'], ''),
+            timestamp_ms   : pickField(m, TIMESTAMP_ALIASES, Date.now()),
         }, m),
 
     [MSG_TYPE.PERMISSION_RESULT]: (m) =>
@@ -452,11 +577,13 @@ export function buildAppList(targetAgents)
 // name — the short app name used by the Agent whitelist (e.g. "notepad", "chrome")
 export function buildAppStart(name, targetAgents)
 {
+    assertNonEmptyString(name, 'app name')
     return buildRequest(MODULE.APP_START, { name }, targetAgents)
 }
 
 export function buildAppStop(name, targetAgents)
 {
+    assertNonEmptyString(name, 'app name')
     return buildRequest(MODULE.APP_STOP, { name }, targetAgents)
 }
 
@@ -470,6 +597,7 @@ export function buildProcList(targetAgents)
 // pid — numeric process ID to terminate
 export function buildProcKill(pid, targetAgents)
 {
+    assertPositiveInt(pid, 'pid')
     return buildRequest(MODULE.PROC_KILL, { pid }, targetAgents)
 }
 
@@ -486,11 +614,15 @@ export function buildScreenshot(targetAgents)
 // quality — JPEG quality 0–100 (default: 70 per livescreen.json template)
 export function buildStreamStart(fps, quality, targetAgents)
 {
+    const fps_final     = fps     ?? 24
+    const quality_final = quality ?? 70
+    assertIntInRange(fps_final,     1,  60,  'fps')
+    assertIntInRange(quality_final, 1,  100, 'quality')
     return buildRequest(MODULE.SCREEN_STREAM,
     {
         mode    : 'stream',
-        fps     : fps     ?? 24,
-        quality : quality ?? 70,
+        fps     : fps_final,
+        quality : quality_final,
     },
     targetAgents)
 }
@@ -519,22 +651,42 @@ export function buildKeylogStop(targetAgents)
 // path — relative path inside the sandbox root (e.g. "/" for root, "/reports/")
 export function buildFsList(path, targetAgents)
 {
+    assertSafePath(path, 'fs_list path')
     return buildRequest(MODULE.FS_LIST, { path }, targetAgents)
 }
 
 // Request a file download from the sandbox.
 export function buildFsGet(filePath, targetAgents)
 {
+    assertSafePath(filePath, 'fs_get path')
     return buildRequest(MODULE.FS_GET, { path: filePath }, targetAgents)
 }
 
 // Upload one chunk of a file to the sandbox.
-// chunk_info = { data_base64, total_size, chunk_index, total_chunks }
+// chunk_info = { transfer_id, data_base64, total_size, chunk_index, total_chunks }
+// transfer_id groups every chunk of ONE file upload — the Agent uses it to
+// stitch chunks back into a single stream. Must be the SAME string for every
+// chunk of one file (generate once per file, e.g. via crypto.randomUUID()).
 export function buildFsPut(filePath, chunk_info, targetAgents)
 {
+    assertSafePath(filePath, 'fs_put path')
+    if (chunk_info == null || typeof chunk_info !== 'object')
+    {
+        throw new Error('Protocol: fs_put chunk_info must be an object')
+    }
+    assertNonEmptyString(chunk_info.transfer_id, 'chunk_info.transfer_id')
+    assertNonNegativeInt(chunk_info.total_size,   'chunk_info.total_size')
+    assertNonNegativeInt(chunk_info.chunk_index,  'chunk_info.chunk_index')
+    assertPositiveInt   (chunk_info.total_chunks, 'chunk_info.total_chunks')
+    if (chunk_info.chunk_index >= chunk_info.total_chunks)
+    {
+        throw new Error('Protocol: chunk_info.chunk_index must be < total_chunks')
+    }
+    assertNonEmptyString(chunk_info.data_base64,  'chunk_info.data_base64')
     return buildRequest(MODULE.FS_PUT,
     {
         path         : filePath,
+        transfer_id  : chunk_info.transfer_id,
         total_size   : chunk_info.total_size,
         chunk_index  : chunk_info.chunk_index,
         total_chunks : chunk_info.total_chunks,
@@ -550,10 +702,14 @@ export function buildFsPut(filePath, chunk_info, targetAgents)
 // quality — JPEG quality 0–100 (default: 60 per webcam.json template)
 export function buildWebcamStart(fps, quality, targetAgents)
 {
+    const fps_final     = fps     ?? 15
+    const quality_final = quality ?? 60
+    assertIntInRange(fps_final,     1,  30,  'fps')
+    assertIntInRange(quality_final, 1,  100, 'quality')
     return buildRequest(MODULE.WEBCAM_START,
     {
-        fps     : fps     ?? 15,
-        quality : quality ?? 60,
+        fps     : fps_final,
+        quality : quality_final,
     },
     targetAgents)
 }
@@ -561,6 +717,15 @@ export function buildWebcamStart(fps, quality, targetAgents)
 export function buildWebcamStop(targetAgents)
 {
     return buildRequest(MODULE.WEBCAM_STOP, {}, targetAgents)
+}
+
+// ─── SysInfo module (docs/formatjson/SysInfo.json) ───────────────────────────
+// Read-only hardware / OS metrics — Agent does NOT ask for consent on this.
+// Reply is a "sysinfo_result" message with cpu_percent / ram_used_mb /
+// ram_total_mb / disk_used_gb / disk_total_gb / uptime_seconds / hostname / ip / os.
+export function buildSysInfo(targetAgents)
+{
+    return buildRequest(MODULE.SYSINFO, {}, targetAgents)
 }
 
 // ─── Power module (docs/formatjson/power.json) ───────────────────────────────
@@ -571,6 +736,7 @@ export function buildWebcamStop(targetAgents)
 //       the Controller shows a 10-second countdown to the operator.
 export function buildPower(action, targetAgents)
 {
+    assertOneOf(action, Object.values(POWER_ACTION), 'power action')
     return buildMessage(MSG_TYPE.POWER,
     {
         action,

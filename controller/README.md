@@ -12,6 +12,7 @@ nhiều máy Agent từ xa thông qua một Gateway trung gian bằng WebSocket.
 - **Zustand** — global state (không dùng Redux / Context)
 - **WebSocket** (native) — giao tiếp real-time với Gateway
 - **lucide-react** — icon
+- **recharts** — line chart cho dashboard SysInfo
 
 Không dùng TypeScript.
 
@@ -32,22 +33,22 @@ Lệnh khác: `npm run build`, `npm run preview`, `npm run lint`.
 
 ```
 src/
-├── App.jsx, main.jsx        # entry + shell
+├── App.jsx, main.jsx        # entry + shell + login gate + toast layer
 ├── store/                   # 6 Zustand store (Agent / Connection / Module /
 │                            #                  Permission / Policy / Ui)
 ├── hooks/UseAgentSocket.js  # singleton hook nối component ↔ socket
 ├── services/                # index.js (chọn mock/real), Protocol.js,
 │                            # MockSocket.js, Socket.js, AuthService.js
 └── components/
-    ├── LoginScreen.jsx      # màn đăng nhập admin (JWT)
+    ├── LoginScreen.jsx      # màn đăng nhập admin (JWT + refresh cookie)
     ├── FrameCanvas.jsx      # primitive dùng chung để vẽ JPEG frame
     ├── ModuleTable.jsx      # primitive dùng chung cho bảng có sort
-    ├── PermissionGate.jsx   # wrapper Connect/Disconnect cho từng module
+    ├── PermissionGate.jsx   # context consent + status bar + Disconnect
     ├── agents/              # sidebar agent list + multi-select
     ├── layout/              # Sidebar, TopBar, ThemeToggle
     ├── livescreen/          # Grid view + Focus view
-    └── modules/             # 7 tab: Application, Process, Screen, Keylog,
-                             #        File, Webcam, Power
+    └── modules/             # 8 tab: SysInfo, Application, Process, Screen,
+                             #        Keylog, File, Webcam, Power
 ```
 
 Chi tiết kiến trúc, store, luồng dữ liệu, giao thức message xem trong

@@ -2,24 +2,20 @@
 // The actual socket lifecycle is managed by UseAgentSocket hook (not here).
 // connect() / disconnect() are state-only signals; the hook reacts to them.
 //
-// AUTH — auth_token holds the JWT issued by the Gateway after a successful
-// login. Socket.js reads it to build ?token=<JWT>. The real credential check
-// (bcrypt password + JWT signing) lives on the GATEWAY; the client only stores
-// and forwards the token, never the password.
+// AUTH — auth_token holds the SHORT-LIVED access JWT issued by the Gateway
+// after a successful login. It lives ONLY in this store (memory) — never in
+// sessionStorage / localStorage. A page reload therefore signs the operator
+// out; the HttpOnly refresh cookie held by the browser is what lets
+// AuthService.refreshAccessToken() re-hydrate the token without a full login.
+// Socket.js reads this value to build ws://.../controller?token=<JWT>.
 import { create } from 'zustand'
-
-// sessionStorage key shared with AuthService — survives a page refresh but is
-// cleared when the tab closes. Kept as a literal in both files (no import) to
-// avoid a store <-> service circular dependency.
-const AUTH_TOKEN_KEY = 'controller_auth_token'
 
 const useConnectionStore = create(function (set)
 {
     return {
         status      : 'idle',                  // 'idle' | 'connecting' | 'open' | 'closed'
         gateway_url : 'ws://localhost:8080',   // destination for the real Socket.js
-        // Seed from sessionStorage so a refresh keeps the operator signed in.
-        auth_token  : sessionStorage.getItem(AUTH_TOKEN_KEY),   // JWT from /api/login
+        auth_token  : null,                    // access JWT from /api/login (memory only)
 
         // Mark connection as pending. UseAgentSocket hook watches this and opens the socket.
         connect: (url) =>
@@ -32,7 +28,6 @@ const useConnectionStore = create(function (set)
         // will not carry a token the operator no longer wants used.
         disconnect: () =>
         {
-            sessionStorage.removeItem(AUTH_TOKEN_KEY);
             set({ status: 'closed', auth_token: null });
         },
 
@@ -46,7 +41,7 @@ const useConnectionStore = create(function (set)
             set({ gateway_url: url });
         },
 
-        // Store the JWT after a successful login. Password is NEVER stored.
+        // Store the JWT after a successful login OR refresh. Password is NEVER stored.
         setAuthToken: (auth_token) =>
         {
             set({ auth_token });
