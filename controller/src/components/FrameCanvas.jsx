@@ -30,13 +30,24 @@ import { useEffect, useRef } from 'react'
 //                  header, ScreenTab toolbar) simply omit this prop.
 //   width        — CSS width  for the <canvas> element (default "100%")
 //   height       — CSS height for the <canvas> element (default "100%")
-function FrameCanvas({ frame_buffer, module = 'screen', label, width = '100%', height = '100%' })
+function FrameCanvas({ frame_buffer, frame_meta = null, module = 'screen', label, width = '100%', height = '100%' })
 {
     const canvas_ref = useRef(null)
 
     useEffect(function ()
     {
         if (!frame_buffer || !canvas_ref.current) return
+
+        // Delta-encoding contract (see docs/protocol/Livescreen.json):                             //
+        //   is_keyframe=true  → bitmap is the FULL frame; meta.w/h is full size, x/y = 0.         //
+        //   is_keyframe=false → bitmap covers only the diff rect at (meta.x, meta.y); the         //
+        //                       canvas MUST NOT be resized — that would wipe prior pixels.        //
+        // When meta is absent (Webcam sends full frames only, or single screenshot), fall         //
+        // back to the legacy behavior of sizing the canvas to the bitmap and drawing at 0,0.      //
+        const has_meta   = frame_meta && typeof frame_meta === 'object'
+        const is_delta   = has_meta && frame_meta.is_keyframe === false
+        const draw_x     = is_delta ? (frame_meta.x | 0) : 0
+        const draw_y     = is_delta ? (frame_meta.y | 0) : 0
 
         // Track whether this effect was cleaned up before the async decode finished.
         // If cancelled is true when the promise resolves, skip drawing — the canvas
@@ -63,11 +74,23 @@ function FrameCanvas({ frame_buffer, module = 'screen', label, width = '100%', h
 
             const ctx = cvs.getContext('2d')
 
-            // Match canvas internal resolution to the actual image dimensions
-            // so drawImage renders 1:1 without scaling artifacts.
-            cvs.width  = bitmap.width
-            cvs.height = bitmap.height
-            ctx.drawImage(bitmap, 0, 0)
+            if (is_delta && cvs.width > 0 && cvs.height > 0)
+            {
+                // Partial redraw: paste the diff bitmap at its bounding-box origin.                //
+                // Do NOT touch cvs.width/height — that would clear the whole canvas.               //
+                ctx.drawImage(bitmap, draw_x, draw_y)
+            }
+            else
+            {
+                // Keyframe (or first frame, or meta-less full frame): resize canvas to             //
+                // the full-frame dimensions and repaint from origin. Setting width/height         //
+                // implicitly clears the canvas, which is exactly what a keyframe wants.           //
+                const full_w = has_meta ? (frame_meta.w | 0) || bitmap.width  : bitmap.width
+                const full_h = has_meta ? (frame_meta.h | 0) || bitmap.height : bitmap.height
+                cvs.width  = full_w
+                cvs.height = full_h
+                ctx.drawImage(bitmap, 0, 0)
+            }
 
             // Release GPU memory right after drawing.
             // The pixels are now copied into the canvas framebuffer,

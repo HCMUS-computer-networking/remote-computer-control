@@ -10,6 +10,14 @@ namespace AgentSystem.Modules
 {
     public class InputModule : BaseModule
     {
+        // Grant runs on a ThreadPool worker (Task.Run in AgentClient) while
+        // Revoke runs on the WebSocket message thread — a fast toggle can
+        // race and leave the overlay stuck open (grant wins after revoke)
+        // or stuck hidden (revoke arrives before the grant flip). Serialize
+        // every state flip through this lock and make each op idempotent.
+        private readonly object _stateLock = new object();
+        private bool isIndicatorActive = false;                                                     // Guarded by _stateLock
+
         public override string[] SupportedCommands => new[]
         {
             "input_mouse_move",
@@ -18,8 +26,82 @@ namespace AgentSystem.Modules
             "input_type"
         };
 
-        public InputModule(IAgentContext context, SecurityManager security, UIManager ui) 
+        public InputModule(IAgentContext context, SecurityManager security, UIManager ui)
             : base(context, security, ui) { }
+
+        // Called by AgentClient when a permission_request for feature="input"
+        // is GRANTED by the Agent user. Shows the on-screen indicator and
+        // echoes input_started back so the Controller flips its live badge.
+        public void OnInputGranted(string commandId)
+        {
+            bool showOverlay = false;
+            lock (_stateLock)
+            {
+                if (!isIndicatorActive)
+                {
+                    isIndicatorActive = true;
+                    showOverlay       = true;
+                }
+            }
+            if (showOverlay)
+            {
+                ui.ShowInputOverlay();                                                              // WinForms call — kept OUT of the lock
+                Log.Information("[InputModule] Remote Input GRANTED — overlay shown");
+            }
+            context.SendResponse(new
+            {
+                type       = "input_started",
+                agent_id   = context.AgentId,
+                command_id = commandId,
+            });
+        }
+
+        // Called by AgentClient on permission_revoke or stop_module for
+        // feature="input". Hides the overlay and tells the Controller to
+        // clear its live badge. Always emits input_stopped even when the
+        // overlay was already hidden, so an out-of-order revoke still
+        // reaches the Controller.
+        public void OnInputRevoked()
+        {
+            bool hideOverlay = false;
+            lock (_stateLock)
+            {
+                if (isIndicatorActive)
+                {
+                    isIndicatorActive = false;
+                    hideOverlay       = true;
+                }
+            }
+            if (hideOverlay)
+            {
+                ui.HideInputOverlay();
+                Log.Information("[InputModule] Remote Input REVOKED — overlay hidden");
+            }
+            context.SendResponse(new
+            {
+                type     = "input_stopped",
+                agent_id = context.AgentId,
+            });
+        }
+
+        public override void OnDisconnected()
+        {
+            // Socket dropped mid-session — kill the indicator so it does not linger.
+            bool hideOverlay = false;
+            lock (_stateLock)
+            {
+                if (isIndicatorActive)
+                {
+                    isIndicatorActive = false;
+                    hideOverlay       = true;
+                }
+            }
+            if (hideOverlay)
+            {
+                ui.HideInputOverlay();
+                Log.Warning("[InputModule] Socket disconnected — Remote Input overlay force-hidden");
+            }
+        }
 
         public override Task ExecuteAsync(string action, JsonElement parameters, string commandId)
         {

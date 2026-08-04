@@ -1,6 +1,7 @@
 {
   "_comment": "File module messages — Controller <-> Gateway <-> Agent",
   "_binary_transfer_note": "File transfer now uses binary WebSocket frames. Each chunk = 1 JSON metadata message + 1 binary frame. Group chunks by transfer_id; verify integrity with sha256 at the last chunk.",
+  "_transfer_id_required": "transfer_id is REQUIRED on every fs_get_result and fs_put/fs_put_result once a binary follow-up is expected. The Controller keys pending metadata by transfer_id so multiple concurrent downloads/uploads can share the same socket without pairing the wrong JSON with the wrong binary frame. fs_get_result messages that omit transfer_id are DROPPED by the Controller (see controller/src/hooks/UseAgentSocket.js).",
   "_sandbox_note": "ALL file operations are restricted to the Agent's designated sandbox directory. Paths outside the sandbox are rejected by the Agent.",
 
   "controller_to_gateway": {
@@ -57,11 +58,11 @@
     },
 
     "fs_get_result": {
-      "_desc": "Metadata for the next binary WebSocket frame. Agent sends this JSON immediately followed by a binary frame containing raw chunk bytes (512KB per chunk, except possibly the last chunk).",
+      "_desc": "Metadata for the next binary WebSocket frame. Agent sends this JSON immediately followed by a binary frame containing raw chunk bytes (512KB per chunk, except possibly the last chunk). transfer_id is REQUIRED — see _transfer_id_required at the top of this document; messages without it are dropped by the Controller.",
       "type": "fs_get_result",
       "agent_id": "PC-Lab-01",
       "command_id": "<uuid>",
-      "transfer_id": "<uuid — used to group chunks; falls back to command_id if client did not provide one>",
+      "transfer_id": "<uuid — REQUIRED; keys the Controller-side pending-metadata map so concurrent downloads do not clobber each other. If the Controller did not send one in fs_get, the Agent MUST synthesize one (fall back to command_id).>",
       "success": true,
       "path": "/reports/log.txt",
       "total_size": 1024,

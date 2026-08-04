@@ -122,7 +122,8 @@ function SysInfoTab({ agent })
 
         const timer = setInterval(function ()
         {
-            sendToFocused(buildSysInfo())
+            sendToFocused(buildSysInfo(), { silent: true })                                         // Poll tick — suppress the "N agents not granted" toast so the operator isn't spammed every 3 s
+
         }, POLL_INTERVAL_MS)
 
         return () => clearInterval(timer)

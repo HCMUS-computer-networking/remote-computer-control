@@ -42,6 +42,10 @@ export const MSG_TYPE =
     POLICY_UPDATE_RESULT : "policy_update_result", // agent confirms it applied the pushed policy
     PERMISSION_RESULT : "permission_result",  // agent grants or denies a permission_request
     SYSINFO_RESULT    : "sysinfo_result",     // reply to sysinfo request (CPU / RAM / Disk metrics)
+    INPUT_STARTED     : "input_started",      // agent confirmed Remote Input consent granted + indicator shown
+    INPUT_STOPPED     : "input_stopped",      // agent confirmed Remote Input revoked (or stop_module)
+    INPUT_DENIED      : "input_denied",       // user rejected Remote Input consent popup
+    INPUT_RESULT      : "input_result",       // per-command ack/error for input_mouse_click / input_key / input_type
     AUTH_EXPIRED      : "auth_expired",       // Gateway signals the access JWT is no longer valid — refresh + reopen
 }
 
@@ -59,6 +63,7 @@ export const FEATURE =
     FILE        : "file",          // Sandbox file operations
     WEBCAM      : "webcam",        // Webcam stream
     POWER       : "power",         // Power actions (lock / restart / shutdown / sleep)
+    INPUT       : "input",         // Remote Input (mouse move / click / key / type) — its own consent, distinct from SCREEN
 }
 
 // ─── Module name constants (value of the "module" field in REQUEST messages) ─
@@ -94,6 +99,12 @@ export const MODULE =
 
     // SysInfo (docs/protocol/SysInfo.json) — no consent required, read-only metrics
     SYSINFO : "sysinfo",   // request current CPU / RAM / Disk / uptime snapshot
+
+    // Remote Input (docs/protocol/Input.json) — 4 one-shot commands, all gated by feature="input"
+    INPUT_MOUSE_MOVE  : "input_mouse_move",   // absolute cursor position (fire-and-forget)
+    INPUT_MOUSE_CLICK : "input_mouse_click",  // button + action (down/up/click)
+    INPUT_KEY         : "input_key",          // virtual-key code + action (down/up/press)
+    INPUT_TYPE        : "input_type",         // unicode string via SendInput
 }
 
 // ─── Power action constants (docs/protocol/power.json) ─────────────────────
@@ -768,6 +779,40 @@ export function buildWebcamStop(targetAgents)
 export function buildSysInfo(targetAgents)
 {
     return buildRequest(MODULE.SYSINFO, {}, targetAgents)
+}
+
+// ─── Remote Input module (docs/protocol/Input.json) ───────────────────────
+// All 4 commands are one-shot and gated by feature="input". The Controller
+// must obtain a permission_result{granted:true, feature:"input"} before
+// emitting any of these — fanoutSend drops them silently otherwise.
+// input_mouse_move is fire-and-forget (Agent sends no ACK) to survive
+// 30+ events/sec without saturating the socket.
+
+export function buildInputMouseMove(x, y, targetAgents)
+{
+    assertNonNegativeInt(x, 'x')
+    assertNonNegativeInt(y, 'y')
+    return buildRequest(MODULE.INPUT_MOUSE_MOVE, { x, y }, targetAgents)
+}
+
+export function buildInputMouseClick(button, action, targetAgents)
+{
+    assertOneOf(button, ['left', 'right', 'middle'], 'button')
+    assertOneOf(action, ['down', 'up', 'click'],     'action')
+    return buildRequest(MODULE.INPUT_MOUSE_CLICK, { button, action }, targetAgents)
+}
+
+export function buildInputKey(vk, action, targetAgents)
+{
+    assertIntInRange(vk, 1, 255, 'vk')
+    assertOneOf(action, ['down', 'up', 'press'], 'action')
+    return buildRequest(MODULE.INPUT_KEY, { vk, action }, targetAgents)
+}
+
+export function buildInputType(text, targetAgents)
+{
+    assertNonEmptyString(text, 'text')
+    return buildRequest(MODULE.INPUT_TYPE, { text }, targetAgents)
 }
 
 // ─── Power module (docs/protocol/power.json) ───────────────────────────────

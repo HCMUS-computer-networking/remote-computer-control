@@ -254,6 +254,7 @@ function WebcamTab({ agent })
                         // and label="WEBCAM" so the corner badge is visible.
                         <FrameCanvas
                             frame_buffer={frame_buffer}
+                            frame_meta={frame_meta}
                             module="webcam"
                             label="WEBCAM"
                             width="100%"

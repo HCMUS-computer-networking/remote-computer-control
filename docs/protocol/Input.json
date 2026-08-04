@@ -1,6 +1,7 @@
 {
   "_comment": "Remote Input module messages — Controller <-> Gateway <-> Agent",
   "_fire_and_forget_note": "input_mouse_move uses Fire-and-Forget strategy. Agent does NOT send an ACK response for mouse_move unless an error occurs (e.g. missing parameters), preventing network flood at 60+ events/sec. Controller must not wait for ACK on move events.",
+  "_consent_note": "Remote Input is gated by its OWN feature = \"input\" (NOT \"screen\"). Controller must send permission_request { feature: \"input\" } and wait for permission_result { granted: true } before emitting any input_* command. On grant the Agent shows a distinct visual indicator (blue 'K' overlay, top-left corner) and emits input_started. On revoke / stop_module / socket drop the Agent emits input_stopped.",
 
   "controller_to_gateway": {
 
@@ -74,6 +75,27 @@
       "command_id": "<uuid>",
       "success": false,
       "message": "Missing x or y parameters."
+    },
+
+    "input_started": {
+      "_desc": "Agent user granted the \"input\" consent popup. The Agent has shown the blue 'K' overlay (top-left) and is now ready to receive input_* commands. Emitted from AgentClient after permission_result{granted:true, feature:\"input\"}.",
+      "type": "input_started",
+      "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>"
+    },
+
+    "input_stopped": {
+      "_desc": "Agent hid the input overlay and will drop any further input_* commands. Emitted on permission_revoke{feature:\"input\"}, stop_module{feature:\"input\"}, or on socket drop (OnDisconnected).",
+      "type": "input_stopped",
+      "agent_id": "PC-Lab-01"
+    },
+
+    "input_denied": {
+      "_desc": "Agent user rejected the \"input\" consent popup (or 30 s timeout). Controller should surface a toast and keep the Remote Input UI disabled.",
+      "type": "input_denied",
+      "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
+      "reason": "user declined"
     }
 
   }

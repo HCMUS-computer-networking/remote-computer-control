@@ -224,7 +224,33 @@ function routeToAgents(rawMessage, parsed, issuer = 'admin', controllerWs = null
     return true;
   }
 
-  // ── target_agents empty/missing → broadcast to ALL agents ──────
+  // ── target_agents empty/missing ──
+  // Broadcast is ONLY allowed for policy_update (fleet-wide push semantics).
+  // Every other command must name explicit targets to avoid accidental
+  // fleet-wide power_shutdown / restart / sleep / keylog_start etc.
+  if (msgType !== 'policy_update')
+  {
+    logger.warn('[router] Rejected relay: target_agents is required for non-broadcast commands', {
+      issuer: msgObj.issuer,                                                                        //
+      type: msgType,                                                                                //
+      module: msgModule,                                                                            //
+    });
+    if (controllerWs && controllerWs.readyState === controllerWs.OPEN)
+    {
+      controllerWs.send(
+        JSON.stringify({
+          type: 'error_ack',
+          success: false,
+          error: 'target_agents is required for non-broadcast commands',
+          original_type: msgType,
+          command_id: msgObj.command_id || null,
+          code: 400,
+        })
+      );
+    }
+    return false;
+  }
+
   const allAgents = agentStore.getAll();
 
   if (allAgents.length === 0) {

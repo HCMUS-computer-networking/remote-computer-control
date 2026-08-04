@@ -32,7 +32,7 @@ namespace AgentSystem.Core
             { "fs_list", "file" }, { "fs_get", "file" }, { "fs_put", "file" },
             { "webcam_start", "webcam" }, { "webcam_stop", "webcam" },
             { "power", "power" },
-            { "input_mouse_move", "screen" }, { "input_mouse_click", "screen" }, { "input_key", "screen" }, { "input_type", "screen" }
+            { "input_mouse_move", "input" }, { "input_mouse_click", "input" }, { "input_key", "input" }, { "input_type", "input" }
         };
 
         public AgentClient(string agentId, string gatewayUrl, SecurityManager security, UIManager ui)
@@ -112,6 +112,18 @@ namespace AgentSystem.Core
             }
         }
 
+        // Grab the singleton InputModule so the permission handlers can toggle its                 //
+        // visual indicator and emit input_started/stopped. Any of the four input_*                 //
+        // commands maps to the same instance in the registry.                                      //
+        private InputModule ResolveInputModule()
+        {
+            if (_moduleRegistry.TryGetValue("input_mouse_move", out BaseModule bm) && bm is InputModule im)
+            {
+                return im;
+            }
+            return null;
+        }
+
         public void RouteCommand(CommandPacket packet)
         {
             if (!ValidatePacket(packet))
@@ -171,7 +183,8 @@ namespace AgentSystem.Core
             {
                 _ = Task.Run(async () =>
                 {
-                    bool granted = await UIManager.ShowConsentPopupAsync(packet.Feature, 30000);
+                    ConsentOutcome outcome = await UIManager.ShowConsentPopupOutcomeAsync(packet.Feature, 30000);
+                    bool granted = outcome == ConsentOutcome.Granted;
                     if (granted)
                     {
                         lock (_grantedFeatures)
@@ -180,13 +193,42 @@ namespace AgentSystem.Core
                         }
                     }
                     AuditLogger.LogCommand(packet.CommandId, "permission_request", packet.Feature, granted);
-                    SendResponse(new 
-                    { 
-                        type = "permission_result", 
-                        agent_id = AgentId, 
-                        feature = packet.Feature, 
-                        granted = granted 
+                    SendResponse(new
+                    {
+                        type = "permission_result",
+                        agent_id = AgentId,
+                        feature = packet.Feature,
+                        granted = granted
                     });
+
+                    // Remote Input has NO start/stop command of its own (each input_*
+                    // packet is one-shot) — so the "started/denied" signal must be
+                    // synthesised here from the consent outcome. Distinguish timeout
+                    // vs decline vs busy so the operator sees an accurate toast.
+                    if (packet.Feature == "input")
+                    {
+                        InputModule inputMod = ResolveInputModule();
+                        if (granted)
+                        {
+                            inputMod?.OnInputGranted(packet.CommandId);
+                        }
+                        else
+                        {
+                            string reason = outcome switch
+                            {
+                                ConsentOutcome.Timeout  => "timeout",
+                                ConsentOutcome.Busy     => "busy",
+                                _                       => "user declined",
+                            };
+                            SendResponse(new
+                            {
+                                type       = "input_denied",
+                                agent_id   = AgentId,
+                                command_id = packet.CommandId,
+                                reason     = reason,
+                            });
+                        }
+                    }
                 });
                 return;
             }
@@ -198,11 +240,23 @@ namespace AgentSystem.Core
                     _grantedFeatures.Remove(packet.Feature);
                 }
                 AuditLogger.LogCommand(packet.CommandId, "permission_revoke", packet.Feature, false);
+
+                if (packet.Feature == "input")
+                {
+                    ResolveInputModule()?.OnInputRevoked();                                         // Hide overlay + emit input_stopped
+                }
                 return;
             }
 
             if (packet.Type == "stop_module")
             {
+                // Remote Input is stateless — stop just means "hide indicator + notify".          //
+                if (packet.Feature == "input")
+                {
+                    ResolveInputModule()?.OnInputRevoked();
+                    return;
+                }
+
                 string commandToStop = packet.Feature switch
                 {
                     "screen" => "screen_stream_stop",
@@ -210,7 +264,7 @@ namespace AgentSystem.Core
                     "webcam" => "webcam_stop",
                     _ => null
                 };
-                
+
                 if (commandToStop != null && _moduleRegistry.TryGetValue(commandToStop, out BaseModule mod))
                 {
                     _ = Task.Run(async () => await mod.ExecuteAsync(commandToStop, packet.Params, packet.CommandId));

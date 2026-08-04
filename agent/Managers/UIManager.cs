@@ -8,29 +8,44 @@ using System.Runtime.InteropServices;
 
 namespace AgentSystem.Managers
 {
+    // Outcome of a consent popup. The bool return of ShowConsentPopupAsync
+    // conflated three cases; callers that need to surface a precise reason
+    // (e.g. Remote Input toast on the Controller) use the enum overload.
+    public enum ConsentOutcome
+    {
+        Granted,                                                                                    // User clicked Approve
+        Declined,                                                                                   // User clicked Reject
+        Timeout,                                                                                    // ConsentForm auto-closed without a click
+        Busy,                                                                                       // Anti-DoS: previous popup for same module still open
+    }
+
     public class UIManager
     {
-        private OverlayForm currentOverlay;
-        private Thread overlayThread;
+        private OverlayForm currentOverlay;                                                         //
+        private Thread overlayThread;                                                               //
+        private InputOverlayForm currentInputOverlay;                                               // Separate overlay for Remote Input so it does not collide with Webcam red dot
+        private Thread inputOverlayThread;                                                          //
         private static HashSet<string> _activePermissionPopups = new HashSet<string>();
         private static readonly object _lock = new object();
         
-        // 1. Popup Xin Quyền (Chặn luồng và chờ kết quả)
-        public async Task<bool> ShowConsentPopupAsync(string moduleName, int timeoutMs)        {
+        // 1. Consent popup — blocks the caller until the user answers or timeout fires.
+        //    ConsentOutcome tells the caller WHICH negative case happened so it can
+        //    surface a clearer reason to the operator (e.g. Remote Input toast).
+        public async Task<ConsentOutcome> ShowConsentPopupOutcomeAsync(string moduleName, int timeoutMs)
+        {
             lock (_lock)
             {
-                // Nếu đang có popup của module này hiển thị -> Tự động Từ chối (Reject) ngay lập tức
+                // Anti-DoS: an earlier popup for the SAME module is still open, so
+                // reject this request immediately instead of stacking dialogs.
                 if (_activePermissionPopups.Contains(moduleName))
                 {
-                    Log.Information("[UIManager] Request xin quyền module '{moduleName}' bị từ chối do popup cũ chưa đóng (Anti-DoS).", moduleName);
-                    return false;  
+                    Log.Information("[UIManager] Consent request for '{moduleName}' auto-rejected (previous popup still open — Anti-DoS).", moduleName);
+                    return ConsentOutcome.Busy;
                 }
-
-                // Đánh dấu module này đang hiện popup
                 _activePermissionPopups.Add(moduleName);
             }
-            // bool isApproved = false;
-            var tcs = new TaskCompletionSource<bool>(); // Sử dụng TCS để báo trạng thái
+
+            var tcs = new TaskCompletionSource<bool>();                                             // true = user clicked Approve
 
             Thread uiThread = new Thread(() =>
             {
@@ -44,12 +59,12 @@ namespace AgentSystem.Managers
                 }
                 catch (Exception ex)
                 {
-                    // CHỮA LỖI: Cảnh báo ngược cho luồng Task thay vì làm ngầm lỗi (chặn "treo await vĩnh viễn")
-                    tcs.TrySetException(ex); 
+                    // Surface the exception to the awaiting Task rather than
+                    // silently hanging the permission_request pipeline.
+                    tcs.TrySetException(ex);
                 }
                 finally
                 {
-                    // === [GIẢI PHÓNG MODULE KHỎI HASHSET KHI POPUP ĐÓNG] ===
                     lock (_lock)
                     {
                         _activePermissionPopups.Remove(moduleName);
@@ -59,18 +74,27 @@ namespace AgentSystem.Managers
             uiThread.SetApartmentState(ApartmentState.STA);
             uiThread.Start();
 
-            // Chờ kết quả đồng bộ với Hard Timeout dự phòng (timeoutMs + 2000)
+            // Hard timeout guard = form's own timeout + 2 s slack for teardown.
+            // When THIS delay wins, the ConsentForm never posted a result, so
+            // we treat it as a genuine hard-timeout (not a user decline).
             var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs + 2000));
             if (completedTask == tcs.Task)
             {
-                return await tcs.Task;
+                bool approved = await tcs.Task;
+                return approved ? ConsentOutcome.Granted : ConsentOutcome.Declined;
             }
-            else
-            {
-                Log.Warning("[UIManager] ConsentForm hard-timeout triggered for '{moduleName}'.", moduleName);
-                lock (_lock) { _activePermissionPopups.Remove(moduleName); }
-                return false;
-            }
+
+            Log.Warning("[UIManager] ConsentForm hard-timeout triggered for '{moduleName}'.", moduleName);
+            lock (_lock) { _activePermissionPopups.Remove(moduleName); }
+            return ConsentOutcome.Timeout;
+        }
+
+        // Legacy bool wrapper — kept so PowerModule and any other caller that
+        // only cares about "did the user say yes" does not need to change.
+        public async Task<bool> ShowConsentPopupAsync(string moduleName, int timeoutMs)
+        {
+            ConsentOutcome outcome = await ShowConsentPopupOutcomeAsync(moduleName, timeoutMs);
+            return outcome == ConsentOutcome.Granted;
         }
 
         // 2. Giao diện đếm ngược chung (Webcam, Screen)
@@ -112,6 +136,34 @@ namespace AgentSystem.Managers
                 currentOverlay.Invoke(new Action(() =>
                 {
                     currentOverlay.Close();
+                }));
+            }
+        }
+
+        // 4. Blue keyboard-icon Overlay for Remote Input (top-LEFT so it does                      //
+        //    NOT overlap the webcam red dot at top-right). Distinct visual so the                 //
+        //    Agent user can tell at a glance which feature is currently active.                   //
+        public void ShowInputOverlay()
+        {
+            if (inputOverlayThread != null && inputOverlayThread.IsAlive) return;
+
+            inputOverlayThread = new Thread(() =>
+            {
+                currentInputOverlay = new InputOverlayForm();
+                Application.Run(currentInputOverlay);
+            });
+
+            inputOverlayThread.SetApartmentState(ApartmentState.STA);
+            inputOverlayThread.Start();
+        }
+
+        public void HideInputOverlay()
+        {
+            if (currentInputOverlay != null && !currentInputOverlay.IsDisposed)
+            {
+                currentInputOverlay.Invoke(new Action(() =>
+                {
+                    currentInputOverlay.Close();
                 }));
             }
         }
@@ -328,7 +380,77 @@ namespace AgentSystem.Managers
         }
     }
 
-    
+    // 4. Blue keyboard-icon Overlay for Remote Input (top-LEFT corner)                             //
+    //    Rendered as a solid blue square with a white "K" so it is instantly                       //
+    //    distinguishable from the webcam red dot (top-right).                                      //
+    internal class InputOverlayForm : Form
+    {
+        private bool isIconVisible = true;                                                          //
+        private Timer flashTimer;                                                                   //
+
+        public InputOverlayForm()
+        {
+            this.FormBorderStyle = FormBorderStyle.None;
+            this.TopMost         = true;
+            this.ShowInTaskbar   = false;
+            this.BackColor       = Color.Magenta;
+            this.TransparencyKey = Color.Magenta;
+
+            // Top-LEFT so it never overlaps the webcam overlay at top-right.
+            this.Size     = new Size(50, 50);
+            this.Location = new Point(20, 20);
+
+            flashTimer = new Timer { Interval = 700 };                                              // Slower flash than webcam so the two are visually distinct
+            flashTimer.Tick += (s, e) =>
+            {
+                isIconVisible = !isIconVisible;
+                this.Invalidate();
+            };
+            flashTimer.Start();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            if (!isIconVisible) return;
+
+            using (Brush bg = new SolidBrush(Color.DodgerBlue))
+            {
+                e.Graphics.FillRectangle(bg, 5, 5, 40, 40);                                         // Solid blue rounded-ish square
+            }
+            using (Brush fg = new SolidBrush(Color.White))
+            using (Font  font = new Font("Arial", 18, FontStyle.Bold))
+            {
+                e.Graphics.DrawString("K", font, fg, 13, 8);                                        // "K" = keyboard/input
+            }
+        }
+
+        // Click-through so it never steals input from the Agent user's own apps.
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= 0x20;                                                                 // WS_EX_TRANSPARENT
+                return cp;
+            }
+        }
+
+        // Stop + Dispose the flashing Timer when the form is torn down.                            //
+        // Without this, every grant/revoke cycle would leak one WinForms                           //
+        // Timer (and its GDI handle) — the loop runs on Application.Run's                          //
+        // pumped thread and outlives the form otherwise.                                           //
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && flashTimer != null)
+            {
+                flashTimer.Stop();
+                flashTimer.Dispose();
+                flashTimer = null;
+            }
+            base.Dispose(disposing);
+        }
+    }
 
     #endregion
 }

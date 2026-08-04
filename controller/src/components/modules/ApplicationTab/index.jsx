@@ -82,7 +82,8 @@ function ApplicationTab({ agent })
 
         const timer = setInterval(function ()
         {
-            sendToFocused(buildAppList())
+            sendToFocused(buildAppList(), { silent: true })                                         // Poll tick — suppress the "N agents not granted" toast so the operator isn't spammed every 3 s
+
         }, POLL_INTERVAL_MS)
 
         return () => clearInterval(timer)   // stop polling when tab unmounts or agent changes

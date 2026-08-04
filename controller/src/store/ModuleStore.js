@@ -20,6 +20,7 @@ function createAgentModuleState()
         webcam        : { frame: null, meta: null },// latest webcam JPEG (ArrayBuffer) + frame_meta
         webcam_active : false,                      // true after Agent confirmed webcam_started (consent granted)
         screen_stream_active : false,               // true while Agent is streaming its screen (Livescreen)
+        input_active  : false,                      // true after Agent confirmed input_started (Remote Input consent granted)
         // file.tree caches directory listings keyed by path (sandbox only).
         // file_downloads is a map keyed by transfer_id — each entry accumulates
         //   raw chunk bytes (Uint8Array[]) so FileTab can render a progress bar
@@ -114,6 +115,19 @@ const useModuleStore = create(function (set)
                     data: {
                         ...s.data,
                         [agent_id]: { ...agent_data, keylog_active: active },
+                    },
+                }
+            }),
+
+        // Set the Remote Input active flag for one agent (true = Agent granted input consent).
+        setInputActive: (agent_id, active) =>
+            set(function (s)
+            {
+                const agent_data = s.data[agent_id] ?? createAgentModuleState()
+                return {
+                    data: {
+                        ...s.data,
+                        [agent_id]: { ...agent_data, input_active: active },
                     },
                 }
             }),
@@ -290,6 +304,49 @@ const useModuleStore = create(function (set)
             {
                 const next = { ...s.data }
                 delete next[agent_id]
+                return { data: next }
+            }),
+
+        // Reset the 3 live-stream flags for ONE agent. Called when the Gateway
+        // reports agent_status.online=false so a stale "LIVE / CAM ON" badge
+        // does not linger after the Agent drops mid-stream.
+        clearLiveFlagsForAgent: (agent_id) =>
+            set(function (s)
+            {
+                const agent_data = s.data[agent_id]
+                if (!agent_data) return s                                                           // nothing to clear yet
+                return {
+                    data: {
+                        ...s.data,
+                        [agent_id]:
+                        {
+                            ...agent_data,
+                            webcam_active        : false,
+                            screen_stream_active : false,
+                            keylog_active        : false,
+                            input_active         : false,
+                        },
+                    },
+                }
+            }),
+
+        // Reset the 3 live-stream flags for EVERY known agent. Called when the
+        // WebSocket itself closes (Gateway down / network drop) — every stream
+        // is by definition dead until the socket comes back up.
+        clearAllLiveFlags: () =>
+            set(function (s)
+            {
+                const next = {}
+                for (const [id, agent_data] of Object.entries(s.data))
+                {
+                    next[id] = {
+                        ...agent_data,
+                        webcam_active        : false,
+                        screen_stream_active : false,
+                        keylog_active        : false,
+                        input_active         : false,
+                    }
+                }
                 return { data: next }
             }),
     }

@@ -34,7 +34,7 @@ router.post('/login', async (req, res) => {
   }
 
   // --- Find user ---
-  const user = users.find((u) => u.username === username);
+  const user = queries.getUserByUsername(username);                                                 // SQLite row: { id, username, password_hash, role }
   if (!user) {
     logger.warn('[login] Login FAILED: unknown username', { username });
     return res.status(401).json({
@@ -46,7 +46,7 @@ router.post('/login', async (req, res) => {
 
   // --- Verify password with bcrypt ---
   try {
-    const match = await bcrypt.compare(password, user.passwordHash);
+    const match = await bcrypt.compare(password, user.password_hash);                               // Column name in SQLite schema is snake_case
     if (!match) {
       logger.warn('[login] Login FAILED: wrong password', { username });
       return res.status(401).json({
