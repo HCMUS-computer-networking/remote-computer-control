@@ -48,9 +48,10 @@ export const MSG_TYPE =
     INPUT_RESULT      : "input_result",       // per-command ack/error for input_mouse_click / input_key / input_type
     AUTH_EXPIRED      : "auth_expired",       // Gateway signals the access JWT is no longer valid — refresh + reopen
 
-    // E2EE Handshake
+    // E2EE Handshake & Payload
     E2EE_INIT         : "e2ee_init",          // Controller sends Public Key to Agent
     E2EE_READY        : "e2ee_ready",         // Agent replies with Public Key
+    E2EE_PAYLOAD      : "e2ee_payload",       // Wrapper cho các lệnh và response được mã hóa
 }
 
 // ─── Feature constants (D6 vocab — used for permission request / revoke / stop) ─

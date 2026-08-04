@@ -20,6 +20,37 @@ namespace agent.Modules
             _ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
         }
 
+        // Sequence Number for Sliding Window
+        private uint _sendSeq = 0;
+        private uint _recvSeq = unchecked((uint)-1);
+        private readonly object _seqLock = new object();
+
+        public uint GetNextSendSeq()
+        {
+            lock (_seqLock)
+            {
+                return ++_sendSeq;
+            }
+        }
+
+        public bool CheckAndUpdateRecvSeq(uint seq)
+        {
+            lock (_seqLock)
+            {
+                // Sliding window size = 5
+                if (_recvSeq != unchecked((uint)-1) && seq + 5 <= _recvSeq)
+                {
+                    return false; // Replay / Too old
+                }
+
+                if (_recvSeq == unchecked((uint)-1) || seq > _recvSeq)
+                {
+                    _recvSeq = seq;
+                }
+                return true;
+            }
+        }
+
         /// <summary>
         /// Exports the Agent's Public Key as a Base64 SPKI string.
         /// </summary>

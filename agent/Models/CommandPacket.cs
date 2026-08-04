@@ -31,5 +31,11 @@ namespace AgentSystem.Models
 
         [JsonPropertyName("signature")]
         public string Signature { get; set; }
+
+        [JsonPropertyName("seq")]
+        public uint Seq { get; set; }
+
+        [JsonPropertyName("data")]
+        public string Data { get; set; }
     }
 }

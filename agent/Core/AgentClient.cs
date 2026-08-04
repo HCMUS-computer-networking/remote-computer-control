@@ -105,7 +105,40 @@ namespace AgentSystem.Core
 
         public void Start() { /* Nội dung giữ nguyên */ wsClient.Connect(); }
         public void Stop() { /* Nội dung giữ nguyên */ wsClient.Disconnect(); }
-        public void SendResponse(object responseData) { /* Nội dung giữ nguyên */ string json = JsonSerializer.Serialize(responseData); wsClient.SendText(json); }
+        public void SendResponse(object responseData) { SendResponse(responseData, true); }
+        
+        public void SendResponse(object responseData, bool encrypt)
+        {
+            string json = JsonSerializer.Serialize(responseData);
+            if (encrypt && Crypto != null && Crypto.IsE2EEReady)
+            {
+                try
+                {
+                    byte[] plaintext = System.Text.Encoding.UTF8.GetBytes(json);
+                    byte[] e2eeBytes = Crypto.EncryptAESGCM(plaintext);
+                    string dataBase64 = Convert.ToBase64String(e2eeBytes);
+                    
+                    var wrapper = new
+                    {
+                        type = "e2ee_payload",
+                        agent_id = AgentId,
+                        seq = Crypto.GetNextSendSeq(),
+                        data = dataBase64
+                    };
+                    string wrapperJson = JsonSerializer.Serialize(wrapper);
+                    wsClient.SendText(wrapperJson);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "[E2EE] Lỗi mã hóa SendResponse");
+                }
+            }
+            else
+            {
+                wsClient.SendText(json);
+            }
+        }
+        
         public void SendBinaryFrame(byte[] bytes) { /* Nội dung giữ nguyên */ wsClient.SendBinary(bytes); }
 
         public void HandleBinaryFrame(byte[] bytes)
@@ -165,7 +198,7 @@ namespace AgentSystem.Core
                         agent_id = AgentId,
                         publicKey = myPubKeyBase64,
                         signature = mySignature
-                    });
+                    }, encrypt: false);
                     
                     Log.Information("[E2EE] Handshake completed successfully. Session Key is ready.");
                 }

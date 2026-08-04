@@ -22,7 +22,41 @@ namespace AgentSystem.Core
                 var packet = JsonSerializer.Deserialize<CommandPacket>(rawJson);
                 if (packet != null)
                 {
-                    context.RouteCommand(packet);
+                    if (packet.Type == "e2ee_payload")
+                    {
+                        if (!context.Crypto.IsE2EEReady)
+                        {
+                            Log.Warning("[E2EE] Nhận được e2ee_payload nhưng E2EE chưa sẵn sàng. Bỏ qua.");
+                            return;
+                        }
+
+                        if (!context.Crypto.CheckAndUpdateRecvSeq(packet.Seq))
+                        {
+                            Log.Warning($"[E2EE] Lỗi Sequence (Replay Attack/Quá hạn), seq = {packet.Seq}. Bỏ qua.");
+                            return;
+                        }
+
+                        try
+                        {
+                            byte[] e2eeBytes = Convert.FromBase64String(packet.Data);
+                            byte[] plaintext = context.Crypto.DecryptAESGCM(e2eeBytes);
+                            string innerJson = System.Text.Encoding.UTF8.GetString(plaintext);
+                            
+                            var innerPacket = JsonSerializer.Deserialize<CommandPacket>(innerJson);
+                            if (innerPacket != null)
+                            {
+                                context.RouteCommand(innerPacket);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error(ex, "[E2EE] Lỗi giải mã e2ee_payload.");
+                        }
+                    }
+                    else
+                    {
+                        context.RouteCommand(packet);
+                    }
                 }
             }
             catch (JsonException ex)
