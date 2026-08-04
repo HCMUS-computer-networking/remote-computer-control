@@ -133,11 +133,46 @@ namespace AgentSystem.Modules
             });
         }
 
+        private readonly string[] criticalSystemProcesses = { 
+            "csrss", "winlogon", "lsass", "smss", "services", "system", "explorer" 
+        };
+
         private async Task KillProcessAsync(int pid, string commandId)
         {
             try
             {
                 var process = Process.GetProcessById(pid);
+                
+                // 1. Chặn can thiệp tiến trình lõi của hệ điều hành (Case-insensitive)
+                if (criticalSystemProcesses.Contains(process.ProcessName.ToLower()))
+                {
+                    context.SendResponse(new {
+                        type = "proc_kill_result",
+                        agent_id = context.AgentId,
+                        command_id = commandId,
+                        pid = pid,
+                        success = false,
+                        message = "Access Denied: Cannot terminate critical system process."
+                    });
+                    return;
+                }
+
+                // 2. Chặn can thiệp tiến trình của hệ thống (Case-insensitive)
+                string owner = GetProcessOwner(process);
+                string ownerLower = owner.ToLower();
+                if (ownerLower.Contains("nt authority\\system") || ownerLower.Contains("local service") || ownerLower.Contains("network service"))
+                {
+                    context.SendResponse(new {
+                        type = "proc_kill_result",
+                        agent_id = context.AgentId,
+                        command_id = commandId,
+                        pid = pid,
+                        success = false,
+                        message = $"Access Denied: Process is owned by privileged account ({owner})."
+                    });
+                    return;
+                }
+
                 process.Kill();
                 
                 // Đợi bất đồng bộ với Timeout 2 giây thay vì chặn luồng như WaitForExit()
