@@ -1,0 +1,47 @@
+# ĐẶC TẢ DỰ ÁN (PROJECT SPECIFICATIONS)
+
+## 1. TỔNG QUAN HỆ THỐNG
+Dự án là công cụ thực hành mô phỏng quản trị và giám sát máy tính (Agent) từ xa, phục vụ môn Mạng máy tính. Hệ thống tuân thủ kiến trúc **3-Tier Decoupled Architecture**:
+- **Controller (Web Application):** Trạm điều khiển trung tâm gửi lệnh (đơn lẻ hoặc Broadcast nhóm).
+- **Gateway (Relay Proxy Server):** Node định tuyến mạng chạy WebSockets. Hoạt động song công (Full-Duplex), tiếp nhận dữ liệu và hỗ trợ UDP Broadcast (Auto-Discovery).
+- **Agent (Windows Application):** Viết bằng C# .NET 8.0, cấu trúc Dependency Injection (DI) đa module. Có khả năng chạy ẩn dưới System Tray, khởi động cùng Windows và tự động quản lý vòng đời Log định kỳ.
+
+## 2. ĐẶC TẢ CHỨC NĂNG (FUNCTIONAL SPECS)
+Agent bao gồm 9 phân hệ chính và các service ngầm:
+
+### 2.1 Phân hệ Quản lý Ứng dụng (App Module)
+Truy xuất danh sách ứng dụng có GUI. Đo CPU % bằng Performance Counter (delay 50ms) và RAM. Hỗ trợ lệnh Start/Stop được kiểm duyệt tuyệt đối bởi danh sách an toàn Whitelist hiện hành.
+
+### 2.2 Phân hệ Quản lý Tiến trình (Process Module)
+Sử dụng `Parallel.ForEach` quét toàn bộ hệ thống để tính Delta CPU Time. Đọc thông tin Owner Username bằng WMI. Cưỡng chế Timeout 2 giây cho hàm Kill process.
+
+### 2.3 Phân hệ Giám sát Màn hình (Stream Module)
+Khai thác GDI+ stream ảnh JPEG (ép về 1280x720). Được tối ưu siêu nhẹ bằng thuật toán **Software Bounding Box Delta Encoding** (duyệt pixel `unsafe` `LockBits` cực nhanh): Chỉ cắt, nén JPEG và gửi đi vùng màn hình bị biến đổi kèm tọa độ $(X, Y, W, H)$ và cờ `is_keyframe`, bỏ qua truyền tải nếu màn hình tĩnh. Mỗi 30 frames tự động gửi 1 Keyframe đầy đủ để làm mốc đồng bộ. Chống nghẽn bằng `SemaphoreSlim`.
+
+### 2.4 Phân hệ Ghi nhận Thao tác (Keylogger Module)
+Giám sát văn bản qua API Hệ điều hành (`WH_KEYBOARD_LL`). Tối ưu truyền tải bằng cách khóa dữ liệu vào Buffer và xả lên Server chu kỳ 3 giây (`PeriodicTimer`).
+
+### 2.5 Phân hệ Quản trị Tệp tin (File Sandbox Module)
+Tải/Lưu file kích thước lớn thông qua giao thức **WebSocket Binary Frame**. Quá trình truyền chia làm 2 giai đoạn: gửi gói JSON chứa Metadata trước (bao gồm `transfer_id`), sau đó truyền tuần tự các chunk nhị phân gắn tiền tố `transfer_id`. Tính toàn vẹn được đảm bảo bằng băm SHA-256 sau khi ghép mảnh thành công. Hỗ trợ Concurrent Uploads. Chỉ cho phép các thao tác nội bộ trong Sandbox quy định (khóa Path Traversal).
+
+### 2.6 Phân hệ Quan sát Camera (Webcam Module)
+Ghi hình OpenCV chuẩn 720p. Tích hợp tính năng an toàn: tự động dọn dẹp tài nguyên phần cứng (Release) nếu Gateway rớt mạng.
+
+### 2.7 Phân hệ Điều khiển Nguồn (Power Module)
+Hỗ trợ Sleep, Restart, Shutdown, Lock screen thông qua tập lệnh CLI của Windows (rundll32/shutdown).
+
+### 2.8 Phân hệ Điều khiển Từ xa (Input Module)
+Cho phép Controller can thiệp vào máy nạn nhân bằng cách tiêm sự kiện chuột và bàn phím thông qua P/Invoke `user32.dll` (`SetCursorPos`, `SendInput`). Hỗ trợ 4 lệnh cơ bản: `input_mouse_move` (Fire-and-forget), `input_mouse_click`, `input_key`, và `input_type`. Ràng buộc cấp phép chung với quyền `screen`.
+
+### 2.9 Phân hệ Cấu hình Hệ thống (SysInfo Module)
+Truy xuất nhanh các thông số tổng quan: OS Version, Uptime, Local IP Address, bộ nhớ RAM, tình trạng Disk và hiệu suất CPU hiện hành.
+
+### 2.10 Tiện ích Ngầm (Background Services)
+**System Tray & Log Maintenance:** Giao diện khay hệ thống, bảo vệ chống tắt bằng Mật khẩu (Password Prompt Form). Quản lý cấu hình Registry tự khởi động. Ghi nhận nhật ký Serilog xoay vòng hàng ngày với Worker dọn rác tự động theo cấu hình Retention.
+
+## 3. TIÊU CHUẨN BẢO MẬT & QUYỀN RIÊNG TƯ
+- **Minh bạch Thực thi (User Consent):** Các can thiệp sâu yêu cầu Consent Popup Timeout 30 giây.
+- **Chống Tấn Công Spam (Anti-DoS UI):** HashSet chặn Controller gọi hàng loạt Popup. Cửa sổ thứ 2 sẽ tự động bị từ chối nếu cửa sổ đầu tiên chưa được xử lý.
+- **Sự Thấu Hiểu Thị Giác (Webcam Transparency):** Delay 10s đếm ngược và Overlay Red Dot (chấm đỏ) khi quay.
+- **Phân Vùng Cách Ly (Sandbox & Whitelist):** Khóa khởi chạy ứng dụng và truy cập tệp theo quy tắc cấp từ Server (cập nhật nóng Memory không cần Restart).
+- **Thu hồi quyền (Auto Permission Revoke):** Khi xảy ra sự cố gián đoạn mạng, Agent sẽ chủ động xóa bỏ toàn bộ Token cấp quyền của phiên trước và thông báo Server xin lại từ đầu (`permissions_reset`) để đảm bảo không tồn đọng quyền vô ý.

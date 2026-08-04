@@ -1,0 +1,66 @@
+# TÀI LIỆU TECHNICAL DESIGN
+
+## PHẦN 1: CÔNG NGHỆ CỐT LÕI (CORE TECHNOLOGIES) & BẢO MẬT
+
+### 1.1 Core Technologies
+- **Platform:** C# .NET 8.0 (Windows Forms).
+- **Architecture:** Áp dụng kiến trúc Dependency Injection (DI) qua `Microsoft.Extensions.DependencyInjection`. Các Managers quản lý theo Singleton, Modules theo Transient.
+- **Network Communication:** `ClientWebSocket` thiết lập kết nối Full-Duplex. Bỏ qua xác thực chứng chỉ SSL ở môi trường Lab. Sử dụng `SemaphoreSlim` để đồng bộ luồng gửi dữ liệu (Thread-safe).
+- **UDP Broadcast:** Lắng nghe cổng 8888 để Auto-Discovery mạng LAN. Cấu trúc gói: `GATEWAY_ANNOUNCE|wss://ip:port`.
+- **Background Service:** Quản lý dưới System Tray (`TrayApp`), hỗ trợ tự động khởi động cùng Windows qua Registry, có xác thực mật khẩu.
+- **Logging:** Sử dụng `Serilog` lưu file theo ngày. Có Background Job (`LogCleanupJob`) tự động dọn dẹp file log cũ theo cấu hình.
+
+### 1.2 Concurrency & Resource Management
+- Ứng dụng mô hình `async/await` kết hợp `Task` nhằm không chặn UI thread.
+- Sử dụng `PeriodicTimer` cho các vòng lặp định kỳ (Webcam, Stream, Keylogger) thay cho `Thread.Sleep`, giúp quản lý CPU tốt hơn.
+- Ứng dụng `SemaphoreSlim` thay thế từ khóa `lock` truyền thống cho các vùng critical section có chứa tác vụ async.
+
+### 1.3 Security Design
+- **Dynamic Application Whitelisting:** Chỉ phần mềm trong Whitelist được khởi chạy. Hỗ trợ nhận lệnh `policy_update` từ Server để cập nhật trực tiếp trên RAM.
+- **Sandbox Validation:** Đường dẫn được chuẩn hóa, khóa cứng Path Traversal vào `C:\AgentSandbox\`.
+- **Explicit User Consent:** Các lệnh nhạy cảm yêu cầu Popup (timeout 30s). Bổ sung cơ chế Anti-DoS: tự động từ chối (Reject) nếu module đang có popup hiện hành.
+- **Visual Transparency:** Camera yêu cầu 10s Countdown, kèm Overlay Red Dot (Always-on-top) xuyên suốt quá trình ghi hình.
+- **Permission Reset:** Khi Agent mất mạng và kết nối lại, mọi quyền được cấp sẽ tự động xóa bỏ. Yêu cầu Controller xin cấp quyền lại từ đầu.
+
+## PHẦN 2: CHI TIẾT THIẾT KẾ CÁC MODULE
+
+### 2.1 AppModule
+- **Commands:** `app_start`, `app_stop`, `app_list`
+- Liệt kê process có MainWindowHandle. Dùng `PerformanceCounter` với 50ms delay để đo đạc chính xác % CPU. Kiểm duyệt chặt chẽ bởi Whitelist.
+
+### 2.2 ProcessModule
+- **Commands:** `proc_list`, `proc_kill`
+- Dùng `Parallel.ForEach` quét process. Lấy Username qua WMI. Tính Delta CPU Time. Tiến trình Kill được bọc trong `CancellationTokenSource` 2 giây chống treo app.
+
+### 2.3 StreamModule (Màn hình)
+- **Commands:** `screenshot`, `screen_stream`, `screen_stream_stop`
+- Dùng GDI+ chụp màn hình, nội suy về 1280x720. **Tối ưu băng thông:** Sử dụng thuật toán **Software Bounding Box Delta Encoding** (duyệt pixel `unsafe` `LockBits` cực nhanh) để chỉ nén và gửi đi vùng màn hình bị biến đổi kèm tọa độ $(X, Y, W, H)$ và cờ `is_keyframe`, bỏ qua truyền tải nếu màn hình tĩnh. Mỗi 30 frames tự động gửi 1 Keyframe đầy đủ để làm mốc đồng bộ. Đồng bộ bằng `SemaphoreSlim`.
+
+### 2.4 KeyloggerModule
+- **Commands:** `keylog_start`, `keylog_stop`
+- Sử dụng Windows Hook `WH_KEYBOARD_LL`. Gom phím vào Buffer và sử dụng `PeriodicTimer` xả định kỳ 3 giây/lần. Có Message Loop (Application.Run) độc lập.
+
+### 2.5 FileModule
+- **Commands:** `fs_list`, `fs_get`, `fs_put`
+- Tải/Lưu file nhị phân thông qua giao thức **WebSocket Binary Frame**. Quy trình truyền (dual-phase): nhận/gửi JSON Metadata (`fs_get_result` / `fs_put`), sau đó là luồng Binary Frame chứa prefix `transfer_id`. Sử dụng `ConcurrentDictionary` để quản lý các luồng Upload đồng thời (`_binaryWaiters`). Tính toàn vẹn bằng băm SHA-256 sau khi hoàn tất. Hủy toàn bộ tiến trình tải dở dang khi ngắt kết nối (bắt sự kiện `OnDisconnected`).
+
+### 2.6 WebcamModule
+- **Commands:** `webcam_start`, `webcam_stop`
+- Thu hình OpenCV, ép phân giải tối đa 720p. Đồng bộ lấy khung hình bằng `SemaphoreSlim`. Tự động đóng Camera nếu rớt mạng.
+
+### 2.7 PowerModule
+- **Commands:** `power`
+- `lock` thực thi tức thì bằng `user32.dll`. `shutdown`, `restart`, `sleep` yêu cầu Hộp thoại Consent 30 giây.
+
+### 2.8 InputModule (Module Mới)
+- **Commands:** `input_mouse_move`, `input_mouse_click`, `input_key`, `input_type`
+- Được mapping vào quyền `screen`. Gọi P/Invoke `SendInput` và `SetCursorPos` để mô phỏng sự kiện phần cứng, điều khiển chuột và phím từ xa.
+
+### 2.9 SysInfoModule (Module Mới)
+- **Commands:** `sysinfo`
+- Thu thập thông tin tổng quan: CPU %, RAM (từ `GC.GetGCMemoryInfo`), Disk (`DriveInfo`), OS Version, Uptime hệ thống và Local IP Address.
+
+## PHẦN 3: COMMUNICATION PROTOCOL
+- **Payload chuẩn:** JSON với trường `command_id`, `module`, `action`, `params`, `target_agents`.
+- **Metadata & Binary:** Dữ liệu lớn truyền theo 2 phase: Gói JSON báo Metadata trước (chứa `transfer_id`), theo sau là dữ liệu Raw Binary. Gói Binary bắt buộc có prefix chiều dài và chuỗi `transfer_id` ở đầu để bộ xử lý `FileModule` định tuyến đúng luồng file.
+- **Dynamic Policy:** Agent xử lý gói `policy_update` ở tầng Dispatcher để cập nhật Memory cho Whitelist/Sandbox mà không cần khởi động lại.

@@ -1,0 +1,39 @@
+## ==========================================
+## 1. BUILD OUTPUTS & TEMPORARY FILES (.NET)
+## ==========================================
+[Dd]ebug/
+[Rr]elease/
+bin/
+obj/
+out/
+Logs/
+*.log
+
+## ==========================================
+## 2. VISUAL STUDIO & VS CODE CACHE/USER FILES
+## ==========================================
+.vs/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+slnx.sqlite
+.history/
+
+## ==========================================
+## 3. PROJECT MERGE & AI PACKING TOOLS
+## ==========================================
+# File gom mã nguồn do Repomix sinh ra
+repomix-output.xml
+repomix.config.json
+*repomix*.xml
+
+## ==========================================
+## 4. ENVIRONMENT & OS GENERATED FILES
+## ==========================================
+*.env
+*.pfx
+.DS_Store
+Thumbs.db
+desktop.ini
