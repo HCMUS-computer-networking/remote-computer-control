@@ -1,5 +1,5 @@
 {
-  "name": "gateway-new",
+  "name": "gateway",
   "version": "1.0.0",
   "description": "Gateway Relay Proxy Server — WebSocket relay between Controller and Agents",
   "main": "src/index.js",

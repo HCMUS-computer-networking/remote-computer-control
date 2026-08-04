@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  controller-build:
+    name: Controller — Vite build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: controller
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: controller/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  gateway-test:
+    name: Gateway — install + syntax check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: gateway/package-lock.json
+      - run: npm ci
+      # No test script yet — syntax-check the entry point so a broken require
+      # or parser error still fails CI.
+      - run: node --check src/server.js
+      - run: node --check src/index.js
+
+  agent-build:
+    name: Agent — dotnet build
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore agent.sln
+      - run: dotnet build agent.sln --configuration Release --no-restore

@@ -1,0 +1,13 @@
+# CODEOWNERS — auto-request review khi PR đụng path tương ứng.
+# TODO: thay <githubA/B/C> bằng GitHub username thật của 3 thành viên.
+
+agent/       @<githubA>
+gateway/     @<githubB>
+controller/  @<githubC>
+
+# Docs cần cả nhóm review (protocol / architecture đụng nhiều bên).
+docs/        @<githubA> @<githubB> @<githubC>
+
+# Root files (README, ARCHITECTURE, tooling) — cả nhóm.
+/*.md        @<githubA> @<githubB> @<githubC>
+.github/     @<githubA> @<githubB> @<githubC>

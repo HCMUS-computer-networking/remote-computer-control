@@ -2,7 +2,7 @@
 
 > Ngày đánh giá: Cập nhật mới nhất (Sau đợt Refactor Agent) - ĐÃ KIỂM DUYỆT LẠI MÃ NGUỒN.
 > Xác nhận: Toàn bộ các hạn chế, lỗi bảo mật và hiệu năng được liệt kê trong báo cáo này **VẪN CÒN TỒN TẠI** trong codebase hiện tại của cả 3 thành phần.
-> Phạm vi: Mã nguồn `agent`, `gateway-new`, `controller`. Tiêu chí đánh giá tập trung vào **Chất lượng sản phẩm, Kiến trúc và Bảo mật** (Bỏ qua các yếu tố đóng gói/deployment).
+> Phạm vi: Mã nguồn `agent`, `gateway`, `controller`. Tiêu chí đánh giá tập trung vào **Chất lượng sản phẩm, Kiến trúc và Bảo mật** (Bỏ qua các yếu tố đóng gói/deployment).
 
 ---
 

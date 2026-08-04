@@ -66,7 +66,7 @@ TECH STACK & KIẾN TRÚC HIỆN TẠI (không tự đổi):
 QUY TẮC:
 - KHÔNG refactor kiến trúc. KHÔNG thêm tính năng ngoài yêu cầu.
 - Với PHẦN A: chỉ viết/sửa file *.json trong docs/protocol/ — KHÔNG đụng file .cs.
-- Với PHẦN S: chỉ sửa file .cs khi Gateway đã xong prereq — có thể check bằng cách grep G5/G6 trong gateway-new/src/.
+- Với PHẦN S: chỉ sửa file .cs khi Gateway đã xong prereq — có thể check bằng cách grep G5/G6 trong gateway/src/.
 - Comment tiếng Anh, ngắn gọn WHY-not-WHAT. Giữ style code hiện tại.
 - Trước khi sửa: đọc file liên quan rồi liệt kê ngắn file/hàm sẽ đụng. KHÔNG động vào code Controller/Gateway.
 - Trả lời tiếng Việt kèm keyword tiếng Anh, đưa diff/patch rõ ràng.
@@ -241,15 +241,15 @@ KHÔNG sửa code C#. Verify field name khớp CHÍNH XÁC.
 
 ## PHẦN S. PHỐI HỢP GATEWAY (chờ Gateway xong prereq)
 
-> S1, S2 chỉ code khi Gateway đã xong hạng mục tương ứng — check bằng `git log` trong `gateway-new/` hoặc hỏi team Gateway. Trước đó KHÔNG code, tránh mock rồi làm lại.
+> S1, S2 chỉ code khi Gateway đã xong hạng mục tương ứng — check bằng `git log` trong `gateway/` hoặc hỏi team Gateway. Trước đó KHÔNG code, tránh mock rồi làm lại.
 
 ### 🧩 S1. Chuyển sang per-agent secret (chờ Gateway G5)
 
-**Prereq:** Gateway đã có `scripts/add_agent.js` + bảng `agents.json` với `secret_hash` (bcrypt) — kiểm bằng `ls gateway-new/scripts/add_agent.js`.
+**Prereq:** Gateway đã có `scripts/add_agent.js` + bảng `agents.json` với `secret_hash` (bcrypt) — kiểm bằng `ls gateway/scripts/add_agent.js`.
 
 **Prompt:**
 ```
-Sau khi Gateway G5 xong (kiểm ls gateway-new/scripts/add_agent.js). Sửa:
+Sau khi Gateway G5 xong (kiểm ls gateway/scripts/add_agent.js). Sửa:
 
 1. Core/AgentClient.cs — phần REGISTER handshake: gửi kèm {agent_id, secret} thay vì chỉ AGENT_KEY. Field name khớp với parse phía Gateway (bàn 1 dòng với Gateway team nếu cần).
 2. Managers/ConfigManager.cs — đọc field mới "agent_secret" từ config.json thay vì "AGENT_KEY". KHÔNG hardcode secret.
@@ -265,11 +265,11 @@ Sau khi Gateway G5 xong (kiểm ls gateway-new/scripts/add_agent.js). Sửa:
 
 ### 🧩 S2. Đọc và log field `issuer` từ Gateway stamp (chờ Gateway G6)
 
-**Prereq:** Gateway đã xong G6 (stamp `issuer` string username vào message trước forward). Kiểm bằng grep `issuer` trong `gateway-new/src/router/messageRouter.js`.
+**Prereq:** Gateway đã xong G6 (stamp `issuer` string username vào message trước forward). Kiểm bằng grep `issuer` trong `gateway/src/router/messageRouter.js`.
 
 **Prompt:**
 ```
-Sau khi Gateway G6 xong (grep issuer trong gateway-new/src/router/messageRouter.js thấy có stamp). Sửa 2 chỗ:
+Sau khi Gateway G6 xong (grep issuer trong gateway/src/router/messageRouter.js thấy có stamp). Sửa 2 chỗ:
 
 1. Core/AgentClient.cs — parse packet: đọc thêm field top-level "issuer" (string, có thể null nếu Gateway cũ chưa stamp).
 2. Managers/AuditLogger.cs — hàm LogCommand thêm tham số issuer (nullable string). Ghi dòng log dạng "[YYYY-MM-DD HH:MM:SS] issuer=<value> cmd=<command_id> feature=<feature> granted=<bool>". Nếu issuer null → log "issuer=unknown", KHÔNG reject message.

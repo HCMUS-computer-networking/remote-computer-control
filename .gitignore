@@ -1,0 +1,56 @@
+# ─── Node / npm (gateway, controller) ─────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ─── .NET (agent) ─────────────────────────────────────────────────
+# Note: agent.sln is committed; do NOT add "*.sln" here (would exclude it).
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+out/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+slnx.sqlite
+
+# ─── Logs (all components) ────────────────────────────────────────
+logs/
+Logs/
+*.log
+
+# ─── Environment / secrets ────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pfx
+
+# ─── Editors / IDE ────────────────────────────────────────────────
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.history/
+*.sw?
+*.ntvs*
+*.njsproj
+
+# ─── OS ───────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.local
+
+# ─── Repomix (AI packing artifacts) ───────────────────────────────
+repomix-output.xml
+*repomix*.xml
