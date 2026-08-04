@@ -1,61 +1,61 @@
-# Remote Computer Control — Đồ án Mạng máy tính HCMUS
+# Remote Computer Control — HCMUS Computer Networks course project
 
-Hệ thống **remote administration** cho phòng máy: một Controller web-based giám sát và điều khiển nhiều Agent Windows từ xa qua một Gateway trung gian. Mọi hành động nhạy cảm (screen stream, keylog, webcam, file, power) đều đi qua **consent flow** phía Agent — người dùng cuối phải xác nhận trên máy trước khi Controller nhìn thấy dữ liệu. Kiến trúc **star topology** 3 thành phần, giao tiếp qua raw WebSocket + JSON schema chốt sẵn trong `docs/protocol/`.
+A consent-based **remote administration** tool for a lab environment: a web-based Controller monitors and controls multiple Windows Agents through a Node.js Gateway. Every sensitive action (screen stream, keylog, webcam, file, power, remote input) goes through a **consent flow** on the Agent side — the end user must confirm on their machine before the Controller sees any data. Three-tier **star topology**, WebSocket + JSON schema locked down in `docs/protocol/`.
 
-## 1. Kiến trúc
+## 1. Architecture
 
 ```
 ┌──────────────┐   ws://:8080/controller   ┌──────────────┐   ws://:8080/agent   ┌──────────────┐
 │  Controller  │ ◄─────────────────────► │   Gateway    │ ◄──────────────────► │    Agent     │
-│ (React SPA)  │      HTTPS /api/login   │ (Node.js WS) │  (nhiều Agent song   │  (C# .NET 8, │
-│              │                          │              │   song)              │  Windows Tray)│
+│ (React SPA)  │      HTTPS /api/login   │ (Node.js WS) │  (many Agents in     │  (C# .NET 8, │
+│              │                          │              │   parallel)          │  Windows tray)│
 └──────────────┘                          └──────────────┘                      └──────────────┘
 ```
 
-- **Controller** — React + Vite + Zustand, chạy trên trình duyệt của admin.
-- **Gateway** — Node.js WebSocket relay + Express REST cho auth (JWT).
-- **Agent** — C# .NET 8 tray app trên Windows, thực thi lệnh cục bộ.
+- **Controller** — React 19 + Vite + Zustand 5 + lucide-react + recharts, runs in the admin's browser.
+- **Gateway** — Node.js WebSocket relay + Express REST for auth (JWT + bcrypt + SQLite).
+- **Agent** — C# .NET 8 Windows Forms tray application, executes commands locally.
 
-Chi tiết đầy đủ: xem [`docs/design/controller/architecture.md`](docs/design/controller/architecture.md), [`docs/design/gateway/technical_design.md`](docs/design/gateway/technical_design.md), [`docs/design/agent/technical_design.md`](docs/design/agent/technical_design.md).
+Full detail: see [`Architecture.md`](Architecture.md) and the per-subsystem design docs under [`docs/design/`](docs/design/).
 
-## 2. Tính năng chính
+## 2. Main features
 
-- **Screen live stream** với **Software Bounding Box Delta Encoding** (chỉ gửi vùng thay đổi, MD5 change-detection).
-- **Remote Input** — inject chuột + phím qua Win32 `user32.dll`.
-- **Keylogger** — ghi phím kèm consent + visible indicator.
-- **File transfer sandbox** — WebSocket Binary Frame, chunking + SHA-256, sandbox root `C:\AgentSandbox\`.
-- **Process / Application control** — list, kill process; start/stop app trong whitelist.
-- **SysInfo** — CPU, RAM, disk, uptime, OS, IP realtime.
-- **Power** — lock / restart / shutdown / sleep với 10s countdown phía Controller.
-- **Webcam** — MJPEG stream + visible on-screen indicator khi camera bật.
-- **Consent flow** — mọi module nhạy cảm yêu cầu dialog xác nhận trên Agent (timeout 30s).
-- **Dynamic Policy** — Controller push whitelist / sandbox path nóng vào RAM Agent.
+- **Screen live stream** with **Software Bounding Box Delta Encoding** (only changed regions are sent, MD5 change detection, 1 keyframe every 30 frames).
+- **Remote Input** — inject mouse + keyboard events via Win32 `user32.dll` (`SetCursorPos` / `SendInput`).
+- **Keylogger** with consent + visible indicator; consecutive characters grouped into a single line.
+- **File transfer sandbox** — WebSocket binary frame, 512 KB chunks + SHA-256, sandbox root `C:\AgentSandbox\`.
+- **Process / Application control** — list, kill process; start/stop applications from a whitelist.
+- **SysInfo dashboard** — CPU, RAM, disk, uptime, OS, IP in near real time.
+- **Power** — lock / restart / shutdown / sleep with a 10 s countdown on the Controller.
+- **Webcam** — MJPEG stream with a visible on-screen red-dot indicator while the camera is on.
+- **Consent flow** — every sensitive module requires a confirmation dialog on the Agent (30 s timeout, anti-DoS single-popup guard).
+- **Dynamic policy** — the Controller pushes the app whitelist and sandbox path into Agent RAM without a restart.
 
-## 3. Yêu cầu môi trường
+## 3. Environment requirements
 
-| Thành phần | Yêu cầu |
-|---|---|
-| Gateway | Node.js **18+**, npm |
-| Controller | Node.js **18+**, npm, trình duyệt hiện đại (Chrome/Edge/Firefox mới) |
-| Agent | Windows **10/11**, **.NET 8 SDK** (dev) hoặc .NET 8 Runtime (chạy), Visual Studio 2022 (tùy chọn) |
+| Component  | Requirement                                                                  |
+|------------|------------------------------------------------------------------------------|
+| Gateway    | Node.js **18+**, npm                                                         |
+| Controller | Node.js **18+**, npm, a modern browser (recent Chrome / Edge / Firefox)      |
+| Agent      | Windows **10/11**, **.NET 8 SDK** (dev) or .NET 8 Runtime (run), Visual Studio 2022 (optional) |
 
-## 4. Hướng dẫn chạy (theo thứ tự)
+## 4. How to run (in this order)
 
 ```bash
 git clone <repo-url>
 cd remote-computer-control
 ```
 
-### 4.1. Gateway (chạy trước)
+### 4.1. Gateway (start first)
 
 ```bash
 cd gateway
 npm install
-cp .env.example .env         # chỉnh AGENT_KEY / CONTROLLER_KEY / JWT_SECRET
+cp .env.example .env         # set AGENT_KEY / CONTROLLER_KEY / JWT_SECRET
 npm run dev                  # dev mode (auto-restart). Production: npm start
 ```
 
-Mặc định lắng nghe `:8080`. Health check: `GET http://localhost:8080/health`.
+Listens on `:8080` by default. Health check: `GET http://localhost:8080/health`.
 
 ### 4.2. Controller
 
@@ -65,59 +65,59 @@ npm install
 npm run dev                  # → http://localhost:5173
 ```
 
-Mặc định app đang chạy ở chế độ `MockSocket` (mô phỏng Gateway + Agent trong trình duyệt). Để nối Gateway thật, tạo `.env` với `VITE_USE_MOCK=false` và `VITE_GATEWAY_URL=ws://<host>:8080`.
+By default the Controller runs against `MockSocket` (an in-browser Gateway + Agent simulator). To point at a real Gateway, create `.env.local` with `VITE_USE_MOCK=false` and `VITE_GATEWAY_URL=ws://<host>:8080`.
 
 ### 4.3. Agent
 
-**Cách A — Visual Studio 2022:**
-1. Mở `agent/agent.sln` bằng VS 2022.
-2. Chỉnh `agent/config.json`:
-   - `gateway_url` — trỏ tới Gateway (mặc định `ws://127.0.0.1:8080`).
-   - `auth_key` — khớp `AGENT_KEY` trong Gateway `.env`.
-   - `agent_id` — để `"AUTO"` để tự dựng từ hostname + MAC.
-3. Nhấn **F5** để build + run. Agent thu mình xuống system tray.
+**Option A — Visual Studio 2022:**
+1. Open `agent/agent.sln` in VS 2022.
+2. Edit `agent/config.json`:
+   - `gateway_url` — point at the Gateway (default `ws://127.0.0.1:8080`).
+   - `auth_key` — must match `AGENT_KEY` in the Gateway `.env`.
+   - `agent_id` — leave as `"AUTO"` to derive it from hostname + MAC.
+3. Press **F5** to build and run. The Agent minimises to the system tray.
 
-**Cách B — CLI:**
+**Option B — CLI:**
 ```bash
 cd agent
 dotnet build
 dotnet run
 ```
 
-Lần đầu, nếu `gateway_url` sai, Agent bật dialog cấu hình URL.
+On first launch, if `gateway_url` is empty the Agent opens a configuration dialog.
 
-## 5. Tài khoản test mặc định
+## 5. Default test account
 
-Theo `gateway/README.md`:
 - **username:** `admin`
 - **password:** `admin123`
 
-Password gốc lưu trong `gateway/src/store/users.json` dưới dạng **bcrypt hash** — thay đổi bằng script `gateway/scripts/hash-password.js`.
+The raw password is stored in `gateway/src/store/data.sqlite` as a **bcrypt hash** — rotate it with `gateway/scripts/hash-password.js`.
 
-## 6. Cấu trúc thư mục
+## 6. Directory layout
 
-| Thư mục | Mô tả |
-|---|---|
-| [`agent/`](agent/) | Agent C# .NET 8 (Core, Modules, Managers, Forms, Utils, `agent.sln`, `config.json`) |
-| [`controller/`](controller/) | Controller React + Vite (src/, public/, `vite.config.js`) |
-| [`gateway/`](gateway/) | Gateway Node.js (src/, tests/, scripts/, `.env.example`) |
-| [`docs/`](docs/) | Toàn bộ tài liệu (protocol, design, reports) — xem `docs/README.md` |
+| Directory                | Description                                                                                     |
+|--------------------------|-------------------------------------------------------------------------------------------------|
+| [`agent/`](agent/)       | Agent C# .NET 8 (Core, Modules, Managers, Forms, Utils, `agent.sln`, `config.json`)              |
+| [`controller/`](controller/) | Controller React + Vite (src/, public/, `vite.config.js`)                                    |
+| [`gateway/`](gateway/)   | Gateway Node.js (src/, tests/, scripts/, `.env.example`)                                         |
+| [`docs/`](docs/)         | All documentation (protocol schemas, design docs, reports)                                       |
+| [`scripts/`](scripts/)   | Helper scripts (`dev-up.ps1` boots Gateway + Controller in parallel)                             |
 
-## 7. Tài liệu chi tiết
+## 7. Detailed documentation
 
-- [`docs/README.md`](docs/README.md) — mục lục docs/.
-- [`docs/protocol/`](docs/protocol/) — 11 JSON schema canonical + `Instruction.md`.
-- [`docs/design/agent/`](docs/design/agent/) — technical design, specification, checklist Agent.
-- [`docs/design/gateway/`](docs/design/gateway/) — technical design Gateway.
-- [`docs/design/controller/`](docs/design/controller/) — architecture, technical explanation, wireframe.
-- [`docs/reports/evaluation.md`](docs/reports/evaluation.md) — báo cáo đánh giá tổng thể.
+- [`Architecture.md`](Architecture.md) — current state of the monorepo (tree, stores, data flow, protocol, conventions).
+- [`docs/protocol/`](docs/protocol/) — 11 canonical JSON schemas + `Instruction.md`. Single source of truth for message format.
+- [`docs/design/agent/`](docs/design/agent/) — Agent technical design, specification, checklist.
+- [`docs/design/gateway/`](docs/design/gateway/) — Gateway technical design, description, internal report.
+- [`docs/design/controller/`](docs/design/controller/) — Controller architecture snapshot, technical explanation notes, wireframes.
+- [`docs/reports/evaluation.md`](docs/reports/evaluation.md) — overall project evaluation report.
 
 ## 8. Credits
 
-Đồ án nhóm — Mạng máy tính, HCMUS.
+Team project — Computer Networks, HCMUS.
 
-| Thành viên | Vai trò |
-|---|---|
-| _<tên thành viên 1>_ | Agent (C# .NET 8 Windows client) |
-| _<tên thành viên 2>_ | Gateway (Node.js WebSocket relay + Auth) |
-| _<tên thành viên 3>_ | Controller (React + Vite + Zustand) |
+| Member                    | Role                                             |
+|---------------------------|--------------------------------------------------|
+| _<member 1>_              | Agent (C# .NET 8 Windows client)                 |
+| _<member 2>_              | Gateway (Node.js WebSocket relay + Auth)         |
+| _<member 3>_              | Controller (React + Vite + Zustand)              |

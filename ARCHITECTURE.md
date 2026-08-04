@@ -322,39 +322,82 @@ services/AgentSocket.onBinary(bytes)
 
 ## 6. Quy ước (Conventions)
 
-### 6.1. Code style
+### 6.1. Common rules (áp dụng cho MỌI subsystem — agent + gateway + controller + docs)
 
-- **JS/JSX (Controller):** biến `snake_case`, hàm `camelCase`, component `PascalCase`, constants `UPPER_SNAKE_CASE`, file component `PascalCase.jsx`. Braces Allman (`{` trên dòng riêng). Comment tiếng Anh, đặt cạnh dòng (`//`) căn thẳng cột khi cụm nhiều dòng. Toast **UI copy** cho operator giữ tiếng Việt (nhất quán với UX).
-- **C# (Agent):** class `PascalCase`, method `PascalCase`, private field `camelCase`, const `PascalCase` hoặc `ALL_CAPS` tuỳ ngữ cảnh. Braces Allman. XML doc chỉ dùng khi cần thiết; comment giải thích WHY, không WHAT.
-- **JSON schema (docs/protocol):** `snake_case` cho mọi field. Thêm `_desc` / `_comment` để giải thích invariant.
+- **Braces Allman**: dấu `{` mở trên **dòng riêng**, thẳng cột với statement mở khối. (C# đã default Allman; JS phải format tay hoặc tắt Prettier trong file liên quan vì Prettier luôn kéo `{` về cuối dòng.)
+- **Comment**: viết bằng **tiếng Anh**, từ đơn giản, giải thích **WHY** (invariant ẩn, workaround, ràng buộc), **không WHAT**. Trailing `//` trên các dòng liền kề **căn thẳng 1 cột**.
+- **Constant thực sự** (không đổi runtime): `UPPER_SNAKE_CASE` ở mọi ngôn ngữ (JS `const XYZ = ...`, C# `const` / `static readonly` primitive).
+- **Import / using** sắp theo cụm: **stdlib → third-party → local**, mỗi cụm cách nhau 1 dòng trống.
+- **KHÔNG hardcode**: màu (hex/rgb), font-size, spacing, port, path, key, timeout — luôn qua CSS var / config / env / const.
+- **KHÔNG rewrite lịch sử** git (không rebase, không filter-repo lại, không force-push main).
+- **KHÔNG xoá tài liệu** thành viên trong `docs/` — chỉ move / rename qua PR có review.
+- **JSON schema (`docs/protocol/`)** là **single source of truth**. Field name **`snake_case`**. Mọi drift ở code phải sync lại schema TRƯỚC khi merge. Không bịa field trong code.
+- **`Architecture.md`**: luôn phản ánh **TRẠNG THÁI HIỆN TẠI**. Tuyệt đối không viết "đã đổi từ X sang Y", "đã nâng cấp thành…", không changelog. Mỗi lần tạo/sửa code, cập nhật file này.
 
-### 6.2. Store discipline (Controller)
+### 6.2. Controller — JavaScript / JSX
+
+- **Naming**: biến `snake_case`, hàm `camelCase`, class / React component / namespace / enum `PascalCase`, constant `UPPER_SNAKE_CASE`, file `PascalCase.jsx|js` (import binding vẫn `camelCase` theo rule hàm/biến).
+- **`*` / `&`** sát datatype (`int* ptr`, `const Foo& ref`) — không áp dụng thực tế trong JS, giữ ở đây để nhất quán khi có native.
+- **State**: chỉ dùng **Zustand**, không Redux / Context API cho state cập nhật liên tục. Subscribe **đúng slice**: `useStore(s => s.x)`, không lấy cả store. Setter **không** nested mutation — luôn spread `{...s.data, [id]: {...}}`.
+- **Component** không gọi socket / fetch trực tiếp — chỉ đi qua `services/*` và `hooks/UseAgentSocket.js`.
+- **Cleanup mọi `useEffect`**: `setInterval`, event listener, WS handler, `URL.revokeObjectURL`, `ImageBitmap.close()`, subscription Zustand.
+- **UI copy** cho operator (toast, label): tiếng **Việt** — giữ đồng bộ UX. Chỉ comment code là tiếng Anh.
+- **Không thêm dependency** ngoài `package.json` hiện tại trừ khi thật cần và có lý do. Nếu cần chart → `recharts` (đã có). KHÔNG chart.js / d3 / react-hook-form / yup.
+- **Lint**: `oxlint` config ở `controller/.oxlintrc.json` — chỉ 2 rule bật (`react/rules-of-hooks`, `react/only-export-components`); giữ pass.
+
+### 6.3. Gateway — JavaScript (Node.js)
+
+- **Naming**: biến `snake_case`, hàm `camelCase`, class / constructor `PascalCase`, constant `UPPER_SNAKE_CASE`. File hiện dùng `camelCase.js` (di sản, giữ nguyên — không mass-rename).
+- Dùng **`const`** cho mọi giá trị không reassign. Arrow function cho callback; function declaration cho top-level export.
+- **Semicolon** bám theo controller (semicolon-full style — verify `controller/src/App.jsx` khi thêm file mới).
+- **Async**: `async/await`, không `.then` chain lồng nhau. Try/catch quanh ranh giới I/O.
+- **Validation**: mọi command JSON đi qua `router/messageRouter.js` phải được whitelist type; params sensitive validate bằng AJV schema ở `validation/commandSchemas.js`.
+- **Không log payload** chứa credential / token. Winston config ở `utils/logger.js` — dùng level `info` cho routing thường, `error` cho exception.
+- **Không lưu state** ngoài SQLite (`db.js` — prepared statements) và Map/Set in-RAM (`store/*.js`).
+
+### 6.4. Agent — C# .NET 8
+
+- **Naming (giữ .NET convention)**: class / method / property / public field `PascalCase`; private field `_camelCase`; parameter / local variable `camelCase`; interface `IPascalCase`; enum `PascalCase`; `const` / `static readonly` primitive `UPPER_SNAKE_CASE`.
+- **Async**: `async/await` + `Task`, **KHÔNG** `Thread.Sleep` trong vòng lặp — dùng `PeriodicTimer`. Critical section chứa async → `SemaphoreSlim`, không `lock`.
+- **Resource**: `using` / `IDisposable` cho `Bitmap`, `WebSocket`, `PerformanceCounter`, `CancellationTokenSource`, tay quay OpenCV.
+- **P/Invoke**: giới hạn trong `Modules/InputModule.cs` và `Utils/*`. Signature khớp Win32 docs; comment WHY.
+- **DI**: đăng ký Managers là **Singleton**, Modules là **Transient** trong `Program.cs`. Không `new` service trực tiếp trong module.
+- **XML doc** chỉ dùng cho public API cross-module; comment `//` cho phần còn lại.
+- **Logging**: Serilog rolling daily, tự dọn theo `log_retention_days` trong `config.json`. Không log secret.
+
+### 6.5. JSON schema (`docs/protocol/`)
+
+- Field name **`snake_case`**. Enum value dùng dạng đã chốt (`granted`, `denied`, `timeout`, `busy`, …).
+- Thêm `_desc` / `_comment` để giải thích invariant / ràng buộc timing / kích thước / thứ tự binary frame.
+- Khi thay đổi schema: **agent + gateway + controller + docs** phải cùng cập nhật **trong CÙNG một PR** (hoặc PR liên hoàn ratify ở buổi kick-off nhóm).
+
+### 6.6. Store discipline (Controller)
 
 - Selector cụ thể: `useStore(s => s.data[agent_id]?.x ?? default)` — không `useStore(s => s)`.
 - Setter **không** nested update: luôn `{...s.data, [id]: {...agent_data, x: v}}` để giữ immutability.
 - Không mutation trong action; không hold state ở component khi có store phù hợp.
 
-### 6.3. Hook lifecycle
+### 6.7. Hook lifecycle
 
 - Mọi `useEffect / setInterval / setTimeout / event listener / socket handler / Blob URL` phải có cleanup trong return function.
 - `useAgentSocket` là **singleton refcounted** — nhiều component mount đều dùng chung 1 WebSocket; unmount cuối cùng mới đóng socket.
 
-### 6.4. Broadcast
+### 6.8. Broadcast
 
 - `messageRouter` chỉ cho phép `target_agents` rỗng khi `type === 'policy_update'`. Mọi type khác thiếu `target_agents` bị reject với `error_ack code:400`.
 
-### 6.5. Auth
+### 6.9. Auth
 
 - JWT 8 h lưu `sessionStorage` (Controller) + refresh_token cookie HttpOnly.
 - Gateway verify JWT ở WS upgrade query `?token=`.
 - Agent auth qua shared `AGENT_KEY` trong config, gửi ở WS query `?key=`.
 
-### 6.6. Sandbox & whitelist
+### 6.10. Sandbox & whitelist
 
 - File: mọi `fs_*` bị hard-lock trong `config.json:sandbox_root_path`. Path normalization chống `..` traversal.
 - Application: chỉ app trong `config.json:app_whitelist` được `app_start`. Push nóng qua `policy_update` (không cần restart Agent).
 
-### 6.7. Consent
+### 6.11. Consent
 
 - Timeout mặc định 30 s.
 - Anti-DoS: popup đang mở → request mới cho cùng feature auto-reject với `ConsentOutcome.Busy`.
