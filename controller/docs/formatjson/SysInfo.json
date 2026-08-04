@@ -1,0 +1,44 @@
+{
+  "_comment": "System Information module messages — Controller <-> Gateway <-> Agent",
+
+  "controller_to_gateway": {
+
+    "sysinfo": {
+      "_desc": "Request system metrics (CPU, RAM, Disk, Uptime, IP, OS) from target agent(s)",
+      "type": "request",
+      "module": "sysinfo",
+      "target_agents": [
+        "PC-Lab-01"
+      ]
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "sysinfo_result": {
+      "_desc": "Agent returns system hardware and OS metrics",
+      "type": "sysinfo_result",
+      "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
+      "cpu_percent": 12.34,
+      "ram_used_mb": 4096.5,
+      "ram_total_mb": 16384.0,
+      "disk_used_gb": 120.45,
+      "disk_total_gb": 512.0,
+      "uptime_seconds": 3600,
+      "hostname": "PC-Lab-01",
+      "ip": "192.168.1.10",
+      "os": "Microsoft Windows NT 10.0.22621.0"
+    },
+
+    "sysinfo_error": {
+      "_desc": "Agent reports error if system metrics retrieval fails",
+      "type": "ERROR",
+      "agent_id": "PC-Lab-01",
+      "command_id": "<uuid>",
+      "message": "Error getting sysinfo: <exception>"
+    }
+
+  }
+}

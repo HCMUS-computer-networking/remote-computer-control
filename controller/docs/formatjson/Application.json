@@ -1,0 +1,82 @@
+{
+  "_comment": "Application module messages — Controller <-> Gateway <-> Agent",
+  "_note": "Only apps in the whitelist may be started or stopped (Agent enforces this).",
+
+  "controller_to_gateway": {
+
+    "app_list": {
+      "_desc": "Request the list of running / installed apps on one or more agents",
+      "type": "request",
+      "module": "app_list",
+      "params": {},
+      "target_agents": ["PC-Lab-01"]
+    },
+
+    "app_start": {
+      "_desc": "Ask agent to start a whitelisted application",
+      "type": "request",
+      "module": "app_start",
+      "params": {
+        "name": "notepad"
+      },
+      "target_agents": ["PC-Lab-01", "PC-Lab-02"]
+    },
+
+    "app_stop": {
+      "_desc": "Ask agent to stop a running whitelisted application",
+      "type": "request",
+      "module": "app_stop",
+      "params": {
+        "name": "notepad"
+      },
+      "target_agents": ["PC-Lab-01"]
+    }
+
+  },
+
+  "gateway_to_controller": {
+
+    "app_list_result": {
+      "_desc": "Agent replies with its current application list",
+      "type": "app_list_result",
+      "agent_id": "PC-Lab-01",
+      "apps": [
+        {
+          "name": "notepad",
+          "display_name": "Notepad",
+          "status": "running",
+          "cpu_percent": 0.1,
+          "ram_mb": 12,
+          "in_whitelist": true
+        },
+        {
+          "name": "chrome",
+          "display_name": "Google Chrome",
+          "status": "running",
+          "cpu_percent": 8.4,
+          "ram_mb": 420,
+          "in_whitelist": true
+        },
+        {
+          "name": "winword",
+          "display_name": "Microsoft Word",
+          "status": "stopped",
+          "cpu_percent": 0,
+          "ram_mb": 0,
+          "in_whitelist": false
+        }
+      ]
+    },
+
+    "app_action_result": {
+      "_desc": "Agent confirms the result of an app_start or app_stop command",
+      "type": "app_action_result",
+      "agent_id": "PC-Lab-01",
+      "action": "app_start",
+      "name": "notepad",
+      "success": true,
+      "message": "Application started successfully"
+    }
+
+  }
+}
