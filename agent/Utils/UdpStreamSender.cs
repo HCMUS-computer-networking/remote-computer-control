@@ -101,6 +101,52 @@ namespace AgentSystem.Utils
                     // Send Datagram
                     await _udpClient.SendAsync(packet, packet.Length, _gatewayIp, _gatewayPort);
                 }
+
+                // --- Forward Error Correction (FEC) Parity Chunk ---
+                if (totalChunks > 1)
+                {
+                    byte[] parityPayload = new byte[4 + MAX_PAYLOAD_SIZE]; // 4 bytes for length + max chunk size (auto padded with 0x00)
+                    BitConverter.GetBytes(finalPayload.Length).CopyTo(parityPayload, 0);
+
+                    for (int i = 0; i < totalChunks; i++)
+                    {
+                        int offset = i * MAX_PAYLOAD_SIZE;
+                        int size = Math.Min(MAX_PAYLOAD_SIZE, finalPayload.Length - offset);
+                        for (int j = 0; j < size; j++)
+                        {
+                            parityPayload[4 + j] ^= finalPayload[offset + j];
+                        }
+                        // Chú ý 3: Mặc định mảng byte trong C# khởi tạo bằng 0. 
+                        // Vòng lặp chỉ chạy tới size thật của chunk cuối, 
+                        // tương đương với việc các byte dư (padding) của chunk cuối là 0x00 khi XOR.
+                    }
+
+                    int headerSize = 24 + l1 + l2;
+                    byte[] parityPacket = new byte[headerSize + parityPayload.Length];
+
+                    // Fixed Header for Parity Chunk (Chú ý 1)
+                    parityPacket[0] = (byte)totalChunks; // Chunk_Index = totalChunks identifies the parity chunk
+                    parityPacket[1] = (byte)totalChunks;
+                    parityPacket[2] = moduleType;
+                    parityPacket[3] = (byte)(isKeyframe ? 1 : 0);
+                    
+                    BitConverter.GetBytes((ushort)frameId).CopyTo(parityPacket, 4);
+                    BitConverter.GetBytes((ushort)bounds.X).CopyTo(parityPacket, 6);
+                    BitConverter.GetBytes((ushort)bounds.Y).CopyTo(parityPacket, 8);
+                    BitConverter.GetBytes((ushort)bounds.Width).CopyTo(parityPacket, 10);
+                    BitConverter.GetBytes((ushort)bounds.Height).CopyTo(parityPacket, 12);
+                    BitConverter.GetBytes((ulong)timestamp).CopyTo(parityPacket, 14);
+                    
+                    parityPacket[22] = l1;
+                    parityPacket[23] = l2;
+
+                    if (l1 > 0) Buffer.BlockCopy(agentIdBytes, 0, parityPacket, 24, l1);
+                    if (l2 > 0) Buffer.BlockCopy(commandIdBytes, 0, parityPacket, 24 + l1, l2);
+
+                    Buffer.BlockCopy(parityPayload, 0, parityPacket, headerSize, parityPayload.Length);
+
+                    await _udpClient.SendAsync(parityPacket, parityPacket.Length, _gatewayIp, _gatewayPort);
+                }
             }
             catch (Exception ex)
             {

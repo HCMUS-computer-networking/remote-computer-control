@@ -82,30 +82,73 @@ server.on('message', (msg, rinfo) => {
       frameBuffer.set(frameKey, frame);
     }
 
-    // Place chunk in the correct index
-    if (!frame.chunks[chunkIndex]) {
-      frame.chunks[chunkIndex] = payload;
-      frame.receivedCount++;
+    // FEC Logic (Chú ý 2: Tách biệt Parity Chunk)
+    if (chunkIndex === totalChunks) {
+      if (!frame.parityData && payload.length >= 4) {
+        frame.totalPayloadLength = payload.readUInt32LE(0);
+        frame.parityData = payload.subarray(4);
+      }
+    } else if (chunkIndex < totalChunks) {
+      if (!frame.chunks[chunkIndex]) {
+        frame.chunks[chunkIndex] = payload;
+        frame.receivedCount++;
+      }
     }
 
-    // If all chunks received
+    let frameCompleted = false;
+
+    // Kiểm tra đã nhận đủ, hoặc có thể khôi phục bằng FEC
     if (frame.receivedCount === frame.total) {
+      frameCompleted = true;
+    } else if (frame.receivedCount === frame.total - 1 && frame.parityData) {
+      // Phục hồi bằng thuật toán XOR
+      const MAX_PAYLOAD_SIZE = 1300;
+      let missingIndex = -1;
+      for (let i = 0; i < frame.total; i++) {
+        if (!frame.chunks[i]) {
+          missingIndex = i;
+          break;
+        }
+      }
+
+      if (missingIndex !== -1) {
+        let recovered = Buffer.from(frame.parityData); // clone parity array
+
+        for (let i = 0; i < frame.total; i++) {
+          if (i !== missingIndex && frame.chunks[i]) {
+            const chunk = frame.chunks[i];
+            for (let j = 0; j < chunk.length; j++) {
+              recovered[j] ^= chunk[j];
+            }
+          }
+        }
+
+        // Cắt bỏ phần padding 0x00 của chunk cuối (Chú ý 3)
+        if (missingIndex === frame.total - 1 && frame.totalPayloadLength > 0) {
+          let lastChunkSize = frame.totalPayloadLength % MAX_PAYLOAD_SIZE;
+          if (lastChunkSize === 0) lastChunkSize = MAX_PAYLOAD_SIZE;
+          recovered = recovered.subarray(0, lastChunkSize);
+        }
+
+        frame.chunks[missingIndex] = recovered;
+        frame.receivedCount++;
+        frameCompleted = true;
+        logger.info(`[UDP] Khôi phục thành công chunk ${missingIndex}/${frame.total} bằng FEC cho frame ${frameId}`);
+      }
+    }
+
+    // Nếu đã đủ khung hình (hoặc khôi phục xong)
+    if (frameCompleted) {
       const fullBuffer = Buffer.concat(frame.chunks);
       frame.meta.len = fullBuffer.length;
       
       const metaString = JSON.stringify(frame.meta);
 
       // Send Metadata (Text) then Payload (Binary)
-      // We use broadcastToSubscribers or sendToCommandInitiator
-      // Wait, Controller needs both Text then Binary sequentially on the same websocket.
-      // Let's send directly to the initiator
       if (controllerStore.hasCommand(commandId)) {
         controllerStore.sendToCommandInitiator(commandId, metaString);
         controllerStore.sendToCommandInitiator(commandId, fullBuffer);
       } else {
-        // Fallback: broadcast to subscribers if commandId isn't found
-        // But send meta first!
-        // We'll write a custom broadcast loop so we send them synchronously per socket.
         const subs = controllerStore.getAll();
         for (const ws of subs) {
           if (controllerStore.isSubscribed(ws, agentId) && ws.readyState === ws.OPEN) {
