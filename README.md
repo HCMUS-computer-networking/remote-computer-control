@@ -30,6 +30,9 @@ Full detail: see [`Architecture.md`](Architecture.md) and the per-subsystem desi
 - **Webcam** — MJPEG stream with a visible on-screen red-dot indicator while the camera is on.
 - **Consent flow** — every sensitive module requires a confirmation dialog on the Agent (30 s timeout, anti-DoS single-popup guard).
 - **Dynamic policy** — the Controller pushes the app whitelist and sandbox path into Agent RAM without a restart.
+- **Enterprise Security (OWASP 2024 & DPAPI)** — PBKDF2 600,000 rounds, ECDH + AES-256-GCM E2EE, RAM-only One-Time PIN (OTP), Windows DPAPI configuration protection, and Symmetric Ratchet key rotation.
+- **Enterprise Performance** — UDP FEC Worker Pool on Gateway (multi-threaded XOR parity recovery) and Frontend Canvas Rendering Bypass (`FrameEventBus` + `requestAnimationFrame`) for low-latency 24 FPS video.
+- **System Hardening** — Lock-free keylogger queue (`ConcurrentQueue`) preventing keyboard input lag, and core system process protection blacklist (`csrss.exe`, `lsass.exe`, `SYSTEM`).
 
 ## 3. Environment requirements
 
