@@ -63,6 +63,15 @@ const usePermissionStore = create(function (set, get)
                 }
             }),
 
+        // Drop all granted features back to 'idle' (called on reconnect).
+        revokeAll: (agent_id) =>
+            set(function (s)
+            {
+                const nextPerms = { ...s.permissions }
+                delete nextPerms[agent_id]
+                return { permissions: nextPerms }
+            }),
+
         // Non-reactive read for hook / callback code (components use a selector).
         getStatus: (agent_id, feature) =>
         {

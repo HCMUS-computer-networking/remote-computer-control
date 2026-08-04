@@ -41,6 +41,7 @@ export const MSG_TYPE =
     POWER_RESULT      : "power_result",       // agent confirms or denies the power action
     POLICY_UPDATE_RESULT : "policy_update_result", // agent confirms it applied the pushed policy
     PERMISSION_RESULT : "permission_result",  // agent grants or denies a permission_request
+    PERMISSIONS_RESET : "permissions_reset",  // agent asks to reset all permissions and re-handshake
     SYSINFO_RESULT    : "sysinfo_result",     // reply to sysinfo request (CPU / RAM / Disk metrics)
     INPUT_STARTED     : "input_started",      // agent confirmed Remote Input consent granted + indicator shown
     INPUT_STOPPED     : "input_stopped",      // agent confirmed Remote Input revoked (or stop_module)

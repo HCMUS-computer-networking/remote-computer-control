@@ -1,7 +1,8 @@
 /* FocusView.jsx — single-agent view: 7-tab bar + active module panel */
-import { AppWindow, Cpu, MonitorPlay, Keyboard, FolderTree, Video, Power, MousePointerClick, Activity } from 'lucide-react'
+import { AppWindow, Cpu, MonitorPlay, Keyboard, FolderTree, Video, Power, MousePointerClick, Activity, Loader2 } from 'lucide-react'
 import useUiStore    from '../../store/UiStore'
 import useAgentStore from '../../store/AgentStore'
+import useE2EEStore  from '../../store/E2EEStore'
 
 import SysInfoTab     from '../modules/SysInfoTab'
 import ApplicationTab from '../modules/ApplicationTab'
@@ -53,6 +54,7 @@ function FocusView()
   const setActiveTab      = useUiStore((s) => s.setActiveTab)
   const focused_agent_id  = useAgentStore((s) => s.focused_agent_id)
   const agents            = useAgentStore((s) => s.agents)
+  const e2eeState         = useE2EEStore((s) => s.sessions[focused_agent_id]?.state || 'uninitialized')
 
   const focused_agent = agents.find((a) => a.id === focused_agent_id) ?? null
 
@@ -94,7 +96,14 @@ function FocusView()
       </nav>
 
       {/* active module panel — sysinfo skips PermissionGate (read-only metrics) */}
-      <div className="focus-view__panel" role="tabpanel">
+      <div className="focus-view__panel" style={{ position: 'relative' }} role="tabpanel">
+        {e2eeState !== 'ready' && (
+           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-card)', zIndex: 10 }}>
+               <Loader2 size={32} className="spin" style={{ marginBottom: '1rem', color: 'var(--brand)' }} />
+               <h3 style={{ margin: '0 0 0.5rem 0' }}>Đang thiết lập E2EE...</h3>
+               <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem', margin: 0 }}>Trao đổi khóa công khai và xác thực.</p>
+           </div>
+        )}
         {NO_PERMISSION_TABS.has(active_tab)
           ? <ActivePanel key={focused_agent.id} agent={focused_agent} />
           : (

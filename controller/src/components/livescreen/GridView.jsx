@@ -13,12 +13,13 @@
 // so only the tile whose frame changed will re-render.
 
 import { useEffect, useRef }  from 'react'
-import { Inbox, Expand }      from 'lucide-react'
+import { Inbox, Expand, Loader2 }      from 'lucide-react'
 import useAgentStore           from '../../store/AgentStore'
 import useUiStore              from '../../store/UiStore'
 import useModuleStore          from '../../store/ModuleStore'
 import useConnectionStore      from '../../store/ConnectionStore'
 import useAgentSocket          from '../../hooks/UseAgentSocket'
+import useE2EEStore            from '../../store/E2EEStore'
 import { buildStreamStart, buildStreamStop } from '../../services/Protocol'
 import FrameCanvas             from '../FrameCanvas'
 
@@ -35,6 +36,7 @@ function AgentThumbnail({ agent })
     // Subscribe to ONLY this agent's screen frame buffer.
     // Other agents' frame updates will not cause this tile to re-render.
     const frame_buffer = useModuleStore((s) => s.data[agent.id]?.screen?.frame ?? null)
+    const e2eeState = useE2EEStore(s => s.sessions[agent.id]?.state || 'uninitialized')
 
     function handleExpand()
     {
@@ -65,9 +67,16 @@ function AgentThumbnail({ agent })
 
             {/* feed area — FrameCanvas when frame data exists, placeholder otherwise */}
             <div className="agent-thumbnail__feed">
-                {frame_buffer
-                    ? <FrameCanvas frame_buffer={frame_buffer} width="100%" height="100%" />
-                    : <span className="agent-thumbnail__placeholder">Waiting for stream…</span>}
+                {e2eeState !== 'ready'
+                    ? (
+                        <div className="agent-thumbnail__placeholder" style={{flexDirection: 'column', color: 'var(--brand)'}}>
+                            <Loader2 size={24} className="spin" style={{marginBottom: '0.5rem'}} />
+                            <span style={{color: 'var(--text-dim)', fontSize: '0.75rem'}}>E2EE Negotiating...</span>
+                        </div>
+                    )
+                    : frame_buffer
+                        ? <FrameCanvas frame_buffer={frame_buffer} width="100%" height="100%" />
+                        : <span className="agent-thumbnail__placeholder">Waiting for stream…</span>}
             </div>
         </div>
     )

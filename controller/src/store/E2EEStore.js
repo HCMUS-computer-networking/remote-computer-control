@@ -126,6 +126,14 @@ const useE2EEStore = create((set, get) => ({
         }))
     },
 
+    resetSession: (agentId) => {
+        set((prev) => {
+            const nextSessions = { ...prev.sessions };
+            delete nextSessions[agentId];
+            return { sessions: nextSessions };
+        })
+    },
+
     getSendSeqAndIncrement: (agentId) => {
         const session = get().sessions[agentId]
         if (!session || session.state !== 'ready') return null

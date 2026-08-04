@@ -693,7 +693,7 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
                 if (msg.online === false)
                 {
                     useModuleStore.getState().clearLiveFlagsForAgent(msg.agent_id)
-                    useE2EEStore.getState().setSessionState(msg.agent_id, 'uninitialized')
+                    useE2EEStore.getState().resetSession(msg.agent_id)
                 }
                 else if (msg.online === true)
                 {
@@ -919,6 +919,14 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
                     : `${msg.feature} denied on ${msg.agent_id}: ${msg.message || 'user declined'}`,
                 msg.granted ? 'success' : 'error'
             )
+            break
+
+        case MSG_TYPE.PERMISSIONS_RESET:
+            usePermissionStore.getState().revokeAll(msg.agent_id)
+            useModuleStore.getState().clearLiveFlagsForAgent(msg.agent_id)
+            useE2EEStore.getState().resetSession(msg.agent_id)
+            initE2EE(msg.agent_id, _socket)
+            addToast(`Agent ${msg.agent_id} reconnected. E2EE is negotiating...`, 'info')
             break
 
         // ── E2EE ─────────────────────────────────────────────────────────
