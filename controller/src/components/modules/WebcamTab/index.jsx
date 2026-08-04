@@ -39,7 +39,7 @@ from '../../../services/Protocol'
 // re-implement canvas / ImageBitmap logic here; keep it in FrameCanvas.
 import FrameCanvas from '../../FrameCanvas'
 
-const WEBCAM_FPS     = 15   // per docs/formatjson/webcam.json default
+const WEBCAM_FPS     = 15   // per docs/protocol/webcam.json default
 const WEBCAM_QUALITY = 60   // JPEG quality (0–100)
 
 // Allowed ranges — matched to Protocol.js buildWebcamStart guard.

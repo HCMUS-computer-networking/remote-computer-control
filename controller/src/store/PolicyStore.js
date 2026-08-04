@@ -4,7 +4,7 @@
 // sends this on connect (policy_update); the Agent overrides its local config
 // in RAM and replies policy_update_result. Module tabs read the whitelist and
 // sandbox path from HERE instead of hard-coding them, per project rules.
-// Format: docs/formatjson/PolicyUpdate.json.
+// Format: docs/protocol/PolicyUpdate.json.
 import { create } from 'zustand'
 
 // Default policy the Controller ships with. Covers the common apps across the

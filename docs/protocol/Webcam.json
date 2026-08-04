@@ -1,7 +1,7 @@
 {
   "_comment": "Webcam module messages — Controller <-> Gateway <-> Agent",
   "_consent_note": "Agent MUST display a visible on-screen indicator while webcam is active. User consent is required before any frames are sent.",
-  "_binary_note": "Frames use the same two-message pattern as livescreen: JSON 'frame_meta' followed by binary JPEG (ArrayBuffer).",
+  "_binary_note": "Frames use the same two-message pattern as livescreen: JSON 'frame_meta' followed by binary JPEG (ArrayBuffer). NOTE: Agent may send frames to Gateway via UDP :9000; Gateway proxies them back to Controller over WebSocket.",
 
   "controller_to_gateway": {
 

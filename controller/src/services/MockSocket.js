@@ -1,7 +1,7 @@
 // MockSocket.js — simulates the Gateway + Agent for local development.
 // Has the SAME API shape as Socket.js (real WebSocket wrapper) so swapping
 // them only requires changing one import line — no component changes needed.
-// All response formats follow docs/formatjson/*.json exactly.
+// All response formats follow docs/protocol/*.json exactly.
 // No external dependencies.
 
 // ─── Timing constants ─────────────────────────────────────────────────────────
@@ -241,7 +241,7 @@ function clampRange(v, min, max)
 // Build a fresh process list with random cpu_percent / ram_mb values.
 // Uses the OS-specific pool so process names look realistic per platform.
 // Called each time proc_list is requested so numbers look "live".
-// Format matches docs/formatjson/process.json → proc_list_result
+// Format matches docs/protocol/process.json → proc_list_result
 function generateFakeProcs(os_family)
 {
     const pool = PROC_NAME_POOL_BY_OS[os_family] ?? PROC_NAME_POOL_BY_OS.windows
@@ -795,7 +795,7 @@ class MockSocket
     }
 
     // Apply a pushed security policy and confirm per agent.
-    // Format: docs/formatjson/PolicyUpdate.json → policy_update_result
+    // Format: docs/protocol/PolicyUpdate.json → policy_update_result
     _handlePolicy(msg)
     {
         const app_whitelist = msg.params?.app_whitelist ?? []
@@ -816,7 +816,7 @@ class MockSocket
 
     _handlePower(msg)
     {
-        // Format: docs/formatjson/power.json → power_result
+        // Format: docs/protocol/power.json → power_result
         this._replyPerAgent(msg.target_agents, (agent_id) =>
         ({
             type      : 'power_result',
@@ -941,7 +941,7 @@ class MockSocket
             {
                 if (!this._connected) return;
 
-                // 1) Send frame_meta JSON (matches docs/formatjson/livescreen.json)
+                // 1) Send frame_meta JSON (matches docs/protocol/livescreen.json)
                 if (this._on_message)
                 {
                     this._on_message(

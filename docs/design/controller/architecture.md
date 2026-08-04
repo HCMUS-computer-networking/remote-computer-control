@@ -26,21 +26,6 @@ The document describes the CURRENT state of the code only.
 
 ```
 controller/
-├── docs/formatjson/              # authoritative JSON message specs (one file per module)
-│   ├── Application.json
-│   ├── Connection.json
-│   ├── File.json
-│   ├── Input.json                # remote input (not wired to any component)
-│   ├── Instruction.md
-│   ├── Keylog.json
-│   ├── Livescreen.json
-│   ├── PolicyUpdate.json
-│   ├── Power.json
-│   ├── Process.json
-│   ├── SysInfo.json
-│   └── Webcam.json
-├── Architecture.md               # this file
-├── README.md
 ├── package.json                  # deps: react, react-dom, zustand, lucide-react, recharts
 ├── vite.config.js
 └── src/
@@ -531,7 +516,7 @@ subscription / stream it started.
 
 ## 10. Message catalog
 
-Full specs live in `docs/formatjson/*.json`. Types actually implemented in the
+Full specs live in `docs/protocol/*.json`. Types actually implemented in the
 Controller code:
 
 Outbound envelopes

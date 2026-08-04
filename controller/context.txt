@@ -26,7 +26,7 @@ FIXED TECH STACK (do not change on your own):
 - File transfer: 512KB base64 chunks inside JSON (fs_put upload, fs_get_result download) — will move to binary in Phase 4; for now it stays base64.
 - Components NEVER call the socket directly — they talk only through Zustand stores / the hook (UseAgentSocket).
 
-JSON PROTOCOL — single authoritative source: forclaude/controller/docs/formatjson/ (7 module files + PolicyUpdate.json). ALWAYS consult these files before adding/editing a message; NEVER invent field names.
+JSON PROTOCOL — single authoritative source: forclaude/remote-computer-control/docs/protocol/ (7 module files + PolicyUpdate.json). ALWAYS consult these files before adding/editing a message; NEVER invent field names.
 - Outbound: list_agents; {type:"request", module, params, target_agents}; {type:"power", action, target_agents}; {type:"policy_update", params:{app_whitelist, sandbox_path}, target_agents}; {type:"permission_request"|"permission_revoke"|"stop_module", feature, target_agents}.
 - Inbound: agents_list, agent_status, *_result (app_list_result, proc_list_result, ...), frame_meta (+ binary JPEG immediately after), keylog, *_started/stopped/denied, fs_*, power_result, policy_update_result, permission_result. Gateway automatically STAMPS agent_id onto every message from an Agent.
 - Feature vocab (must match the Agent exactly): application/process/screen/keylog/file/webcam/power — the "permission group", DISTINCT from MODULE consts for commands (app_list, proc_list, screenshot, screen_stream, keylog_start, fs_list, fs_get, fs_put, webcam_start/stop) and POWER (lock/restart/shutdown/sleep).
@@ -54,7 +54,7 @@ CODE RULES (mandatory):
 - NO hardcoded colors (hex/rgb) / font sizes / spacing — use the project's CSS variables (dark/light theme already in place).
 - Zustand subscribes to the correct slice: useStore(s => s.x), NEVER the whole store.
 - Clean up every useEffect (setInterval polling, event listeners, WS handlers, revoke Blob URLs and ObjectURLs, ImageBitmap.close).
-- ALWAYS MAINTAIN Architecture.md at forclaude/controller/: whenever you create or edit code, update Architecture.md so it reflects the CURRENT code architecture (file list + roles, state in each store, data flow component→hook→store→service, supported messages/types, conventions in use). Architecture.md describes ONLY the CURRENT state — NEVER write "changed from X to Y", "upgraded to…", no change log/history. If I forget to remind you, update Architecture.md proactively and tell me briefly what changed.
+- ALWAYS MAINTAIN docs/design/controller/architecture.md at forclaude/remote-computer-control/: whenever you create or edit code, update architecture.md so it reflects the CURRENT code architecture (file list + roles, state in each store, data flow component→hook→store→service, supported messages/types, conventions in use). Architecture.md describes ONLY the CURRENT state — NEVER write "changed from X to Y", "upgraded to…", no change log/history. If I forget to remind you, update Architecture.md proactively and tell me briefly what changed.
 
 WAY OF WORKING:
 - Before editing: read the relevant files (existing patterns to follow — ProcessTab as a tab template, the upload progress code in FileTab/index.jsx as the progress-bar style), then briefly list the files/functions you will touch, then code. Before coding a complex part, briefly state your plan for me to approve.

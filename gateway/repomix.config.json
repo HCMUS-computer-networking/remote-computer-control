@@ -7,7 +7,7 @@
         "useGitignore": true,
         "useDefaultPatterns": true,
         "customPatterns": [
-            "formatjson/",
+            "../docs/protocol/",
             "tests/",
             "scripts/",
             "logs/",

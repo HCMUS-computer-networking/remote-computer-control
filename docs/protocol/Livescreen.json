@@ -1,6 +1,6 @@
 {
   "_comment": "Screenshot / Live Stream module messages — Controller <-> Gateway <-> Agent",
-  "_note_binary": "Image data is sent as TWO consecutive WebSocket messages: first a JSON 'frame_meta', then one BINARY message (raw JPEG bytes as ArrayBuffer). NOTE: Agent sends frames to Gateway via UDP Port 9000 for ultra-low latency, but Gateway proxies this back to Controller over WebSocket sequentially.",
+  "_note_binary": "Image data is sent as TWO consecutive WebSocket messages: first a JSON 'frame_meta', then one BINARY message (raw JPEG bytes as ArrayBuffer). The receiver must pair them in order. NOTE: Agent may send frames to Gateway via UDP :9000 for ultra-low latency; Gateway proxies them back to Controller over WebSocket sequentially.",
 
   "controller_to_gateway": {
 

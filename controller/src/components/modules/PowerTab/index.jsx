@@ -12,7 +12,7 @@
 //   - If the countdown reaches 0, we send `power` with that action.
 //   - If the operator clicks Cancel, we do NOT send anything to the Agent
 //     (nothing was sent to start with — the countdown lives entirely on the
-//     Controller side, per docs/formatjson/power.json). We only surface a
+//     Controller side, per docs/protocol/power.json). We only surface a
 //     local "cancelled" toast so the operator sees the action was aborted.
 //
 // All commands go through useAgentSocket — never touch the socket directly.

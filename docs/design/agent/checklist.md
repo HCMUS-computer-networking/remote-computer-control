@@ -2,14 +2,14 @@
 
 > Nguồn định hướng: `report.md` mục **III.1 (Agent)** và **IV.4 (Giai đoạn 4)**. Phương án B đã HOÀN THÀNH end-to-end. Nhóm làm theo triết lý **3 team code độc lập, chốt cross-team ngay từ đầu ở buổi kick-off** — không có ai chờ ai giữa lúc code.
 >
-> **Trạng thái Agent hiện tại (03/08/2026):** Agent đã CODE XONG 3 hạng mục lớn — Remote Input, Binary File Transfer, Delta Encoding — trước buổi kick-off nhóm. Code Agent hiện đi TRƯỚC spec chung ở `docs/formatjson/` → nhiệm vụ còn lại là **sync spec** để buổi kick-off ratify + Controller/Gateway theo cùng.
+> **Trạng thái Agent hiện tại (03/08/2026):** Agent đã CODE XONG 3 hạng mục lớn — Remote Input, Binary File Transfer, Delta Encoding — trước buổi kick-off nhóm. Code Agent hiện đi TRƯỚC spec chung ở `docs/protocol/` → nhiệm vụ còn lại là **sync spec** để buổi kick-off ratify + Controller/Gateway theo cùng.
 >
 > File này gồm 3 phần:
-> - **PHẦN A** — **Sync spec docs/formatjson/** (ưu tiên 1, làm trước buổi kick-off nhóm). Đây là input để nhóm chốt.
+> - **PHẦN A** — **Sync spec docs/protocol/** (ưu tiên 1, làm trước buổi kick-off nhóm). Đây là input để nhóm chốt.
 > - **PHẦN S** — Phối hợp Gateway Giai đoạn 1 (S1 per-agent secret, S2 issuer field) — chờ Gateway xong G5/G6 rồi làm, không block ai.
 > - **PHẦN LƯU TRỮ** — các prompt A1/A2 checklist cũ (Remote Input, Binary File Transfer) đã CODE XONG trong commit `b0977f9` — giữ để tra cứu.
 >
-> 7 quyết định cross-team nhóm phải chốt ở kick-off: `Context_Controller_KeHoach.md` **mục 13.4**.
+> 7 quyết định cross-team nhóm phải chốt ở kick-off: `docs/history/controller-context.md` **mục 13.4**.
 
 ---
 
@@ -25,7 +25,7 @@
 | Consent memory trong session | (đã có từ lâu) | `Core/AgentClient.cs:25` `_grantedFeatures` HashSet |
 | SysInfo module | `cbf047f` (đã cũ) | `Modules/SysInfoModule.cs` — command `sysinfo` trả 10 field |
 
-**Vấn đề hiện tại:** Code Agent LỆCH spec chung ở `controller/docs/formatjson/` và `gateway-new/formatjson/`:
+**Vấn đề hiện tại:** Code Agent LỆCH spec chung ở `docs/protocol/`:
 - ✅ `SysInfo.json` — chưa tồn tại (code có nhưng spec không) [CẦN BỔ SUNG TRONG FORMATJSON]
 - ✅ `Input.json` — chưa tồn tại (code có nhưng spec không) [CẦN BỔ SUNG TRONG FORMATJSON]
 - ✅ `File.json` — spec còn ghi base64 + không `transfer_id`, LỆCH code binary + `transfer_id` + `sha256` hiện tại [CẦN UPDATE FORMATJSON]
@@ -49,7 +49,7 @@ VIỆC AGENT ĐÃ XONG (trong 3 commit gần nhất):
 - Delta Encoding Screen (Modules/StreamModule.cs, commit 1e1c5d2): GetDifferenceBoundingBox tính vùng thay đổi so frame trước; thêm is_keyframe vào frame_meta; KeyframeInterval=30 (mỗi 30 frame gửi 1 keyframe).
 
 VIỆC AGENT CÒN LẠI:
-- PHẦN A: Sync spec docs/formatjson/*.json khớp code hiện tại — SysInfo.json (MỚI), Input.json (MỚI), File.json (UPDATE binary+transfer_id), Livescreen.json (UPDATE is_keyframe). Đây là input cho buổi kick-off nhóm — làm SỚM.
+- PHẦN A: Sync spec docs/protocol/*.json khớp code hiện tại — SysInfo.json (MỚI), Input.json (MỚI), File.json (UPDATE binary+transfer_id), Livescreen.json (UPDATE is_keyframe). Đây là input cho buổi kick-off nhóm — làm SỚM.
 - PHẦN S: chờ Gateway xong G5 (per-agent secret) rồi làm S1; chờ G6 (issuer field) rồi làm S2.
 - KHÔNG code thêm tính năng ngoài report.md — Giai đoạn 4 đã coi như xong.
 
@@ -65,7 +65,7 @@ TECH STACK & KIẾN TRÚC HIỆN TẠI (không tự đổi):
 
 QUY TẮC:
 - KHÔNG refactor kiến trúc. KHÔNG thêm tính năng ngoài yêu cầu.
-- Với PHẦN A: chỉ viết/sửa file *.json trong docs/formatjson/ — KHÔNG đụng file .cs.
+- Với PHẦN A: chỉ viết/sửa file *.json trong docs/protocol/ — KHÔNG đụng file .cs.
 - Với PHẦN S: chỉ sửa file .cs khi Gateway đã xong prereq — có thể check bằng cách grep G5/G6 trong gateway-new/src/.
 - Comment tiếng Anh, ngắn gọn WHY-not-WHAT. Giữ style code hiện tại.
 - Trước khi sửa: đọc file liên quan rồi liệt kê ngắn file/hàm sẽ đụng. KHÔNG động vào code Controller/Gateway.
@@ -76,9 +76,9 @@ Nếu hiểu, đáp "OK, ready" ngắn và chờ yêu cầu cụ thể. KHÔNG c
 
 ---
 
-## PHẦN A. SYNC SPEC `docs/formatjson/` (ưu tiên 1 — trước kick-off)
+## PHẦN A. SYNC SPEC `docs/protocol/` (ưu tiên 1 — trước kick-off)
 
-> Cả 4 mục dưới đây CHỈ viết file JSON — không đụng code C#. Bám format của file có sẵn (vd `Process.json`, `Application.json`) — cấu trúc `TX` + `RX` + `_desc`. Viết đồng thời 2 nơi: `controller/docs/formatjson/*.json` (nguồn) + `gateway-new/formatjson/*.json` (mirror — dùng tên lowercase khớp convention Gateway team đang giữ).
+> Cả 4 mục dưới đây CHỈ viết file JSON — không đụng code C#. Bám format của file có sẵn (vd `Process.json`, `Application.json`) — cấu trúc `TX` + `RX` + `_desc`. Viết vào `docs/protocol/*.json` (single source of truth cho cả 3 team).
 
 ### 🧩 A1. Tạo `SysInfo.json` (MỚI)
 
@@ -86,7 +86,7 @@ Nếu hiểu, đáp "OK, ready" ngắn và chờ yêu cầu cụ thể. KHÔNG c
 
 **Prompt:**
 ```
-Tạo controller/docs/formatjson/SysInfo.json và gateway-new/formatjson/sysinfo.json (nội dung giống nhau, chỉ khác tên file).
+Tạo docs/protocol/SysInfo.json.
 
 Bám format Process.json làm mẫu. Bắt buộc:
 
@@ -135,7 +135,7 @@ Thêm _desc ngắn tiếng Anh cho mỗi mục TX/RX/ERROR. KHÔNG sửa code C#
 
 **Prompt:**
 ```
-Tạo controller/docs/formatjson/Input.json và gateway-new/formatjson/input.json.
+Tạo docs/protocol/Input.json.
 
 Bám format Process.json làm mẫu. Bắt buộc — grep SupportedCommands trong InputModule.cs và các Handle* method để lấy đúng params:
 
@@ -169,11 +169,11 @@ KHÔNG sửa code C#. Thêm _desc tiếng Anh cho mỗi mục.
 - JSON metadata gửi trước (có `transfer_id`, `total_size`, `chunk_index`, `total_chunks`, `sha256` nullable — chỉ ở chunk cuối)
 - Binary WebSocket frame kế tiếp chứa raw bytes (KHÔNG còn `data_base64`)
 
-Spec hiện tại `controller/docs/formatjson/File.json` vẫn ghi base64 + không có `transfer_id` → LỆCH code Agent.
+Spec hiện tại `docs/protocol/File.json` vẫn ghi base64 + không có `transfer_id` → LỆCH code Agent.
 
 **Prompt:**
 ```
-Cập nhật controller/docs/formatjson/File.json (và mirror gateway-new/formatjson/file.json). ĐỌC FileModule.cs (GetFileAsync line 198-249, PutFileAsync line 65-110) TRƯỚC khi viết spec.
+Cập nhật docs/protocol/File.json. ĐỌC FileModule.cs (GetFileAsync line 198-249, PutFileAsync line 65-110) TRƯỚC khi viết spec.
 
 Thay đổi cần làm:
 
@@ -217,7 +217,7 @@ Thay đổi cần làm:
 
 **Prompt:**
 ```
-Cập nhật controller/docs/formatjson/Livescreen.json (và mirror gateway-new/formatjson/livescreen.json).
+Cập nhật docs/protocol/Livescreen.json.
 
 ĐỌC StreamModule.cs (grep "frame_meta" hoặc "is_keyframe") TRƯỚC khi viết spec.
 
@@ -290,10 +290,10 @@ Schema issuer đã chốt ở nhóm là STRING username (không phải object).
 KHÔNG code. Tự rà soát toàn bộ thay đổi vừa thực hiện. Trả lời từng câu Có/Không (N/A nếu không áp dụng) + 1 dòng giải thích + file:line:
 
 Với PHẦN A (spec sync):
-1. Field name trong docs/formatjson/*.json vừa viết có khớp CHÍNH XÁC với property name trong code C# không (grep chéo)?
+1. Field name trong docs/protocol/*.json vừa viết có khớp CHÍNH XÁC với property name trong code C# không (grep chéo)?
 2. Có field nào trong code C# gửi mà spec quên không?
 3. Có mục nào trong spec mô tả field/hành vi mà code C# không có (bịa)?
-4. controller/docs/formatjson/ và gateway-new/formatjson/ có đồng bộ chưa (cùng field, cùng ý)?
+4. docs/protocol/ đã reflect đúng field / hành vi code Agent chưa?
 
 Với PHẦN S:
 5. Có backwards-compat để Agent chạy được cả khi Gateway CHƯA xong G5/G6 không (fallback secret cũ, fallback issuer=unknown)?

@@ -18,7 +18,7 @@ const { validateParams } = require('../validation/commandSchemas');
 
 const ajv = new Ajv({ allErrors: true });
 
-// ─── Module Whitelist (from formatjson/*.json + power/policy specs) ───
+// ─── Module Whitelist (from ../../docs/protocol/*.json + power/policy specs) ───
 const VALID_MODULES = [
   'app_list',
   'app_start',
@@ -36,7 +36,7 @@ const VALID_MODULES = [
   'webcam_start',
   'webcam_stop',
   'sysinfo',
-  // Additional valid commands defined in formatjson/ and RELAY_TYPES
+  // Additional valid commands defined in ../../docs/protocol/ and RELAY_TYPES
   'power_lock',
   'power_restart',
   'power_shutdown',

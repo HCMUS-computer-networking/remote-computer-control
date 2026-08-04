@@ -1,5 +1,5 @@
 // Protocol.js — builds and parses all JSON messages exchanged over the WebSocket.
-// All formats follow the templates in docs/formatjson/*.json exactly.
+// All formats follow the templates in docs/protocol/*.json exactly.
 // Components never call these directly; they go through UseAgentSocket (hook) only.
 // No external dependencies — plain JSON only.
 
@@ -65,38 +65,38 @@ export const FEATURE =
 
 export const MODULE =
 {
-    // Application (docs/formatjson/application.json)
+    // Application (docs/protocol/application.json)
     APP_LIST  : "app_list",   // request running / installed app list
     APP_START : "app_start",  // launch a whitelisted app by name
     APP_STOP  : "app_stop",   // stop a running whitelisted app by name
 
-    // Process (docs/formatjson/process.json)
+    // Process (docs/protocol/process.json)
     PROC_LIST : "proc_list",  // request full process list
     PROC_KILL : "proc_kill",  // terminate a process by PID
 
-    // Screen (docs/formatjson/livescreen.json)
+    // Screen (docs/protocol/livescreen.json)
     SCREENSHOT         : "screenshot",          // single capture (mode: "once")
     SCREEN_STREAM      : "screen_stream",       // start continuous stream
     SCREEN_STREAM_STOP : "screen_stream_stop",  // stop the stream
 
-    // Keylog (docs/formatjson/keylog.json)
+    // Keylog (docs/protocol/keylog.json)
     KEYLOG_START : "keylog_start",   // start keystroke capture (requires Agent consent)
     KEYLOG_STOP  : "keylog_stop",    // stop keystroke capture
 
-    // File — sandbox only (docs/formatjson/file.json)
+    // File — sandbox only (docs/protocol/file.json)
     FS_LIST : "fs_list",   // list folder contents
     FS_GET  : "fs_get",    // download a file (base64 chunks)
     FS_PUT  : "fs_put",    // upload a file (base64 chunks)
 
-    // Webcam (docs/formatjson/webcam.json)
+    // Webcam (docs/protocol/webcam.json)
     WEBCAM_START : "webcam_start",   // start webcam stream (requires Agent consent)
     WEBCAM_STOP  : "webcam_stop",    // stop webcam stream
 
-    // SysInfo (docs/formatjson/SysInfo.json) — no consent required, read-only metrics
+    // SysInfo (docs/protocol/SysInfo.json) — no consent required, read-only metrics
     SYSINFO : "sysinfo",   // request current CPU / RAM / Disk / uptime snapshot
 }
 
-// ─── Power action constants (docs/formatjson/power.json) ─────────────────────
+// ─── Power action constants (docs/protocol/power.json) ─────────────────────
 
 export const POWER_ACTION =
 {
@@ -510,13 +510,13 @@ export function normalizeIncoming(raw_msg)
 // ─── Connection ───────────────────────────────────────────────────────────────
 
 // Ask the Gateway for the current list of all known agents.
-// Format: docs/formatjson/connection.json → list_agents
+// Format: docs/protocol/connection.json → list_agents
 export function buildListAgents()
 {
     return buildMessage(MSG_TYPE.LIST_AGENTS, {})
 }
 
-// ─── Policy update (docs/formatjson/PolicyUpdate.json) ───────────────────────
+// ─── Policy update (docs/protocol/PolicyUpdate.json) ───────────────────────
 
 // Push the security policy to one or more agents. The Agent overrides its local
 // config in RAM and replies policy_update_result. Uses its own "policy_update"
@@ -609,7 +609,7 @@ export function buildRequest(module, params, targetAgents)
     })
 }
 
-// ─── Application module (docs/formatjson/application.json) ───────────────────
+// ─── Application module (docs/protocol/application.json) ───────────────────
 
 export function buildAppList(targetAgents)
 {
@@ -629,7 +629,7 @@ export function buildAppStop(name, targetAgents)
     return buildRequest(MODULE.APP_STOP, { name }, targetAgents)
 }
 
-// ─── Process module (docs/formatjson/process.json) ───────────────────────────
+// ─── Process module (docs/protocol/process.json) ───────────────────────────
 
 export function buildProcList(targetAgents)
 {
@@ -643,7 +643,7 @@ export function buildProcKill(pid, targetAgents)
     return buildRequest(MODULE.PROC_KILL, { pid }, targetAgents)
 }
 
-// ─── Screen module (docs/formatjson/livescreen.json) ─────────────────────────
+// ─── Screen module (docs/protocol/livescreen.json) ─────────────────────────
 
 // Request one screenshot from the given agents.
 export function buildScreenshot(targetAgents)
@@ -674,7 +674,7 @@ export function buildStreamStop(targetAgents)
     return buildRequest(MODULE.SCREEN_STREAM_STOP, {}, targetAgents)
 }
 
-// ─── Keylog module (docs/formatjson/keylog.json) ─────────────────────────────
+// ─── Keylog module (docs/protocol/keylog.json) ─────────────────────────────
 
 // Start keystroke capture — Agent will show a consent popup first.
 export function buildKeylogStart(targetAgents)
@@ -687,7 +687,7 @@ export function buildKeylogStop(targetAgents)
     return buildRequest(MODULE.KEYLOG_STOP, {}, targetAgents)
 }
 
-// ─── File module — sandbox only (docs/formatjson/file.json) ──────────────────
+// ─── File module — sandbox only (docs/protocol/file.json) ──────────────────
 
 // List the contents of a sandbox folder.
 // path — relative path inside the sandbox root (e.g. "/" for root, "/reports/")
@@ -737,7 +737,7 @@ export function buildFsPut(filePath, chunk_info, targetAgents)
     targetAgents)
 }
 
-// ─── Webcam module (docs/formatjson/webcam.json) ─────────────────────────────
+// ─── Webcam module (docs/protocol/webcam.json) ─────────────────────────────
 
 // Start webcam stream — Agent will show a consent popup and on-screen indicator.
 // fps     — frames per second (default: 15 per webcam.json template)
@@ -761,7 +761,7 @@ export function buildWebcamStop(targetAgents)
     return buildRequest(MODULE.WEBCAM_STOP, {}, targetAgents)
 }
 
-// ─── SysInfo module (docs/formatjson/SysInfo.json) ───────────────────────────
+// ─── SysInfo module (docs/protocol/SysInfo.json) ───────────────────────────
 // Read-only hardware / OS metrics — Agent does NOT ask for consent on this.
 // Reply is a "sysinfo_result" message with cpu_percent / ram_used_mb /
 // ram_total_mb / disk_used_gb / disk_total_gb / uptime_seconds / hostname / ip / os.
@@ -770,7 +770,7 @@ export function buildSysInfo(targetAgents)
     return buildRequest(MODULE.SYSINFO, {}, targetAgents)
 }
 
-// ─── Power module (docs/formatjson/power.json) ───────────────────────────────
+// ─── Power module (docs/protocol/power.json) ───────────────────────────────
 
 // Send a power action. Uses its own "power" type, NOT the generic "request" type.
 // action — one of the POWER_ACTION constants: lock / restart / shutdown / sleep

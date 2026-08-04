@@ -663,7 +663,7 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
 
         case MSG_TYPE.FS_GET_RESULT:
         {
-            // Two chunk formats are supported (see docs/formatjson/File.json):
+            // Two chunk formats are supported (see docs/protocol/File.json):
             //   1) JSON mode  — the chunk bytes are inside data_base64.
             //   2) Binary mode — this JSON is only metadata; the next WS binary
             //                    frame carries the raw bytes. We stash the meta
