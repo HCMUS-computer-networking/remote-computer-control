@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="MyApplication.app"/>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <!--
+          UIPI (User Interface Privilege Isolation) Bypass:
+          If you set uiAccess="true", the application can interact with higher privilege windows
+          like Task Manager and UAC Prompt using SendInput.
+          HOWEVER, for uiAccess="true" to work, the application MUST be:
+          1. Digitally Signed (Authenticode).
+          2. Located in a secure directory (e.g., C:\Program Files).
+          
+          For local development, keep it as "false" otherwise the OS will refuse to launch the executable.
+        -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>
