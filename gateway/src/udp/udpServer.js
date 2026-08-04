@@ -1,15 +1,85 @@
-// src/udp/udpServer.js
 const dgram = require('dgram');
 const logger = require('../utils/logger');
 const controllerStore = require('../store/controllerStore');
+const { Worker } = require('worker_threads');
+const path = require('path');
+const os = require('os');
 
 const server = dgram.createSocket('udp4');
 const PORT = 9000;
 
 // Frame buffer map
 // Key: `${agentId}_${moduleType}_${frameId}`
-// Value: { chunks: Array, receivedCount: number, timestamp: number, total: number, meta: object }
+// Value: { chunks: Array, receivedCount: number, timestamp: number, total: number, meta: object, recovering: boolean }
 const frameBuffer = new Map();
+
+// Worker Pool State
+const numWorkers = Math.max(1, Math.min(os.cpus().length - 1, 4));
+const workers = [];
+let nextWorkerIndex = 0;
+const pendingTasks = new Map();
+
+function initWorkerPool() {
+  for (let i = 0; i < numWorkers; i++) {
+    const worker = new Worker(path.resolve(__dirname, 'fecWorker.js'));
+    worker.on('message', (result) => {
+      const task = pendingTasks.get(result.taskId);
+      if (!task) return;
+      pendingTasks.delete(result.taskId);
+      if (task.timeoutId) clearTimeout(task.timeoutId);
+
+      if (result.success) {
+        task.resolve(result);
+      } else {
+        task.reject(new Error(result.error));
+      }
+    });
+    worker.on('error', (err) => logger.error(`[FEC Worker ${i}] Error: ${err.message}`));
+    workers.push(worker);
+  }
+}
+
+function recoverChunkAsync(frameKey, total, totalPayloadLength, chunks, parityData) {
+  return new Promise((resolve, reject) => {
+    // Timeout chống kẹt 40ms để drop frame cũ kịp thời
+    const timeoutId = setTimeout(() => {
+      pendingTasks.delete(frameKey);
+      reject(new Error('FEC calculation timed out (40ms)'));
+    }, 40);
+
+    pendingTasks.set(frameKey, { resolve, reject, timeoutId });
+
+    const worker = workers[nextWorkerIndex++ % workers.length];
+    worker.postMessage({ taskId: frameKey, total, totalPayloadLength, chunks, parityData });
+  });
+}
+
+function finalizeFrame(frameKey, frame) {
+  try {
+    const fullBuffer = Buffer.concat(frame.chunks);
+    frame.meta.len = fullBuffer.length;
+    
+    const metaString = JSON.stringify(frame.meta);
+
+    // Send Metadata (Text) then Payload (Binary)
+    if (controllerStore.hasCommand(frame.meta.command_id)) {
+      controllerStore.sendToCommandInitiator(frame.meta.command_id, metaString);
+      controllerStore.sendToCommandInitiator(frame.meta.command_id, fullBuffer);
+    } else {
+      const subs = controllerStore.getAll();
+      for (const ws of subs) {
+        if (controllerStore.isSubscribed(ws, frame.meta.agent_id) && ws.readyState === ws.OPEN) {
+          ws.send(metaString, { binary: false });
+          ws.send(fullBuffer, { binary: true });
+        }
+      }
+    }
+  } catch (err) {
+    logger.error(`[UDP] Error finalizing frame ${frameKey}: ${err.message}`);
+  } finally {
+    frameBuffer.delete(frameKey);
+  }
+}
 
 server.on('error', (err) => {
   logger.error(`[UDP] Server error:\n${err.stack}`);
@@ -95,70 +165,25 @@ server.on('message', (msg, rinfo) => {
       }
     }
 
-    let frameCompleted = false;
-
     // Kiểm tra đã nhận đủ, hoặc có thể khôi phục bằng FEC
     if (frame.receivedCount === frame.total) {
-      frameCompleted = true;
-    } else if (frame.receivedCount === frame.total - 1 && frame.parityData) {
-      // Phục hồi bằng thuật toán XOR
-      const MAX_PAYLOAD_SIZE = 1300;
-      let missingIndex = -1;
-      for (let i = 0; i < frame.total; i++) {
-        if (!frame.chunks[i]) {
-          missingIndex = i;
-          break;
-        }
-      }
-
-      if (missingIndex !== -1) {
-        let recovered = Buffer.from(frame.parityData); // clone parity array
-
-        for (let i = 0; i < frame.total; i++) {
-          if (i !== missingIndex && frame.chunks[i]) {
-            const chunk = frame.chunks[i];
-            for (let j = 0; j < chunk.length; j++) {
-              recovered[j] ^= chunk[j];
-            }
-          }
-        }
-
-        // Cắt bỏ phần padding 0x00 của chunk cuối (Chú ý 3)
-        if (missingIndex === frame.total - 1 && frame.totalPayloadLength > 0) {
-          let lastChunkSize = frame.totalPayloadLength % MAX_PAYLOAD_SIZE;
-          if (lastChunkSize === 0) lastChunkSize = MAX_PAYLOAD_SIZE;
-          recovered = recovered.subarray(0, lastChunkSize);
-        }
-
-        frame.chunks[missingIndex] = recovered;
-        frame.receivedCount++;
-        frameCompleted = true;
-        logger.info(`[UDP] Khôi phục thành công chunk ${missingIndex}/${frame.total} bằng FEC cho frame ${frameId}`);
-      }
-    }
-
-    // Nếu đã đủ khung hình (hoặc khôi phục xong)
-    if (frameCompleted) {
-      const fullBuffer = Buffer.concat(frame.chunks);
-      frame.meta.len = fullBuffer.length;
+      finalizeFrame(frameKey, frame);
+    } else if (frame.receivedCount === frame.total - 1 && frame.parityData && !frame.recovering) {
+      frame.recovering = true; // Chặn các luồng xử lý trùng lặp
       
-      const metaString = JSON.stringify(frame.meta);
-
-      // Send Metadata (Text) then Payload (Binary)
-      if (controllerStore.hasCommand(commandId)) {
-        controllerStore.sendToCommandInitiator(commandId, metaString);
-        controllerStore.sendToCommandInitiator(commandId, fullBuffer);
-      } else {
-        const subs = controllerStore.getAll();
-        for (const ws of subs) {
-          if (controllerStore.isSubscribed(ws, agentId) && ws.readyState === ws.OPEN) {
-            ws.send(metaString, { binary: false });
-            ws.send(fullBuffer, { binary: true });
-          }
-        }
-      }
-
-      frameBuffer.delete(frameKey);
+      recoverChunkAsync(frameKey, frame.total, frame.totalPayloadLength, frame.chunks, frame.parityData)
+        .then((res) => {
+             let finalFrame = frameBuffer.get(frameKey);
+             if (!finalFrame) return; // Đã bị Garbage Collector xóa mất do timeout 100ms
+             
+             finalFrame.chunks[res.missingIndex] = Buffer.from(res.recovered);
+             finalFrame.receivedCount++;
+             
+             finalizeFrame(frameKey, finalFrame);
+        })
+        .catch(err => {
+             frameBuffer.delete(frameKey); // Xóa frame hỏng
+        });
     }
   } catch (err) {
     logger.error(`[UDP] Packet parsing error: ${err.message}`);
@@ -174,6 +199,7 @@ server.on('listening', () => {
 let gcInterval;
 
 function start(port = PORT) {
+  initWorkerPool();
   server.bind(port);
   
   gcInterval = setInterval(() => {
@@ -188,6 +214,9 @@ function start(port = PORT) {
 
 function shutdown() {
   if (gcInterval) clearInterval(gcInterval);
+  for (const worker of workers) {
+    worker.terminate();
+  }
   try {
     server.close(() => {
       logger.info('[UDP] Server closed');
