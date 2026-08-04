@@ -33,9 +33,9 @@ function AgentThumbnail({ agent })
     const setFocused    = useAgentStore((s) => s.setFocused)
     const setLayoutMode = useUiStore((s) => s.setLayoutMode)
 
-    // Subscribe to ONLY this agent's screen frame buffer.
+    // Subscribe to ONLY this agent's screen frame meta.
     // Other agents' frame updates will not cause this tile to re-render.
-    const frame_buffer = useModuleStore((s) => s.data[agent.id]?.screen?.frame ?? null)
+    const frame_meta = useModuleStore((s) => s.data[agent.id]?.screen?.meta ?? null)
     const e2eeState = useE2EEStore(s => s.sessions[agent.id]?.state || 'uninitialized')
 
     function handleExpand()
@@ -74,8 +74,8 @@ function AgentThumbnail({ agent })
                             <span style={{color: 'var(--text-dim)', fontSize: '0.75rem'}}>E2EE Negotiating...</span>
                         </div>
                     )
-                    : frame_buffer
-                        ? <FrameCanvas frame_buffer={frame_buffer} width="100%" height="100%" />
+                    : frame_meta
+                        ? <FrameCanvas agent_id={agent.id} module="screen" width="100%" height="100%" />
                         : <span className="agent-thumbnail__placeholder">Waiting for stream…</span>}
             </div>
         </div>

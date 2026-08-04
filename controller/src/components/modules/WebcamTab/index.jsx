@@ -74,10 +74,8 @@ function WebcamTab({ agent })
     const quality_parsed = parseIntInRange(quality_input, QUALITY_MIN, QUALITY_MAX, 'Quality')
     const form_valid     = !fps_parsed.error && !quality_parsed.error
 
-    // Read this agent's webcam frame_buffer straight from ModuleStore.
-    // The store slot is filled by UseAgentSocket's binary handler whenever
-    // a frame_meta with module="webcam" is followed by its JPEG payload.
-    const frame_buffer  = useModuleStore((s) => s.data[agent.id]?.webcam?.frame        ?? null)
+    // Read this agent's webcam frame_meta straight from ModuleStore.
+    // The frame_buffer is now distributed directly via FrameEventBus.
     const frame_meta    = useModuleStore((s) => s.data[agent.id]?.webcam?.meta         ?? null)
     const webcam_active = useModuleStore((s) => s.data[agent.id]?.webcam_active        ?? false)
 
@@ -247,14 +245,13 @@ function WebcamTab({ agent })
                             <span>Agent is offline — webcam unavailable</span>
                         </div>
                     )
-                    : frame_buffer
+                    : frame_meta
                     ? (
                         // Use the SHARED FrameCanvas template — same decoder /
                         // renderer that Livescreen uses. Passing module="webcam"
                         // and label="WEBCAM" so the corner badge is visible.
                         <FrameCanvas
-                            frame_buffer={frame_buffer}
-                            frame_meta={frame_meta}
+                            agent_id={agent.id}
                             module="webcam"
                             label="WEBCAM"
                             width="100%"

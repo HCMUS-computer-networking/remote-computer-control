@@ -284,12 +284,20 @@ export default function useAgentSocket()
                         view.setBigUint64(2, BigInt(meta.timestamp_ms), true);
                         
                         const decryptedBuffer = await decryptAESGCM(sessionKey, dataToDecrypt, iv, new Uint8Array(aad));
-                        setModuleData(meta.agent_id, module_key, { frame: decryptedBuffer, meta });
+                        // Bắn event trực tiếp thay vì lưu vào React State (Gotcha 1)
+                        import('../services/FrameEventBus').then(({ default: frameEventBus }) => {
+                            frameEventBus.emit(meta.agent_id, module_key, decryptedBuffer, meta);
+                        });
+                        // Vẫn lưu meta vào store (không lưu frame) để UI hiển thị thông số độ phân giải nếu cần
+                        setModuleData(meta.agent_id, module_key, { meta });
                     } catch (e) {
                         console.error(`[E2EE] Failed to decrypt UDP stream from ${meta.agent_id}`, e);
                     }
                 } else {
-                    setModuleData(meta.agent_id, module_key, { frame: buffer, meta });
+                    import('../services/FrameEventBus').then(({ default: frameEventBus }) => {
+                        frameEventBus.emit(meta.agent_id, module_key, buffer, meta);
+                    });
+                    setModuleData(meta.agent_id, module_key, { meta });
                 }
             })
 

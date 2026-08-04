@@ -19,107 +19,112 @@
 // The "cancelled" flag prevents a stale decode callback from drawing
 // onto a canvas that already shows a newer frame or has been unmounted.
 
-import { useEffect, useRef } from 'react'
+import frameEventBus from '../services/FrameEventBus'
 
 // Props:
-//   frame_buffer — ArrayBuffer containing raw JPEG bytes (null = no frame yet)
-//   module       — "screen" | "webcam" (data attribute for CSS / debugging hooks)
-//   label        — optional short caption (e.g. "LIVE", "WEBCAM"). When provided,
-//                  drives the aria-label and shows a small corner badge.
-//                  Views that already render their own status badge (GridView tile
-//                  header, ScreenTab toolbar) simply omit this prop.
-//   width        — CSS width  for the <canvas> element (default "100%")
-//   height       — CSS height for the <canvas> element (default "100%")
-function FrameCanvas({ frame_buffer, frame_meta = null, module = 'screen', label, width = '100%', height = '100%' })
+//   agent_id     — (Mới) ID của agent để subscribe EventBus
+//   frame_buffer — (Legacy) Dữ liệu ảnh JPEG cứng (cho screenshot tĩnh).
+//   module       — "screen" | "webcam"
+//   label        — caption ngắn gọn
+//   width        — chiều rộng CSS
+//   height       — chiều cao CSS
+function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'screen', label, width = '100%', height = '100%' })
 {
     const canvas_ref = useRef(null)
 
     useEffect(function ()
     {
-        if (!frame_buffer || !canvas_ref.current) return
+        let is_drawing = false
+        let pending_frame = null
+        let animation_frame_id = null
+        let current_bitmap_ref = null
 
-        // Delta-encoding contract (see docs/protocol/Livescreen.json):                             //
-        //   is_keyframe=true  → bitmap is the FULL frame; meta.w/h is full size, x/y = 0.         //
-        //   is_keyframe=false → bitmap covers only the diff rect at (meta.x, meta.y); the         //
-        //                       canvas MUST NOT be resized — that would wipe prior pixels.        //
-        // When meta is absent (Webcam sends full frames only, or single screenshot), fall         //
-        // back to the legacy behavior of sizing the canvas to the bitmap and drawing at 0,0.      //
-        const has_meta   = frame_meta && typeof frame_meta === 'object'
-        const is_delta   = has_meta && frame_meta.is_keyframe === false
-        const draw_x     = is_delta ? (frame_meta.x | 0) : 0
-        const draw_y     = is_delta ? (frame_meta.y | 0) : 0
+        const processFrame = (buffer, meta) => {
+            if (!buffer || !canvas_ref.current) return
 
-        // Track whether this effect was cleaned up before the async decode finished.
-        // If cancelled is true when the promise resolves, skip drawing — the canvas
-        // may already belong to a newer frame or the component may be unmounted.
-        let cancelled  = false
-        let bitmap_ref = null
-
-        const blob = new Blob([frame_buffer], { type: 'image/jpeg' })
-
-        createImageBitmap(blob).then(function (bitmap)
-        {
-            // Another frame arrived (or unmount happened) while we were decoding.
-            // Close the bitmap immediately — drawing it would overwrite newer data.
-            if (cancelled)
-            {
-                bitmap.close()
+            // Gotcha 3: Chống tích tụ hàng đợi Promise. 
+            // Nếu đang vẽ một frame cũ mà frame mới ập tới, ta chỉ cần lưu frame mới nhất vào pending_frame
+            // và chủ động VỨT BỎ (drop) tất cả các frame ở giữa.
+            if (is_drawing) {
+                pending_frame = { buffer, meta }
                 return
             }
 
-            bitmap_ref = bitmap
+            is_drawing = true
+            const blob = new Blob([buffer], { type: 'image/jpeg' })
 
-            const cvs = canvas_ref.current
-            if (!cvs) { bitmap.close(); return }
+            createImageBitmap(blob).then(function (bitmap) {
+                current_bitmap_ref = bitmap
 
-            const ctx = cvs.getContext('2d')
+                // Vẽ đồng bộ với tần số quét của màn hình
+                animation_frame_id = requestAnimationFrame(() => {
+                    const cvs = canvas_ref.current
+                    if (!cvs) { bitmap.close(); is_drawing = false; processNext(); return }
 
-            if (is_delta && cvs.width > 0 && cvs.height > 0)
-            {
-                // Partial redraw: paste the diff bitmap at its bounding-box origin.                //
-                // Do NOT touch cvs.width/height — that would clear the whole canvas.               //
-                ctx.drawImage(bitmap, draw_x, draw_y)
-            }
-            else
-            {
-                // Keyframe (or first frame, or meta-less full frame): resize canvas to             //
-                // the full-frame dimensions and repaint from origin. Setting width/height         //
-                // implicitly clears the canvas, which is exactly what a keyframe wants.           //
-                const full_w = has_meta ? (frame_meta.w | 0) || bitmap.width  : bitmap.width
-                const full_h = has_meta ? (frame_meta.h | 0) || bitmap.height : bitmap.height
-                cvs.width  = full_w
-                cvs.height = full_h
-                ctx.drawImage(bitmap, 0, 0)
-            }
+                    const ctx = cvs.getContext('2d')
 
-            // Release GPU memory right after drawing.
-            // The pixels are now copied into the canvas framebuffer,
-            // so the ImageBitmap is no longer needed.
-            bitmap.close()
-            bitmap_ref = null
-        })
-        .catch(function (err)
-        {
-            // Corrupted or non-JPEG binary data — skip this frame silently.
-            if (!cancelled)
-            {
+                    const has_meta   = meta && typeof meta === 'object'
+                    const is_delta   = has_meta && meta.is_keyframe === false
+                    const draw_x     = is_delta ? (meta.x | 0) : 0
+                    const draw_y     = is_delta ? (meta.y | 0) : 0
+
+                    if (is_delta && cvs.width > 0 && cvs.height > 0) {
+                        ctx.drawImage(bitmap, draw_x, draw_y)
+                    } else {
+                        const full_w = has_meta ? (meta.w | 0) || bitmap.width  : bitmap.width
+                        const full_h = has_meta ? (meta.h | 0) || bitmap.height : bitmap.height
+                        cvs.width  = full_w
+                        cvs.height = full_h
+                        ctx.drawImage(bitmap, 0, 0)
+                    }
+
+                    // Giải phóng bộ nhớ GPU ngay lập tức
+                    bitmap.close()
+                    current_bitmap_ref = null
+                    is_drawing = false
+                    
+                    // Xử lý frame mới nhất bị kẹt lại (nếu có)
+                    processNext()
+                })
+            }).catch(function (err) {
                 console.warn('[FrameCanvas] failed to decode frame:', err)
-            }
-        })
+                is_drawing = false
+                processNext()
+            })
+        }
 
-        // Cleanup: if a new frame arrives before the current decode finishes,
-        // React runs this cleanup first. We set cancelled=true so the stale
-        // promise callback above will discard the old bitmap instead of drawing it.
-        return function ()
-        {
-            cancelled = true
-            if (bitmap_ref)
-            {
-                bitmap_ref.close()
-                bitmap_ref = null
+        const processNext = () => {
+            if (pending_frame) {
+                const next = pending_frame
+                pending_frame = null
+                processFrame(next.buffer, next.meta)
             }
         }
-    }, [frame_buffer])
+
+        // Đăng ký EventBus
+        let unsubscribe = null
+        if (agent_id) {
+            unsubscribe = frameEventBus.on(agent_id, module, (buffer, meta) => {
+                processFrame(buffer, meta)
+            })
+        }
+
+        // Hỗ trợ Fallback Legacy (chụp ảnh 1 lần truyền trực tiếp bằng props)
+        if (frame_buffer) {
+            processFrame(frame_buffer, frame_meta)
+        }
+
+        // Gotcha 2: Cleanup (Gỡ Event Listener) để chống Memory Leak
+        return function ()
+        {
+            if (unsubscribe) unsubscribe()
+            if (animation_frame_id) cancelAnimationFrame(animation_frame_id)
+            if (current_bitmap_ref) {
+                current_bitmap_ref.close()
+                current_bitmap_ref = null
+            }
+        }
+    }, [agent_id, module, frame_buffer, frame_meta])
 
     const aria_label = label ? `${label} frame` : 'Live frame'
 

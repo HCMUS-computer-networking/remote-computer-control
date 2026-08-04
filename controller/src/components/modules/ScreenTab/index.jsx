@@ -143,8 +143,7 @@ function ScreenTab({ agent })
     const quality_parsed = parseIntInRange(quality_input, QUALITY_MIN, QUALITY_MAX, 'Quality')
     const form_valid     = !fps_parsed.error && !quality_parsed.error
 
-    // Subscribe to this agent's screen frame data
-    const frame_buffer = useModuleStore((s) => s.data[agent.id]?.screen?.frame ?? null)
+    // Lấy frame_meta để hiển thị thông số độ phân giải (frame_buffer được gửi qua EventBus)
     const frame_meta   = useModuleStore((s) => s.data[agent.id]?.screen?.meta  ?? null)
 
     // Track the agent_id we started streaming for, so cleanup stops the right one.
@@ -481,8 +480,8 @@ function ScreenTab({ agent })
                             <span>Agent is offline — cannot capture or stream</span>
                         </div>
                     )
-                    : frame_buffer
-                        ? <FrameCanvas frame_buffer={frame_buffer} frame_meta={frame_meta} width="100%" height="100%" />
+                    : frame_meta
+                        ? <FrameCanvas agent_id={agent.id} module="screen" width="100%" height="100%" />
                         : (
                             <div className="screen-tab__placeholder">
                                 <Camera size={40} strokeWidth={1.25} />
