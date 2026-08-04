@@ -225,28 +225,14 @@ export default function useAgentSocket()
             // Binary callback — pair incoming ArrayBuffer with the pending frame_meta.
             // This runs immediately after the frame_meta JSON callback above,
             // so _pending_meta is guaranteed to be the matching header.
-            socket.onBinary(function (buffer)
+            socket.onBinary(async function (buffer)
             {
                 // File-transfer binary chunk takes priority: fs_get_result is
                 // request-driven and always paired 1:1 with the next binary,
                 // whereas frame_meta belongs to a continuous stream.
                 if (_pending_fs_chunks.size > 0)
                 {
-                    // FIFO pairing: pop the OLDEST pending meta (Map preserves                     //
-                    // insertion order). This is the best we can do without a                       //
-                    // transfer_id inside the binary frame itself — for two                        //
-                    // concurrent downloads that leaves a residual mismatch                        //
-                    // risk if the Agent interleaves chunks of DIFFERENT                            //
-                    // transfers within a single JSON→binary pair, which the                        //
-                    // Agent contract already forbids per file.                                     //
-                    if (_pending_fs_chunks.size > 1)
-                    {
-                        console.warn(
-                            `[useAgentSocket] ${_pending_fs_chunks.size} fs_get metas queued when binary arrived — ` +
-                            'concurrent downloads without transfer_id in the binary frame; pairing FIFO. ' +
-                            'Long-term fix: add transfer_id to the binary frame header (protocol change).'
-                        )
-                    }
+                    // FIFO pairing: pop the OLDEST pending meta
                     const first_key = _pending_fs_chunks.keys().next().value
                     const meta      = _pending_fs_chunks.get(first_key)
                     _pending_fs_chunks.delete(first_key)
@@ -271,10 +257,7 @@ export default function useAgentSocket()
                 const meta      = _pending_meta
                 _pending_meta   = null            // consume the pending meta
 
-                // Sanity check: if frame_meta declared a byte length, it must
-                // match the ArrayBuffer we just received. A mismatch is a strong
-                // signal the binary was paired with the wrong meta (Gateway
-                // ordering bug). We still draw it — len may be absent — but warn.
+                // Sanity check
                 if (meta.len != null && meta.len !== buffer.byteLength)
                 {
                     console.warn(
@@ -285,7 +268,29 @@ export default function useAgentSocket()
 
                 // Route to the correct module slot (screen or webcam)
                 const module_key = meta.module    // "screen" or "webcam"
-                setModuleData(meta.agent_id, module_key, { frame: buffer, meta })
+                
+                // E2EE Decryption for UDP Stream
+                const sessionKey = useE2EEStore.getState().getSessionKey(meta.agent_id);
+                if (sessionKey) {
+                    try {
+                        const combined = new Uint8Array(buffer);
+                        const iv = combined.slice(0, 12);
+                        const dataToDecrypt = combined.slice(12);
+
+                        // AAD = FrameId (2 bytes) + TimestampMs (8 bytes)
+                        const aad = new ArrayBuffer(10);
+                        const view = new DataView(aad);
+                        view.setUint16(0, meta.seq, true);
+                        view.setBigUint64(2, BigInt(meta.timestamp_ms), true);
+                        
+                        const decryptedBuffer = await decryptAESGCM(sessionKey, dataToDecrypt, iv, new Uint8Array(aad));
+                        setModuleData(meta.agent_id, module_key, { frame: decryptedBuffer, meta });
+                    } catch (e) {
+                        console.error(`[E2EE] Failed to decrypt UDP stream from ${meta.agent_id}`, e);
+                    }
+                } else {
+                    setModuleData(meta.agent_id, module_key, { frame: buffer, meta });
+                }
             })
 
             // Drop any half-received frame_meta so the next reconnect's first

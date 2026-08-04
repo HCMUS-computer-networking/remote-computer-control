@@ -100,7 +100,7 @@ namespace agent.Modules
                 _sessionKey = HKDF.DeriveKey(
                     hashAlgorithmName: HashAlgorithmName.SHA256,
                     ikm: sharedSecret,
-                    length: 32, // 256 bits
+                    outputLength: 32, // 256 bits
                     salt: Array.Empty<byte>(),
                     info: Encoding.UTF8.GetBytes("RemoteControl_E2EE_v1")
                 );
@@ -130,7 +130,7 @@ namespace agent.Modules
             byte[] ciphertext = new byte[plaintext.Length];
             byte[] authTag = new byte[16];
 
-            using (var aesGcm = new AesGcm(_sessionKey))
+            using (var aesGcm = new AesGcm(_sessionKey, 16))
             {
                 aesGcm.Encrypt(iv, plaintext, ciphertext, authTag, aad);
             }
@@ -165,7 +165,7 @@ namespace agent.Modules
 
             byte[] plaintext = new byte[ciphertext.Length];
 
-            using (var aesGcm = new AesGcm(_sessionKey))
+            using (var aesGcm = new AesGcm(_sessionKey, 16))
             {
                 aesGcm.Decrypt(iv, ciphertext, authTag, plaintext, aad);
             }

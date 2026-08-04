@@ -34,14 +34,25 @@ namespace AgentSystem.Utils
             }
         }
 
-        public static async Task SendFrameAsync(string agentId, string commandId, byte moduleType, ushort frameId, byte[] jpegData, long timestamp, bool isKeyframe, Rectangle bounds)
+        public static async Task SendFrameAsync(string agentId, string commandId, byte moduleType, ushort frameId, byte[] payloadData, long timestamp, bool isKeyframe, Rectangle bounds, agent.Modules.CryptoModule crypto)
         {
             if (!_isInitialized) Initialize();
-            if (!_isInitialized || jpegData == null || jpegData.Length == 0) return;
+            if (!_isInitialized || payloadData == null || payloadData.Length == 0) return;
 
             try
             {
-                int totalChunks = (int)Math.Ceiling((double)jpegData.Length / MAX_PAYLOAD_SIZE);
+                byte[] finalPayload = payloadData;
+                if (crypto != null && crypto.IsE2EEReady)
+                {
+                    // AAD: Frame_ID (2 bytes) + Timestamp (8 bytes) = 10 bytes
+                    byte[] aad = new byte[10];
+                    BitConverter.GetBytes((ushort)frameId).CopyTo(aad, 0);
+                    BitConverter.GetBytes((ulong)timestamp).CopyTo(aad, 2);
+                    
+                    finalPayload = crypto.EncryptAESGCM(payloadData, aad);
+                }
+
+                int totalChunks = (int)Math.Ceiling((double)finalPayload.Length / MAX_PAYLOAD_SIZE);
                 if (totalChunks > 255)
                 {
                     Serilog.Log.Warning("[UdpStreamSender] Frame size too large. Chunks: {Count} > 255", totalChunks);
@@ -58,11 +69,11 @@ namespace AgentSystem.Utils
                 {
                     byte chunkIndex = (byte)i;
                     int offset = i * MAX_PAYLOAD_SIZE;
-                    int payloadSize = Math.Min(MAX_PAYLOAD_SIZE, jpegData.Length - offset);
+                    int chunkSize = Math.Min(MAX_PAYLOAD_SIZE, finalPayload.Length - offset);
 
                     // Allocate Header Buffer
                     int headerSize = 24 + l1 + l2;
-                    byte[] packet = new byte[headerSize + payloadSize];
+                    byte[] packet = new byte[headerSize + chunkSize];
 
                     // Fixed Header (24 bytes)
                     packet[0] = chunkIndex;
@@ -85,7 +96,7 @@ namespace AgentSystem.Utils
                     if (l2 > 0) Buffer.BlockCopy(commandIdBytes, 0, packet, 24 + l1, l2);
 
                     // Payload
-                    Buffer.BlockCopy(jpegData, offset, packet, headerSize, payloadSize);
+                    Buffer.BlockCopy(finalPayload, offset, packet, headerSize, chunkSize);
 
                     // Send Datagram
                     await _udpClient.SendAsync(packet, packet.Length, _gatewayIp, _gatewayPort);

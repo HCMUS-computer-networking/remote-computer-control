@@ -331,7 +331,7 @@ namespace AgentSystem.Modules
                 
                 long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 ushort seq = (ushort)(isFromStream ? currentSequence++ : 0);
-                await UdpStreamSender.SendFrameAsync(context.AgentId, commandId, 0, seq, imageBytes, timestamp, isKeyframe, diffRect);
+                await UdpStreamSender.SendFrameAsync(context.AgentId, commandId, 0, seq, imageBytes, timestamp, isKeyframe, diffRect, context.Crypto);
             }
             catch (Exception ex)
             {

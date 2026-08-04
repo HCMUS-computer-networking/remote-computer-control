@@ -168,7 +168,7 @@ namespace AgentSystem.Modules
                     long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     ushort seq = (ushort)currentSequence++;
                     Rectangle bounds = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
-                    await UdpStreamSender.SendFrameAsync(context.AgentId, commandId, 1, seq, frameBytes, timestamp, true, bounds);
+                    await UdpStreamSender.SendFrameAsync(context.AgentId, commandId, 1, seq, frameBytes, timestamp, true, bounds, context.Crypto);
                 }
             }
             catch (Exception ex)
