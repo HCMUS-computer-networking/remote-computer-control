@@ -53,4 +53,4 @@ desktop.ini
 
 # ─── Repomix (AI packing artifacts) ───────────────────────────────
 repomix-output.xml
-*repomix*.xml
+repomix.config.json

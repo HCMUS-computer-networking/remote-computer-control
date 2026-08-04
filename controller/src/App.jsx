@@ -10,6 +10,7 @@ import Sidebar            from './components/layout/Sidebar'
 import TopBar             from './components/layout/TopBar'
 import GridView           from './components/livescreen/GridView'
 import FocusView          from './components/livescreen/FocusView'
+import E2EEUnlockModal    from './components/E2EEUnlockModal'
 
 // Full-width strip shown while the socket is not open. Warns the operator that
 // data may be stale and that a reconnect is in progress. Hidden when connected.
@@ -85,6 +86,7 @@ function App()
 
     return (
         <>
+            <E2EEUnlockModal />
             {/* Gate: no JWT → login form; with JWT → console (socket owner). */}
             {auth_token ? <ConsoleShell /> : <LoginScreen />}
 

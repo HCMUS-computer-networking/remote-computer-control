@@ -29,6 +29,8 @@ import { useEffect } from 'react'
 import AgentSocket                       from '../services'   // mock or real, chosen by VITE_USE_MOCK in services/index.js
 import { buildListAgents, buildPolicyUpdate, buildPermissionRequest, buildPermissionRevoke, buildStopModule, normalizeIncoming, MSG_TYPE, MODULE, FEATURE } from '../services/Protocol'
 import { refreshAccessToken, logout }    from '../services/AuthService'
+import useE2EEStore                      from '../store/E2EEStore'
+import { generateECDHKeyPair, exportPublicKeyToSPKI, signHMAC, importPublicKeyFromSPKI, verifyHMAC, deriveSessionKey } from '../utils/crypto'
 
 // Modules that only make sense against ONE agent at a time (the operator is
 // watching a single feed). sendCommand routes these to focused_agent_id even
@@ -93,6 +95,37 @@ let _socket           = null   // the one shared socket instance
 let _refcount         = 0      // how many mounted components hold a reference
 let _pending_meta     = null   // last frame_meta awaiting its binary companion
 let _pending_fs_chunks = new Map()   // fs_get_result (binary mode) awaiting bytes, keyed by transfer_id — Map preserves insertion order for FIFO pairing when multiple downloads run in parallel
+const _pendingE2EEKeys = new Map()   // agent_id -> privateKey (temporary during handshake)
+
+// ── E2EE Handshake Init ───────────────────────────────────────────────────────
+async function initE2EE(agent_id, socket) {
+    const e2eeStore = useE2EEStore.getState()
+    if (!e2eeStore.isUnlocked) return
+    const pin = await e2eeStore.getAgentPin(agent_id)
+    if (!pin) {
+        console.warn(`[E2EE] No PIN saved for agent ${agent_id}. Cannot init handshake.`)
+        return
+    }
+
+    try {
+        e2eeStore.setSessionState(agent_id, 'handshaking')
+        const keyPair = await generateECDHKeyPair()
+        const pubKeyBase64 = await exportPublicKeyToSPKI(keyPair.publicKey)
+        const signatureBase64 = await signHMAC(pubKeyBase64, pin)
+
+        _pendingE2EEKeys.set(agent_id, keyPair.privateKey)
+
+        const initMsg = {
+            type: MSG_TYPE.E2EE_INIT,
+            target_agents: [agent_id],
+            publicKey: pubKeyBase64,
+            signature: signatureBase64
+        }
+        if (socket) socket.send(JSON.stringify(initMsg))
+    } catch (err) {
+        console.error(`[E2EE] Handshake init failed for ${agent_id}`, err)
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -567,6 +600,10 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
         // ── Connection ────────────────────────────────────────────────────
         case MSG_TYPE.AGENTS_LIST:
             setAgents(msg.agents)
+            // Init E2EE for all online agents
+            msg.agents.forEach(a => {
+                if (a.online) initE2EE(a.id, _socket)
+            })
             break
 
         case MSG_TYPE.AGENT_STATUS:
@@ -586,6 +623,11 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
                 if (msg.online === false)
                 {
                     useModuleStore.getState().clearLiveFlagsForAgent(msg.agent_id)
+                    useE2EEStore.getState().setSessionState(msg.agent_id, 'uninitialized')
+                }
+                else if (msg.online === true)
+                {
+                    initE2EE(msg.agent_id, _socket)
                 }
             }
             else if (_socket)
@@ -808,6 +850,37 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
                 msg.granted ? 'success' : 'error'
             )
             break
+
+        // ── E2EE ─────────────────────────────────────────────────────────
+        case MSG_TYPE.E2EE_READY:
+        {
+            const e2eeStore = useE2EEStore.getState()
+            e2eeStore.getAgentPin(msg.agent_id).then(async (pin) => {
+                if (!pin) return;
+                try {
+                    const isValid = await verifyHMAC(msg.publicKey, msg.signature, pin)
+                    if (!isValid) {
+                        useUiStore.getState().addToast(`E2EE MitM Alert: Invalid signature from agent ${msg.agent_id}`, 'error')
+                        return
+                    }
+                    const privateKey = _pendingE2EEKeys.get(msg.agent_id)
+                    if (!privateKey) {
+                        console.warn(`[E2EE] No pending private key for ${msg.agent_id}`)
+                        return
+                    }
+                    
+                    const agentPubKey = await importPublicKeyFromSPKI(msg.publicKey)
+                    const sessionKey = await deriveSessionKey(privateKey, agentPubKey)
+                    
+                    e2eeStore.setSessionState(msg.agent_id, 'ready', sessionKey)
+                    _pendingE2EEKeys.delete(msg.agent_id)
+                    useUiStore.getState().addToast(`E2EE Handshake successful for ${msg.agent_id}`, 'success')
+                } catch (e) {
+                    console.error('[E2EE] Handshake finalize failed', e)
+                }
+            })
+            break
+        }
 
         // ── SysInfo ───────────────────────────────────────────────────────
         case MSG_TYPE.SYSINFO_RESULT:

@@ -25,5 +25,11 @@ namespace AgentSystem.Models
 
         [JsonPropertyName("feature")]
         public string Feature { get; set; }
+
+        [JsonPropertyName("publicKey")]
+        public string PublicKey { get; set; }
+
+        [JsonPropertyName("signature")]
+        public string Signature { get; set; }
     }
 }

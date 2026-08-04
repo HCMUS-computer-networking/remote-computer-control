@@ -4,6 +4,7 @@ using System.Text.Json;
 using AgentSystem.Managers;
 using AgentSystem.Models;
 using AgentSystem.Modules;
+using agent.Modules;
 using Serilog;
 
 namespace AgentSystem.Core
@@ -17,6 +18,7 @@ namespace AgentSystem.Core
         public MessageDispatcher Dispatcher { get; private set; }
         public SecurityManager SecurityManager { get; private set; }
         public UIManager UIManager { get; private set; }
+        public CryptoModule Crypto { get; private set; }
         
         // THÊM: Registry tự động
         private readonly Dictionary<string, BaseModule> _moduleRegistry;
@@ -42,6 +44,7 @@ namespace AgentSystem.Core
             
             SecurityManager = security;
             UIManager = ui;
+            Crypto = new CryptoModule(ConfigManager.Current.E2EESharedSecret);
             
             Dispatcher = new MessageDispatcher(this);
             wsClient = new WebSocketClient(this, gatewayUrl);
@@ -82,6 +85,7 @@ namespace AgentSystem.Core
                     Log.Error(ex, "[AgentClient] Lỗi dọn dẹp module: {Message}", ex.Message);
                 }
             }
+            Crypto.Reset();
         }
 
         /// <summary>
@@ -129,6 +133,52 @@ namespace AgentSystem.Core
             if (!ValidatePacket(packet))
             {
                 Log.Warning("[Security] Nhận được gói tin không hợp lệ hoặc không dành cho Agent này. Đã bỏ qua.");
+                return;
+            }
+
+            if (packet.Type == "e2ee_init")
+            {
+                try
+                {
+                    string pubKeyBase64 = packet.PublicKey;
+                    string signature = packet.Signature;
+                    
+                    if (string.IsNullOrEmpty(pubKeyBase64) || string.IsNullOrEmpty(signature))
+                    {
+                        Log.Warning("[E2EE] Missing PublicKey or Signature in e2ee_init packet.");
+                        return;
+                    }
+
+                    if (!Crypto.VerifyHMAC(pubKeyBase64, signature))
+                    {
+                        Log.Warning("[E2EE] Invalid Controller Signature. MitM attempt?");
+                        return;
+                    }
+                    
+                    Crypto.DeriveSessionKey(pubKeyBase64);
+                    
+                    string myPubKeyBase64 = Crypto.GetPublicKeySPKIBase64();
+                    string mySignature = Crypto.SignHMAC(myPubKeyBase64);
+                    
+                    SendResponse(new {
+                        type = "e2ee_ready",
+                        agent_id = AgentId,
+                        publicKey = myPubKeyBase64,
+                        signature = mySignature
+                    });
+                    
+                    Log.Information("[E2EE] Handshake completed successfully. Session Key is ready.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "[E2EE] Handshake failed.");
+                }
+                return;
+            }
+
+            if (packet.Type != "policy_update" && packet.Type != "permissions_reset" && packet.Type != "e2ee_init" && !Crypto.IsE2EEReady)
+            {
+                Log.Warning($"[E2EE] Đang chờ Handshake, tạm chặn lệnh {packet.Type}.");
                 return;
             }
 

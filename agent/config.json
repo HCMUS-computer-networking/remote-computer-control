@@ -11,5 +11,6 @@
   "sandbox_root_path": "C:\\AgentSandbox\\",
   "log_retention_days": 7,
   "consent_timeout_ms": 30000,
-  "tray_password": ""
+  "tray_password": "",
+  "e2ee_shared_secret": "default-pin-12345"
 }
