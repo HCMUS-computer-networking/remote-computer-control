@@ -140,24 +140,49 @@ export const deriveSessionKey = async (myPrivateKey, agentPublicKey) => {
     );
 
     // 3. Derive the final AES-GCM key using HKDF
-    const infoString = 'RemoteControl_E2EE_v1';
-    const infoBuffer = new TextEncoder().encode(infoString);
-
-    return await window.crypto.subtle.deriveKey(
+    const infoBuffer = new TextEncoder().encode('RemoteControl_E2EE_v1');
+    const tcpKey = await window.crypto.subtle.deriveKey(
         {
             name: 'HKDF',
             hash: 'SHA-256',
-            salt: new Uint8Array(0), // empty salt as per pseudo-code
+            salt: new Uint8Array(0),
             info: infoBuffer
         },
         hkdfKeyMaterial,
-        {
-            name: 'AES-GCM',
-            length: 256
-        },
-        true, // extractable if needed for debugging, usually false in prod, but let's keep true for now
+        { name: 'AES-GCM', length: 256 },
+        false, 
         ['encrypt', 'decrypt']
     );
+
+    const udpInfoBuffer = new TextEncoder().encode('RemoteControl_UDP_v1');
+    const udpKey = await window.crypto.subtle.deriveKey(
+        {
+            name: 'HKDF',
+            hash: 'SHA-256',
+            salt: new Uint8Array(0),
+            info: udpInfoBuffer
+        },
+        hkdfKeyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        true, // Must be extractable to step the ratchet
+        ['encrypt', 'decrypt']
+    );
+
+    const udpKeyBuffer = await window.crypto.subtle.exportKey('raw', udpKey);
+    return { tcpKey, udpKeyBuffer };
+};
+
+/**
+ * Steps the Symmetric Ratchet Key for PFS (Forward Secrecy).
+ * NextKey = SHA256(CurrentKey + "Ratchet_v1")
+ */
+export const stepRatchetKey = async (currentKeyBuffer) => {
+    const currentBytes = new Uint8Array(currentKeyBuffer);
+    const suffix = new TextEncoder().encode("Ratchet_v1");
+    const msg = new Uint8Array(currentBytes.byteLength + suffix.byteLength);
+    msg.set(currentBytes);
+    msg.set(suffix, currentBytes.byteLength);
+    return await window.crypto.subtle.digest('SHA-256', msg);
 };
 
 // --- Encryption / Decryption (AES-GCM) ---

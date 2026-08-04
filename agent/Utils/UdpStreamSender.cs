@@ -49,7 +49,7 @@ namespace AgentSystem.Utils
                     BitConverter.GetBytes((ushort)frameId).CopyTo(aad, 0);
                     BitConverter.GetBytes((ulong)timestamp).CopyTo(aad, 2);
                     
-                    finalPayload = crypto.EncryptAESGCM(payloadData, aad);
+                    finalPayload = crypto.EncryptUdpAESGCM(payloadData, aad);
                 }
 
                 int totalChunks = (int)Math.Ceiling((double)finalPayload.Length / MAX_PAYLOAD_SIZE);

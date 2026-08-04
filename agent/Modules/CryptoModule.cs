@@ -9,6 +9,9 @@ namespace agent.Modules
     {
         private ECDiffieHellman _ecdh;
         private byte[] _sessionKey;
+        private byte[] _udpSessionKey;
+        private uint _udpFramesSent = 0;
+        public uint UdpEpoch => _udpFramesSent / 100;
         private readonly string _e2eeSharedSecret;
 
         public bool IsE2EEReady => _sessionKey != null;
@@ -104,6 +107,27 @@ namespace agent.Modules
                     salt: Array.Empty<byte>(),
                     info: Encoding.UTF8.GetBytes("RemoteControl_E2EE_v1")
                 );
+
+                _udpSessionKey = HKDF.DeriveKey(
+                    hashAlgorithmName: HashAlgorithmName.SHA256,
+                    ikm: sharedSecret,
+                    outputLength: 32, // 256 bits
+                    salt: Array.Empty<byte>(),
+                    info: Encoding.UTF8.GetBytes("RemoteControl_UDP_v1")
+                );
+            }
+        }
+
+        public void RatchetUdpKey()
+        {
+            byte[] msg = new byte[_udpSessionKey.Length + 10];
+            Buffer.BlockCopy(_udpSessionKey, 0, msg, 0, _udpSessionKey.Length);
+            byte[] ratchetStr = Encoding.UTF8.GetBytes("Ratchet_v1");
+            Buffer.BlockCopy(ratchetStr, 0, msg, _udpSessionKey.Length, ratchetStr.Length);
+            
+            using (var sha = SHA256.Create())
+            {
+                _udpSessionKey = sha.ComputeHash(msg);
             }
         }
 
@@ -136,6 +160,37 @@ namespace agent.Modules
             }
 
             // Pack the E2EE Packet: IV + Ciphertext + AuthTag
+            byte[] e2eePacket = new byte[iv.Length + ciphertext.Length + authTag.Length];
+            Buffer.BlockCopy(iv, 0, e2eePacket, 0, iv.Length);
+            Buffer.BlockCopy(ciphertext, 0, e2eePacket, iv.Length, ciphertext.Length);
+            Buffer.BlockCopy(authTag, 0, e2eePacket, iv.Length + ciphertext.Length, authTag.Length);
+
+            return e2eePacket;
+        }
+
+        public byte[] EncryptUdpAESGCM(byte[] plaintext, byte[] aad = null)
+        {
+            if (!IsE2EEReady)
+                throw new InvalidOperationException("E2EE is not ready. Session key is missing.");
+
+            uint currentEpoch = UdpEpoch;
+            _udpFramesSent++;
+            uint nextEpoch = UdpEpoch;
+
+            if (nextEpoch > currentEpoch)
+            {
+                RatchetUdpKey();
+            }
+
+            byte[] iv = GenerateIV();
+            byte[] ciphertext = new byte[plaintext.Length];
+            byte[] authTag = new byte[16];
+
+            using (var aesGcm = new AesGcm(_udpSessionKey, 16))
+            {
+                aesGcm.Encrypt(iv, plaintext, ciphertext, authTag, aad);
+            }
+
             byte[] e2eePacket = new byte[iv.Length + ciphertext.Length + authTag.Length];
             Buffer.BlockCopy(iv, 0, e2eePacket, 0, iv.Length);
             Buffer.BlockCopy(ciphertext, 0, e2eePacket, iv.Length, ciphertext.Length);
@@ -179,6 +234,8 @@ namespace agent.Modules
         public void Reset()
         {
             _sessionKey = null;
+            _udpSessionKey = null;
+            _udpFramesSent = 0;
             _ecdh?.Dispose();
             _ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
         }
@@ -189,6 +246,10 @@ namespace agent.Modules
             if (_sessionKey != null)
             {
                 Array.Clear(_sessionKey, 0, _sessionKey.Length);
+            }
+            if (_udpSessionKey != null)
+            {
+                Array.Clear(_udpSessionKey, 0, _udpSessionKey.Length);
             }
         }
     }

@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using AgentSystem.Models;
 using Serilog;
@@ -42,6 +44,30 @@ namespace AgentSystem.Managers
                 if (string.IsNullOrWhiteSpace(Current.AgentId) || Current.AgentId == "AUTO" || Current.AgentId == "PC-Lab-01")
                 {
                     Current.AgentId = GetAutoAgentId();
+                }
+
+                // DPAPI Logic for E2EESharedSecret
+                if (Current.E2EESharedSecretEncrypted != null && Current.E2EESharedSecretEncrypted.StartsWith("DPAPI:"))
+                {
+                    try
+                    {
+                        byte[] encryptedBytes = Convert.FromBase64String(Current.E2EESharedSecretEncrypted.Substring(6));
+                        byte[] plainBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
+                        Current.E2EESharedSecret = Encoding.UTF8.GetString(plainBytes);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Lỗi giải mã PIN DPAPI: {ErrorMessage}", ex.Message);
+                        Current.E2EESharedSecret = "default-pin-12345";
+                    }
+                }
+                else
+                {
+                    // Plain text in JSON. Encrypt it for future.
+                    Current.E2EESharedSecret = Current.E2EESharedSecretEncrypted ?? "default-pin-12345";
+                    byte[] plainBytes = Encoding.UTF8.GetBytes(Current.E2EESharedSecret);
+                    byte[] encryptedBytes = ProtectedData.Protect(plainBytes, null, DataProtectionScope.CurrentUser);
+                    Current.E2EESharedSecretEncrypted = "DPAPI:" + Convert.ToBase64String(encryptedBytes);
                 }
 
                 Save(); // Lưu lại cấu hình chuẩn

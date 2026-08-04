@@ -50,7 +50,7 @@ const getMasterKey = async (password) => {
         {
             name: 'PBKDF2',
             salt: enc.encode('RemoteControl_Salt_V1'),
-            iterations: 100000,
+            iterations: 600000,
             hash: 'SHA-256'
         },
         keyMaterial,
@@ -108,17 +108,21 @@ const useE2EEStore = create((set, get) => ({
     masterKey: null, // CryptoKey instance
     
     // Per-agent sessions
-    // Structure: { [agentId]: { state: 'uninitialized' | 'handshaking' | 'ready', sessionKey: CryptoKey, sendSeq: number, recvSeq: number } }
+    // Structure: { [agentId]: { state: 'uninitialized' | 'handshaking' | 'ready', sessionKey: CryptoKey, udpKeyBuffer: ArrayBuffer, udpEpoch: number, udpFrameIdOffset: number, udpLastSeq: number, sendSeq: number, recvSeq: number } }
     sessions: {},
 
-    setSessionState: (agentId, state, sessionKey = null) => {
+    setSessionState: (agentId, state, sessionKeys = null) => {
         set((prev) => ({
             sessions: {
                 ...prev.sessions,
                 [agentId]: {
                     ...prev.sessions[agentId],
                     state,
-                    sessionKey: sessionKey || prev.sessions[agentId]?.sessionKey,
+                    sessionKey: sessionKeys ? sessionKeys.tcpKey : prev.sessions[agentId]?.sessionKey,
+                    udpKeyBuffer: sessionKeys ? sessionKeys.udpKeyBuffer : prev.sessions[agentId]?.udpKeyBuffer,
+                    udpEpoch: state === 'handshaking' ? 0 : (prev.sessions[agentId]?.udpEpoch ?? 0),
+                    udpFrameIdOffset: state === 'handshaking' ? 0 : (prev.sessions[agentId]?.udpFrameIdOffset ?? 0),
+                    udpLastSeq: state === 'handshaking' ? 0 : (prev.sessions[agentId]?.udpLastSeq ?? 0),
                     sendSeq: state === 'handshaking' ? 0 : (prev.sessions[agentId]?.sendSeq ?? 0),
                     recvSeq: state === 'handshaking' ? -1 : (prev.sessions[agentId]?.recvSeq ?? -1)
                 }
@@ -164,6 +168,44 @@ const useE2EEStore = create((set, get) => ({
             }
         }))
         return true
+    },
+
+    updateUdpRatchet: (agentId, newKeyBuffer, newEpoch) => {
+        set((prev) => ({
+            sessions: {
+                ...prev.sessions,
+                [agentId]: {
+                    ...prev.sessions[agentId],
+                    udpKeyBuffer: newKeyBuffer,
+                    udpEpoch: newEpoch
+                }
+            }
+        }))
+    },
+
+    updateUdpSeq: (agentId, seq) => {
+        const session = get().sessions[agentId];
+        if (!session || session.state !== 'ready') return 0;
+        
+        let offset = session.udpFrameIdOffset || 0;
+        let lastSeq = session.udpLastSeq || 0;
+        
+        // Wraparound detection for 16-bit sequence
+        if (seq < lastSeq && (lastSeq - seq > 30000)) {
+            offset += 65536;
+        }
+        
+        set((prev) => ({
+            sessions: {
+                ...prev.sessions,
+                [agentId]: {
+                    ...prev.sessions[agentId],
+                    udpFrameIdOffset: offset,
+                    udpLastSeq: seq
+                }
+            }
+        }));
+        return offset + seq;
     },
 
     getSessionKey: (agentId) => {

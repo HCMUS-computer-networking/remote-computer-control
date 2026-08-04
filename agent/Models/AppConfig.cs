@@ -29,7 +29,10 @@ namespace AgentSystem.Models
         [JsonPropertyName("tray_password")]
         public string TrayPassword { get; set; } = "";
 
-        [JsonPropertyName("e2ee_shared_secret")]
+        [JsonIgnore]
         public string E2EESharedSecret { get; set; } = "default-pin-12345";
+
+        [JsonPropertyName("e2ee_shared_secret")]
+        public string E2EESharedSecretEncrypted { get; set; } = "default-pin-12345";
     }
 }

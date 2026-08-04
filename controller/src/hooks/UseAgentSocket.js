@@ -30,7 +30,7 @@ import AgentSocket                       from '../services'   // mock or real, c
 import { buildListAgents, buildPolicyUpdate, buildPermissionRequest, buildPermissionRevoke, buildStopModule, normalizeIncoming, MSG_TYPE, MODULE, FEATURE } from '../services/Protocol'
 import { refreshAccessToken, logout }    from '../services/AuthService'
 import useE2EEStore                      from '../store/E2EEStore'
-import { generateECDHKeyPair, exportPublicKeyToSPKI, signHMAC, importPublicKeyFromSPKI, verifyHMAC, deriveSessionKey, encryptAESGCM, decryptAESGCM, generateIV, arrayBufferToBase64, base64ToArrayBuffer } from '../utils/crypto'
+import { generateECDHKeyPair, exportPublicKeyToSPKI, signHMAC, importPublicKeyFromSPKI, verifyHMAC, deriveSessionKey, stepRatchetKey, encryptAESGCM, decryptAESGCM, generateIV, arrayBufferToBase64, base64ToArrayBuffer } from '../utils/crypto'
 
 // Modules that only make sense against ONE agent at a time (the operator is
 // watching a single feed). sendCommand routes these to focused_agent_id even
@@ -270,8 +270,8 @@ export default function useAgentSocket()
                 const module_key = meta.module    // "screen" or "webcam"
                 
                 // E2EE Decryption for UDP Stream
-                const sessionKey = useE2EEStore.getState().getSessionKey(meta.agent_id);
-                if (sessionKey) {
+                const session = useE2EEStore.getState().sessions[meta.agent_id];
+                if (session && session.state === 'ready') {
                     try {
                         const combined = new Uint8Array(buffer);
                         const iv = combined.slice(0, 12);
@@ -283,7 +283,24 @@ export default function useAgentSocket()
                         view.setUint16(0, meta.seq, true);
                         view.setBigUint64(2, BigInt(meta.timestamp_ms), true);
                         
-                        const decryptedBuffer = await decryptAESGCM(sessionKey, dataToDecrypt, iv, new Uint8Array(aad));
+                        // SYMMETRIC RATCHET LOGIC
+                        let absoluteSeq = useE2EEStore.getState().updateUdpSeq(meta.agent_id, meta.seq);
+                        let pktEpoch = Math.floor(absoluteSeq / 100);
+                        let currentUdpEpoch = session.udpEpoch;
+                        let udpKeyBuffer = session.udpKeyBuffer;
+                        
+                        if (pktEpoch > currentUdpEpoch) {
+                            while (currentUdpEpoch < pktEpoch) {
+                                udpKeyBuffer = await stepRatchetKey(udpKeyBuffer);
+                                currentUdpEpoch++;
+                            }
+                            useE2EEStore.getState().updateUdpRatchet(meta.agent_id, udpKeyBuffer, currentUdpEpoch);
+                        }
+                        
+                        // Import udpKeyBuffer to CryptoKey
+                        const udpKey = await window.crypto.subtle.importKey('raw', udpKeyBuffer, 'AES-GCM', false, ['decrypt']);
+
+                        const decryptedBuffer = await decryptAESGCM(udpKey, dataToDecrypt, iv, new Uint8Array(aad));
                         // Bắn event trực tiếp thay vì lưu vào React State (Gotcha 1)
                         import('../services/FrameEventBus').then(({ default: frameEventBus }) => {
                             frameEventBus.emit(meta.agent_id, module_key, decryptedBuffer, meta);
@@ -956,9 +973,9 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
                     }
                     
                     const agentPubKey = await importPublicKeyFromSPKI(msg.publicKey)
-                    const sessionKey = await deriveSessionKey(privateKey, agentPubKey)
+                    const sessionKeys = await deriveSessionKey(privateKey, agentPubKey)
                     
-                    e2eeStore.setSessionState(msg.agent_id, 'ready', sessionKey)
+                    e2eeStore.setSessionState(msg.agent_id, 'ready', sessionKeys)
                     _pendingE2EEKeys.delete(msg.agent_id)
                     useUiStore.getState().addToast(`E2EE Handshake successful for ${msg.agent_id}`, 'success')
                 } catch (e) {
