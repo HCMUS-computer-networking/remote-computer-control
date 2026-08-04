@@ -209,4 +209,4 @@ Revoke: `permission_revoke` message hoặc Agent tự revoke khi disconnect (m�
 - Observability: chưa có metric export (Prometheus), chỉ log file.
 - Documentation: `docs/protocol/Instruction.md` vẫn ghi "DRAFT — chưa họp nhóm xác nhận" (dù protocol đã chạy end-to-end). Cần chốt và bỏ dòng DRAFT.
 
-Chi tiết đánh giá: [`docs/reports/evaluation.md`](docs/reports/evaluation.md). Danh sách bug/nợ cụ thể: [`docs/history/need-to-fix.md`](docs/history/need-to-fix.md).
+Chi tiết đánh giá: [`docs/reports/evaluation.md`](docs/reports/evaluation.md).

@@ -101,7 +101,7 @@ Password gốc lưu trong `gateway/src/store/users.json` dưới dạng **bcrypt
 | [`agent/`](agent/) | Agent C# .NET 8 (Core, Modules, Managers, Forms, Utils, `agent.sln`, `config.json`) |
 | [`controller/`](controller/) | Controller React + Vite (src/, public/, `vite.config.js`) |
 | [`gateway/`](gateway/) | Gateway Node.js (src/, tests/, scripts/, `.env.example`) |
-| [`docs/`](docs/) | Toàn bộ tài liệu (protocol, design, reports, history) — xem `docs/README.md` |
+| [`docs/`](docs/) | Toàn bộ tài liệu (protocol, design, reports) — xem `docs/README.md` |
 
 ## 7. Tài liệu chi tiết
 

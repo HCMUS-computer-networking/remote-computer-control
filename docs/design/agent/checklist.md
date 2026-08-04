@@ -9,7 +9,7 @@
 > - **PHẦN S** — Phối hợp Gateway Giai đoạn 1 (S1 per-agent secret, S2 issuer field) — chờ Gateway xong G5/G6 rồi làm, không block ai.
 > - **PHẦN LƯU TRỮ** — các prompt A1/A2 checklist cũ (Remote Input, Binary File Transfer) đã CODE XONG trong commit `b0977f9` — giữ để tra cứu.
 >
-> 7 quyết định cross-team nhóm phải chốt ở kick-off: `docs/history/controller-context.md` **mục 13.4**.
+> 7 quyết định cross-team nhóm phải chốt ở kick-off — trao đổi trực tiếp trong buổi họp nhóm.
 
 ---
 
