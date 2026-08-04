@@ -43,6 +43,7 @@ controller/
     │   ├── ConnectionStore.js
     │   ├── ModuleStore.js
     │   ├── PermissionStore.js
+    │   ├── E2EEStore.js
     │   ├── PolicyStore.js
     │   └── UiStore.js
     ├── hooks/
@@ -155,7 +156,20 @@ Actions
 - `requestPermission(agent_id, feature)` — mark `'requesting'`.
 - `setPermissionResult(agent_id, feature, granted)` — Agent reply → `'granted'` or `'denied'`.
 - `revoke(agent_id, feature)` — reset to `'idle'`.
+- `revokeAll(agent_id)` — reset all features to `'idle'` (used on `permissions_reset`).
 - `getStatus(agent_id, feature)` — non-reactive read for hook / callback code.
+
+### `E2EEStore.js`
+State
+- `isUnlocked` — boolean, indicates if the Master Password has unlocked the PIN store.
+- `sessions[agent_id]` — E2EE state: `{ state: 'uninitialized' | 'handshaking' | 'ready' }`.
+
+Actions
+- `unlockStore(masterPassword)` — decrypts PINs from IndexedDB.
+- `setAgentPin(agent_id, pin)` — encrypts and stores the PIN.
+- `setSessionState(agent_id, state)`, `getSessionKey(agent_id)`.
+- `getSendSeqAndIncrement(agent_id)`, `checkAndUpdateRecvSeq(agent_id, seq)` — sequence validation for Replay Attack prevention.
+- `resetSession(agent_id)` — drops the key and sequence numbers.
 
 ### `PolicyStore.js`
 State
@@ -200,14 +214,13 @@ Component  ←  Zustand store (selector)  ←  dispatchMessage(…)  ←  onMess
   write outgoing data, and never touch the socket directly.
 - **Inbound**: `UseAgentSocket` registers `onMessage` and `onBinary` once when
   the first hook consumer mounts. Every JSON message goes through
-  `Protocol.normalizeIncoming` (real ↔ canonical shape) and then
-  `dispatchMessage` routes it to the correct store action.
+  `Protocol.normalizeIncoming` (real ↔ canonical shape). If the type is `e2ee_payload`, it is intercepted, decrypted via `AES-GCM` using the session key in `E2EEStore`, and the inner JSON is then passed to `dispatchMessage` to route to the correct store action.
 - **Binary pairing**: an `ArrayBuffer` arrives immediately after either a
   `frame_meta` (screen / webcam JPEG) or an `fs_get_result` metadata JSON with
   no `data_base64` field (binary-chunk file download). The hook holds
   `_pending_meta` and `_pending_fs_chunk` module-level slots and pairs each
-  binary with the correct pending JSON on arrival. `_pending_fs_chunk` takes
-  precedence because file transfers are request-driven and always paired 1:1.
+  binary with the correct pending JSON on arrival. 
+  - **E2EE Decryption**: If the stream is `frame_meta` and E2EE is `ready`, `onBinary` intercepts the `ArrayBuffer`, extracts the 12-byte IV, 16-byte AuthTag, constructs the AAD using `frame_meta.seq` and `timestamp_ms`, and decrypts the frame inline before pushing it to `ModuleStore`.
 
 ### Multi-agent fan-out
 `sendCommand` / `sendToFocused` / `sendToSelected` all funnel into a private
@@ -268,7 +281,7 @@ uses:
   KEYLOG_DENIED, STREAM_STARTED, STREAM_STOPPED, WEBCAM_STARTED,
   WEBCAM_STOPPED, WEBCAM_DENIED, FS_LIST_RESULT, FS_GET_RESULT, FS_PUT_RESULT,
   FS_PUT_COMPLETE, FS_ERROR, POWER_RESULT, POLICY_UPDATE_RESULT,
-  PERMISSION_RESULT, SYSINFO_RESULT, AUTH_EXPIRED`.
+  PERMISSION_RESULT, SYSINFO_RESULT, AUTH_EXPIRED, E2EE_INIT, E2EE_READY, E2EE_PAYLOAD, PERMISSIONS_RESET`.
 - `FEATURE` — consent vocabulary: `APPLICATION, PROCESS, SCREEN, KEYLOG,
   FILE, WEBCAM, POWER`. One per sensitive capability.
 - `MODULE` — value of the `"module"` field inside a REQUEST envelope:
@@ -383,7 +396,9 @@ Routes each incoming canonical message to the correct store action:
 | `permission_result` | `setPermissionResult(id, feature, granted)` + toast |
 | `sysinfo_result` | `appendSysInfo(id, snapshot)` |
 | `auth_expired` | `refreshAccessToken()`; success → `_socket.reopen()`; failure → toast + `logout()` |
-| binary `ArrayBuffer` | pair with `_pending_fs_chunk` first (file chunk); otherwise with `_pending_meta` (screen / webcam frame) |
+| `e2ee_ready` | `E2EEStore.setSessionState(id, 'ready')` |
+| `permissions_reset` | `PermissionStore.revokeAll(id)`, clears `ModuleStore` live flags, `E2EEStore.resetSession(id)`, and automatically triggers `initE2EE(id)` to perform Key Rotation. |
+| binary `ArrayBuffer` | decrypted if UDP stream, then paired with `_pending_fs_chunk` first (file chunk); otherwise with `_pending_meta` (screen / webcam frame) |
 
 ### Guards
 - Every per-agent message must carry `agent_id` after normalization. Missing
@@ -461,10 +476,10 @@ message on failure. Success writes `auth_token` → App re-renders into the cons
 ### `livescreen/`
 - `GridView.jsx` — 6-up grid of live thumbnails for every online agent. Owns
   the cross-agent `stream_start` broadcast on mount and `stream_stop` on
-  unmount so the wall is always live while shown.
+  unmount so the wall is always live while shown. Renders an `E2EE Negotiating...` spinner if E2EE Handshake is not ready.
 - `FocusView.jsx` — 8-tab navigation bar + active module panel for the focused
   agent. `sysinfo` renders directly (read-only); every other tab is wrapped by
-  `<PermissionGate feature={active_tab} agent_id={focused_agent.id}>`.
+  `<PermissionGate feature={active_tab} agent_id={focused_agent.id}>`. Like `GridView`, an `E2EE` Loading overlay covers the active panel if Handshake is pending.
 
 ### Shared templates
 - `ModuleTable.jsx` — sortable table with a toolbar, empty state, and one

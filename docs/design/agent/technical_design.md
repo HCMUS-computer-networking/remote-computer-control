@@ -15,12 +15,17 @@
 - Sử dụng `PeriodicTimer` cho các vòng lặp định kỳ (Webcam, Stream, Keylogger) thay cho `Thread.Sleep`, giúp quản lý CPU tốt hơn.
 - Ứng dụng `SemaphoreSlim` thay thế từ khóa `lock` truyền thống cho các vùng critical section có chứa tác vụ async.
 
-### 1.3 Security Design
+### 1.3 Security Design (Zero-Trust & E2EE)
+- **End-to-End Encryption (E2EE):** Giao tiếp giữa Controller và Agent được mã hóa bảo mật đầu cuối (E2EE). Gateway hoàn toàn không có khả năng giải mã (Blind Relay).
+- **Hybrid Cryptography:**
+  - **Handshake (Trao đổi khóa):** Sử dụng thuật toán **ECDH** (Elliptic Curve Diffie-Hellman) để sinh Shared Secret qua mạng.
+  - **Xác thực danh tính (Authentication):** Sử dụng mã PIN làm hàm băm HMAC ký lên Public Key, chống lại kịch bản Gateway làm Man-in-the-Middle thay khóa. Dẫn xuất Session Key qua chuẩn **HKDF**.
+  - **Mã hóa luồng (Stream Encryption):** Sử dụng thuật toán **AES-GCM 256-bit** với Authentication Tag (16 bytes) để mã hóa cả payload JSON lẫn luồng truyền phát nhị phân (UDP stream).
 - **Dynamic Application Whitelisting:** Chỉ phần mềm trong Whitelist được khởi chạy. Hỗ trợ nhận lệnh `policy_update` từ Server để cập nhật trực tiếp trên RAM.
 - **Sandbox Validation:** Đường dẫn được chuẩn hóa, khóa cứng Path Traversal vào `C:\AgentSandbox\`.
 - **Explicit User Consent:** Các lệnh nhạy cảm yêu cầu Popup (timeout 30s). Bổ sung cơ chế Anti-DoS: tự động từ chối (Reject) nếu module đang có popup hiện hành.
 - **Visual Transparency:** Camera yêu cầu 10s Countdown, kèm Overlay Red Dot (Always-on-top) xuyên suốt quá trình ghi hình.
-- **Permission Reset:** Khi Agent mất mạng và kết nối lại, mọi quyền được cấp sẽ tự động xóa bỏ. Yêu cầu Controller xin cấp quyền lại từ đầu.
+- **Permission Reset & Key Rotation:** Khi Agent mất mạng và kết nối lại, khóa phiên (Session Key) cũ sẽ tự động bị tiêu hủy và `CryptoModule` reset. Đồng thời mọi quyền đã cấp bị xóa, bắt buộc Controller phải xin cấp lại quyền và tiến hành Handshake ECDH lập khóa phiên mới.
 
 ## PHẦN 2: CHI TIẾT THIẾT KẾ CÁC MODULE
 
@@ -35,6 +40,7 @@
 ### 2.3 StreamModule (Màn hình)
 - **Commands:** `screenshot`, `screen_stream`, `screen_stream_stop`
 - Dùng GDI+ chụp màn hình, nội suy về 1280x720. **Tối ưu băng thông:** Sử dụng thuật toán **Software Bounding Box Delta Encoding** (duyệt pixel `unsafe` `LockBits` cực nhanh) để chỉ nén và gửi đi vùng màn hình bị biến đổi kèm tọa độ $(X, Y, W, H)$ và cờ `is_keyframe`, bỏ qua truyền tải nếu màn hình tĩnh. Mỗi 30 frames tự động gửi 1 Keyframe đầy đủ để làm mốc đồng bộ. Đồng bộ bằng `SemaphoreSlim`.
+- **Truyền tải UDP & Mã hóa:** Băng thông truyền tải hình ảnh sử dụng giao thức UDP (`UdpStreamSender`). Trước khi gửi, toàn bộ luồng buffer của hình ảnh được mã hóa trực tiếp bằng AES-GCM (Session Key cấp từ ECDH) theo cấu trúc `[IV (12)] + [Ciphertext] + [AuthTag (16)]`. Gắn Additional Authenticated Data (AAD) bao gồm `FrameId` và `Timestamp` để chặn tuyệt đối tấn công phát lại (Replay Attack).
 
 ### 2.4 KeyloggerModule
 - **Commands:** `keylog_start`, `keylog_stop`

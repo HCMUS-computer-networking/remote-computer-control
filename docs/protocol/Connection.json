@@ -6,6 +6,22 @@
     "list_agents": {
       "_desc": "Controller asks Gateway for the current list of agents",
       "type": "list_agents"
+    },
+
+    "e2ee_init": {
+      "_desc": "Controller initiates ECDH Key Exchange. Target agent will verify PIN and reply with e2ee_ready.",
+      "type": "e2ee_init",
+      "target_agents": ["PC-Lab-01"],
+      "publicKey": "base64_spki_public_key_here",
+      "signature": "base64_hmac_signature_using_pin"
+    },
+
+    "e2ee_payload": {
+      "_desc": "Controller sends encrypted command wrapped in e2ee_payload. Gateway acts as blind relay.",
+      "type": "e2ee_payload",
+      "target_agents": ["PC-Lab-01"],
+      "seq": 1,
+      "data": "base64_of_IV_Ciphertext_AuthTag"
     }
 
   },
@@ -27,6 +43,28 @@
       "type": "agent_status",
       "agent_id": "PC-Lab-01",
       "online": false
+    },
+
+    "permissions_reset": {
+      "_desc": "Gateway/Agent pushes this after reconnecting to instruct Controller to drop session keys and revoke permissions.",
+      "type": "permissions_reset",
+      "agent_id": "PC-Lab-01"
+    },
+
+    "e2ee_ready": {
+      "_desc": "Agent replies to e2ee_init after deriving session key.",
+      "type": "e2ee_ready",
+      "agent_id": "PC-Lab-01",
+      "publicKey": "base64_spki_public_key_here",
+      "signature": "base64_hmac_signature_using_pin"
+    },
+
+    "e2ee_payload": {
+      "_desc": "Agent sends encrypted response wrapped in e2ee_payload. Gateway acts as blind relay.",
+      "type": "e2ee_payload",
+      "agent_id": "PC-Lab-01",
+      "seq": 2,
+      "data": "base64_of_IV_Ciphertext_AuthTag"
     }
 
   }

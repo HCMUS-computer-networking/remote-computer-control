@@ -1,7 +1,6 @@
-# JSON Message Format — DRAFT (chưa chốt với nhóm)
+# JSON Message Format & E2EE Protocol
 
-> **Trạng thái:** File MẪU TẠM do phía Controller tự đề xuất, **chưa họp nhóm xác nhận**.
-> Khi nhóm họp xong và thống nhất, cập nhật các file này và xoá dòng DRAFT này.
+> **Trạng thái:** File chính thức. Đã áp dụng End-to-End Encryption (E2EE).
 
 ## Danh sách file
 
@@ -19,15 +18,14 @@
 ## Quy ước chung
 
 - **`type`** — tên loại message, bắt buộc trong mọi gói tin JSON.
+- **E2EE Wrapper (`e2ee_payload`)** — Ngoại trừ các bản tin hệ thống như `list_agents`, `agent_status`, `e2ee_init`, `e2ee_ready`, toàn bộ các JSON Payload chứa nội dung điều khiển đều phải được Serialized thành chuỗi, mã hóa AES-GCM 256-bit (kèm IV và AuthTag), sau đó encode Base64 và đặt vào trường `data` của một object `e2ee_payload`. Gateway chỉ làm nhiệm vụ luân chuyển các `e2ee_payload` này (Blind Relay).
 - **`agent_id`** — id của agent gửi kết quả về (phía Gateway→Controller).
-- **`target_agents`** — mảng id agent mà lệnh sẽ được gửi tới (phía Controller→Gateway). Cần xác nhận Gateway có relay field này không (xem `TODO` trong `File.json`).
-- **Frame ảnh (screen / webcam):** luôn gồm 2 message liên tiếp — JSON `frame_meta` rồi BINARY JPEG. Controller đặt `binaryType = "arraybuffer"` và ghép cặp theo thứ tự nhận.
+- **`target_agents`** — mảng id agent mà lệnh sẽ được gửi tới (phía Controller→Gateway). Gateway sẽ dựa vào trường này để Route JSON (hoặc `e2ee_payload`) tới đích.
+- **Frame ảnh & UDP Stream (screen / webcam):** luôn gồm 2 quá trình liên tiếp: JSON `frame_meta` (gửi qua WebSocket) rồi BINARY BUFFER (gửi qua UDP). Controller ghép cặp theo metadata. Payload nhị phân của hình ảnh đã được mã hóa nguyên khối AES-GCM trước khi gửi.
 - **Consent:** các module nhạy cảm (keylog, webcam) có thêm message `*_denied` khi người dùng từ chối.
 
-## TODO cần xác nhận với nhóm
+## Ghi chú triển khai
 
-- [ ] Confirm field name `target_agents` với Gateway (có relay được không?).
-- [ ] File upload (`fs_put`): dùng base64 chunks hay binary WebSocket message?
-- [ ] `frame_meta` + binary: Agent gửi liên tiếp trong cùng 1 WebSocket connection hay tách riêng?
-- [ ] URL/port Gateway và giao thức `ws://` hay `wss://`.
-- [ ] Các field `timestamp_ms` có thật sự cần không?
+- Gateway hỗ trợ broadcast nếu `target_agents` trống.
+- `frame_meta` được gửi qua giao thức WebSocket (TCP) để đảm bảo độ tin cậy, còn luồng nhị phân được gửi qua UDP Stream để tăng tốc.
+- Quá trình xin cấp quyền được thực hiện trước khi bất kỳ module nhạy cảm nào khởi chạy. Nếu Controller/Agent bị ngắt kết nối, quyền được reset, và mã PIN sẽ cần xác thực Handshake lại khóa E2EE (`permissions_reset`).
