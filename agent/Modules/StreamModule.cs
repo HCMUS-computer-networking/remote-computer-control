@@ -167,7 +167,24 @@ namespace AgentSystem.Modules
 
         private async Task TakeSingleScreenshotAsync(int quality, string commandId)
         {
-
+             if (isStreaming)
+             {
+                 await captureSemaphore.WaitAsync();
+                 try
+                 {
+                     if (scaledBitmap != null)
+                     {
+                         byte[] imageBytes = ImageUtils.CompressImageToJpeg(scaledBitmap, quality);
+                         long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                         await UdpStreamSender.SendFrameAsync(context.AgentId, commandId, 0, 0, imageBytes, timestamp, true, new Rectangle(0, 0, TargetSize.Width, TargetSize.Height), context.Crypto);
+                         return;
+                     }
+                 }
+                 finally
+                 {
+                     captureSemaphore.Release();
+                 }
+             }
              
              await CaptureAndSendAsync(commandId, quality, false);
         }

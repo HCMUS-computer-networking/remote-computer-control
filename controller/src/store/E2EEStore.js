@@ -156,6 +156,16 @@ const useE2EEStore = create((set, get) => ({
         const session = get().sessions[agentId]
         if (!session || session.state !== 'ready') return false
 
+        if (session.recvSeq === -1) {
+            set((prev) => ({
+                sessions: {
+                    ...prev.sessions,
+                    [agentId]: { ...prev.sessions[agentId], recvSeq: seq }
+                }
+            }))
+            return true;
+        }
+
         // Sliding window of 5
         const WINDOW_SIZE = 5
         if (seq <= session.recvSeq - WINDOW_SIZE) return false // Too old

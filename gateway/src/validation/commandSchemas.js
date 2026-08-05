@@ -140,6 +140,12 @@ const schemas = {
     required: ['path', 'chunk_index', 'total_chunks', 'transfer_id', 'data_base64'],
     additionalProperties: false,
   },
+  fs_delete: {
+    type: 'object',
+    properties: { path: { type: 'string' } },
+    required: ['path'],
+    additionalProperties: false,
+  },
 
   // Policy & Permissions
   policy_update: {

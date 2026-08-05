@@ -115,6 +115,13 @@ namespace agent.Modules
                     salt: Array.Empty<byte>(),
                     info: Encoding.UTF8.GetBytes("RemoteControl_UDP_v1")
                 );
+
+                // Reset sequence numbers for the new session (important when Controller refreshes without Agent reconnecting)
+                lock (_seqLock)
+                {
+                    _sendSeq = 0;
+                    _recvSeq = unchecked((uint)-1);
+                }
             }
         }
 
@@ -238,6 +245,13 @@ namespace agent.Modules
             _udpFramesSent = 0;
             _ecdh?.Dispose();
             _ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+            
+            // Reset lại Sequence Number để khớp với Controller sau khi Reconnect
+            lock (_seqLock)
+            {
+                _sendSeq = 0;
+                _recvSeq = unchecked((uint)-1);
+            }
         }
 
         public void Dispose()

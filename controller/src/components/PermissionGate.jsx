@@ -104,9 +104,9 @@ function PermissionGate({ feature, agent_id, children })
                 catch (err) { console.error('[PermissionGate] queued action threw:', err) }
             }
         }
-        else if (status === 'denied')
+        else if (status === 'denied' || status === 'idle')
         {
-            addToast(`Agent từ chối cấp quyền ${feature}`, 'error')
+            if (status === 'denied') addToast(`Agent từ chối cấp quyền ${feature}`, 'error')
             resetPending()
         }
     }, [status, is_pending_consent, feature, addToast, resetPending])
@@ -139,11 +139,19 @@ function PermissionGate({ feature, agent_id, children })
         if (!is_pending_consent)
         {
             setPendingConsent(true)
-            requestPermission(feature, agent_id)
+            
+            // Fix: Only send the network request if the global store isn't already tracking it.
+            // This prevents duplicate packets during React Strict Mode remounts.
+            if (current !== 'requesting')
+            {
+                requestPermission(feature, agent_id)
+            }
+            
             timeout_ref.current = setTimeout(function ()
             {
                 addToast(`Hết thời gian chờ cấp quyền ${feature}`, 'error')
                 resetPending()
+                usePermissionStore.getState().setPermissionResult(agent_id, feature, false)
             }, CONSENT_TIMEOUT_MS)
         }
     }, [agent_id, feature, is_pending_consent, requestPermission, addToast, resetPending])

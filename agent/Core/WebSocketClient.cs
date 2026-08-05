@@ -11,11 +11,13 @@ using System.Net;
 using System.Net.Sockets;
 using Serilog;
 using AgentSystem.Managers;
+using System.Diagnostics;
 
 namespace AgentSystem.Core
 {
     public class WebSocketClient
     {
+        public event Action OnConnectedEvent;
         public event Action OnDisconnectedEvent;
         private readonly AgentClient context;
         private readonly string url;
@@ -63,19 +65,22 @@ namespace AgentSystem.Core
                 Log.Information("[WebSocket] Đang kết nối tới {finalUrl}...", finalUrl);
                 await webSocket.ConnectAsync(new Uri(finalUrl), cts.Token);
                 Log.Information("[WebSocket] KẾT NỐI THÀNH CÔNG!");
+                OnConnectedEvent?.Invoke();
                 
                 isReconnecting = false;
                 
                 string ip = Dns.GetHostAddresses(Dns.GetHostName())
                     .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork)?.ToString() ?? "unknown";
 
+                context.Crypto.Reset();
                 context.SendResponse(new { 
                     type = "REGISTER", 
                     agent_id = context.AgentId,
+                    secret = ConfigManager.Current.AuthKey,
                     hostname = Environment.MachineName,
                     ip = ip,
                     os = Environment.OSVersion.ToString()
-                });
+                }, false);
                 StartHeartbeat();
                 _ = ReceiveLoopAsync();
             }
@@ -90,6 +95,9 @@ namespace AgentSystem.Core
         {
             try
             {
+                // Xóa sạch trạng thái E2EE cũ khi ngắt kết nối
+                context.Crypto.Reset();
+                
                 heartbeatTimer?.Dispose();
                 cts?.Cancel();
                 
@@ -230,6 +238,9 @@ namespace AgentSystem.Core
             if (isReconnecting || (cts != null && cts.IsCancellationRequested)) return;
             isReconnecting = true;
 
+            // Xóa sạch trạng thái E2EE cũ trước khi thử kết nối lại
+            context.Crypto.Reset();
+
             Log.Information("[WebSocket] Bắt đầu tiến trình tự động kết nối lại (Reconnect)...");
             heartbeatTimer?.Dispose();
             webSocket?.Dispose();
@@ -250,25 +261,28 @@ namespace AgentSystem.Core
                     await webSocket.ConnectAsync(new Uri(finalUrl), cts.Token);
                     
                     Log.Information("[WebSocket] TÁI KẾT NỐI THÀNH CÔNG!");
+                    OnConnectedEvent?.Invoke();
                     isReconnecting = false;
                     
                     string ip = Dns.GetHostAddresses(Dns.GetHostName())
                         .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork)?.ToString() ?? "unknown";
 
                     // Gửi lại gói đăng ký AgentId sau khi có kết nối mới
+                    context.Crypto.Reset();
                     context.SendResponse(new { 
                         type = "REGISTER", 
                         agent_id = context.AgentId,
+                        secret = ConfigManager.Current.AuthKey,
                         hostname = Environment.MachineName,
                         ip = ip,
                         os = Environment.OSVersion.ToString()
-                    }); 
+                    }, false); 
+                    
+                    // Notify the Controller that permissions and E2EE must be re-established
+                    context.NotifyReconnected();
                     
                     StartHeartbeat();
                     _ = ReceiveLoopAsync();
-                    
-                    // B3: Thông báo Controller rằng Agent đã reconnect, cần xin lại quyền
-                    context.NotifyReconnected();
                 }
                 catch
                 {

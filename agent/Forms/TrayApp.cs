@@ -17,10 +17,15 @@ namespace AgentSystem.Forms
         private ToolStripMenuItem autoStartMenuItem;
         private const string RunKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
         private const string AppName = "AgentSystem";
+        
+        private MainForm mainForm;
 
         public TrayApp(AgentClient agentClient)
         {
             this.agent = agentClient;
+            
+            mainForm = new MainForm(agent);
+            mainForm.Show();
 
             bool isAutoStart = CheckAutoStart();
             autoStartMenuItem = new ToolStripMenuItem("Khởi động cùng Windows", null, ToggleAutoStart);
@@ -28,6 +33,8 @@ namespace AgentSystem.Forms
 
             // Context Menu
             trayMenu = new ContextMenuStrip();
+            trayMenu.Items.Add("Bảng Điều Khiển (Dashboard)", null, ShowDashboard);
+            trayMenu.Items.Add("-");
             trayMenu.Items.Add(autoStartMenuItem);
             trayMenu.Items.Add("-");
             trayMenu.Items.Add("Mở thư mục Log", null, OpenLogFolder);
@@ -37,11 +44,24 @@ namespace AgentSystem.Forms
             // Khởi tạo System Tray Icon
             trayIcon = new NotifyIcon()
             {
-                Text = "Agent System đang chạy ẩn",
+                Text = "Remote Computer Control - Agent",
                 Icon = SystemIcons.Shield, // Dùng biểu tượng khiên bảo mật mặc định
                 ContextMenuStrip = trayMenu,
                 Visible = true
             };
+            
+            trayIcon.DoubleClick += ShowDashboard;
+        }
+
+        private void ShowDashboard(object sender, EventArgs e)
+        {
+            if (mainForm.IsDisposed)
+            {
+                mainForm = new MainForm(agent);
+            }
+            mainForm.Show();
+            mainForm.WindowState = FormWindowState.Normal;
+            mainForm.BringToFront();
         }
 
         private bool Authenticate()

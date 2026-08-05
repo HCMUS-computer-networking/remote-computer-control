@@ -28,25 +28,29 @@ import frameEventBus from '../services/FrameEventBus'
 //   label        — caption ngắn gọn
 //   width        — chiều rộng CSS
 //   height       — chiều cao CSS
-function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'screen', label, width = '100%', height = '100%' })
+function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'screen', label, width = '100%', height = '100%', onFrameRendered })
 {
     const canvas_ref = useRef(null)
 
     useEffect(function ()
     {
         let is_drawing = false
-        let pending_frame = null
+        // Khai báo mảng queue cục bộ cho từng instance của FrameCanvas
+        let frame_queue = [] 
         let animation_frame_id = null
         let current_bitmap_ref = null
+        let last_rendered_seq = -1
 
         const processFrame = (buffer, meta) => {
             if (!buffer || !canvas_ref.current) return
 
-            // Gotcha 3: Chống tích tụ hàng đợi Promise. 
-            // Nếu đang vẽ một frame cũ mà frame mới ập tới, ta chỉ cần lưu frame mới nhất vào pending_frame
-            // và chủ động VỨT BỎ (drop) tất cả các frame ở giữa.
+            if (meta && meta.seq <= last_rendered_seq) return;
+
             if (is_drawing) {
-                pending_frame = { buffer, meta }
+                if (frame_queue.length >= 4) {
+                    frame_queue.shift();
+                }
+                frame_queue.push({ buffer, meta })
                 return
             }
 
@@ -73,9 +77,20 @@ function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'scre
                     } else {
                         const full_w = has_meta ? (meta.w | 0) || bitmap.width  : bitmap.width
                         const full_h = has_meta ? (meta.h | 0) || bitmap.height : bitmap.height
-                        cvs.width  = full_w
-                        cvs.height = full_h
+                        
+                        // Chỉ cập nhật cvs.width / cvs.height khi thực sự thay đổi kích thước stream
+                        if (cvs.width !== full_w || cvs.height !== full_h) {
+                            cvs.width  = full_w
+                            cvs.height = full_h
+                        }
                         ctx.drawImage(bitmap, 0, 0)
+                    }
+
+                    if (meta) {
+                        last_rendered_seq = Math.max(last_rendered_seq, meta.seq);
+                    }
+                    if (onFrameRendered) {
+                        onFrameRendered(meta)
                     }
 
                     // Giải phóng bộ nhớ GPU ngay lập tức
@@ -94,10 +109,11 @@ function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'scre
         }
 
         const processNext = () => {
-            if (pending_frame) {
-                const next = pending_frame
-                pending_frame = null
+            while (frame_queue.length > 0) {
+                const next = frame_queue.shift()
+                if (next.meta && next.meta.seq <= last_rendered_seq) continue;
                 processFrame(next.buffer, next.meta)
+                break;
             }
         }
 

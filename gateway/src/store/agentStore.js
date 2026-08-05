@@ -9,6 +9,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const logger = require('../utils/logger');
 const { queries } = require('../db');
+const config = require('../config');
 
 /** @type {Map<string, {agentId: string, ws: WebSocket, hostname: string, ip: string, os: string, connectedAt: number}>} */
 const agents = new Map();
@@ -21,11 +22,32 @@ const agents = new Map();
  */
 async function verifySecret(agentId, secret) {
   const agent = queries.getAgentById(agentId);
-  if (!agent || !agent.secret_hash) {
-    logger.warn('[agentStore] Unknown agent_id — not found in SQLite database', { agentId });
-    return false;
+
+  // 1. Nếu Agent đã tồn tại trong DB, xác thực bằng hash bcrypt
+  if (agent && agent.secret_hash) {
+    return bcrypt.compare(secret, agent.secret_hash);
   }
-  return bcrypt.compare(secret, agent.secret_hash);
+
+  // 2. Cơ chế Auto-Register cho Agent mới
+  // Nếu Agent chưa có trong DB nhưng secret gửi lên khớp với AGENT_KEY toàn cục
+  if (config.agentKey && secret === config.agentKey) {
+    try {
+      const salt = await bcrypt.genSalt(10);
+      const hash = await bcrypt.hash(secret, salt);
+      
+      // Tự động lưu trữ thông tin Agent vào SQLite với mã băm an toàn
+      queries.upsertAgent(agentId, hash, agentId, Date.now());
+      logger.info('[agentStore] Auto-registered new agent to DB', { agentId });
+      return true;
+    } catch (err) {
+      logger.error('[agentStore] Failed to auto-register agent', { error: err.message });
+      return false;
+    }
+  }
+
+  // Từ chối nếu không tìm thấy trong DB và secret cũng không khớp global key
+  logger.warn('[agentStore] Unknown agent_id and secret does not match global key', { agentId });
+  return false;
 }
 
 /**

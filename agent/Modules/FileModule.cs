@@ -13,11 +13,11 @@ namespace AgentSystem.Modules
 {
     public class FileModule : BaseModule
     {
-        private readonly object _chunkLock = new object();
-        private Dictionary<string, int> expectedChunks = new Dictionary<string, int>();
         private readonly ConcurrentDictionary<string, TaskCompletionSource<byte[]>> _binaryWaiters = new ConcurrentDictionary<string, TaskCompletionSource<byte[]>>();
+        private ConcurrentDictionary<string, ConcurrentDictionary<int, byte[]>> _pendingUploads = new ConcurrentDictionary<string, ConcurrentDictionary<int, byte[]>>();
+        private ConcurrentDictionary<string, SemaphoreSlim> _uploadLocks = new ConcurrentDictionary<string, SemaphoreSlim>();
 
-        public override string[] SupportedCommands => new[] { "fs_list", "fs_get", "fs_put" };
+        public override string[] SupportedCommands => new[] { "fs_list", "fs_get", "fs_put", "fs_delete" };
 
         public FileModule(IAgentContext context, SecurityManager security, UIManager ui) 
             : base(context, security, ui) { }
@@ -60,6 +60,9 @@ namespace AgentSystem.Modules
 
                         await PutFileAsync(fullPath, relativePath, transferId, chunkIndex, totalChunks, fileBytes, commandId);
                         break;
+                    case "fs_delete":
+                        DeleteFileOrDirectory(fullPath, relativePath, commandId);
+                        break;
                     default:
                         SendError(commandId, action, relativePath, $"Unknown file system action: {action}");
                         break;
@@ -74,60 +77,73 @@ namespace AgentSystem.Modules
 
         private async Task PutFileAsync(string fullPath, string relativePath, string transferId, int chunkIndex, int totalChunks, byte[] fileBytes, string commandId)
         {
-            string directoryPath = Path.GetDirectoryName(fullPath);
-            if (!Directory.Exists(directoryPath)) Directory.CreateDirectory(directoryPath);
-
-            lock (_chunkLock)
+            var semaphore = _uploadLocks.GetOrAdd(transferId, _ => new SemaphoreSlim(1, 1));
+            await semaphore.WaitAsync();
+            bool isComplete = false;
+            ConcurrentDictionary<int, byte[]> completeChunks = null;
+            try
             {
-                if (chunkIndex == 0) expectedChunks[fullPath] = 0;
-                if (!expectedChunks.ContainsKey(fullPath) || expectedChunks[fullPath] != chunkIndex)
+                var chunks = _pendingUploads.GetOrAdd(transferId, _ => new ConcurrentDictionary<int, byte[]>());
+                chunks[chunkIndex] = fileBytes;
+                if (chunks.Count == totalChunks)
                 {
-                    SendError(commandId, "fs_put", relativePath, "Out of order chunk received.");
-                    expectedChunks.Remove(fullPath);
-                    return;
+                    isComplete = true;
+                    _pendingUploads.TryRemove(transferId, out completeChunks);
+                    _uploadLocks.TryRemove(transferId, out _);
                 }
             }
-
-            FileMode mode = (chunkIndex == 0) ? FileMode.Create : FileMode.Append;
-
-            using (var stream = new FileStream(fullPath, mode, FileAccess.Write, FileShare.None, 4096, useAsync: true))
+            finally
             {
-                await stream.WriteAsync(fileBytes, 0, fileBytes.Length);
+                semaphore.Release();
             }
 
-            context.SendResponse(new
+            if (isComplete && completeChunks != null)
             {
-                type = "fs_put_result",
-                agent_id = context.AgentId,
-                command_id = commandId,
-                transfer_id = transferId,
-                path = relativePath,
-                chunk_index = chunkIndex,
-                success = true,
-                message = "Chunk received"
-            });
+                string directoryPath = Path.GetDirectoryName(fullPath);
+                if (!Directory.Exists(directoryPath)) Directory.CreateDirectory(directoryPath);
 
-            lock (_chunkLock)
-            {
-                expectedChunks[fullPath]++;
-                if (chunkIndex == totalChunks - 1)
+                // Sắp xếp và ghi 1 lần
+                int totalLength = completeChunks.Values.Sum(c => c.Length);
+                byte[] fullData = new byte[totalLength];
+                int offset = 0;
+                for (int i = 0; i < totalChunks; i++)
                 {
-                    expectedChunks.Remove(fullPath);
-                    
-                    string fileHash = ComputeFileSHA256(fullPath);
-
-                    context.SendResponse(new
+                    if (completeChunks.TryGetValue(i, out var chunk))
                     {
-                        type = "fs_put_complete",
-                        agent_id = context.AgentId,
-                        command_id = commandId,
-                        transfer_id = transferId,
-                        path = relativePath,
-                        success = true,
-                        sha256 = fileHash,
-                        message = "File saved successfully"
-                    });
+                        Buffer.BlockCopy(chunk, 0, fullData, offset, chunk.Length);
+                        offset += chunk.Length;
+                    }
                 }
+
+                await File.WriteAllBytesAsync(fullPath, fullData);
+
+                string fileHash = ComputeFileSHA256(fullPath);
+                context.SendResponse(new
+                {
+                    type = "fs_put_complete",
+                    agent_id = context.AgentId,
+                    command_id = commandId,
+                    transfer_id = transferId,
+                    path = relativePath,
+                    success = true,
+                    complete = true,
+                    sha256 = fileHash,
+                    message = "File saved successfully"
+                });
+            }
+            else if (!isComplete)
+            {
+                context.SendResponse(new
+                {
+                    type = "fs_put_result",
+                    agent_id = context.AgentId,
+                    command_id = commandId,
+                    transfer_id = transferId,
+                    path = relativePath,
+                    chunk_index = chunkIndex,
+                    success = true,
+                    message = "Chunk received"
+                });
             }
         }
 
@@ -260,13 +276,35 @@ namespace AgentSystem.Modules
                 kvp.Value.TrySetCanceled();
             }
             _binaryWaiters.Clear();
-
-            lock (_chunkLock)
-            {
-                expectedChunks.Clear();
-            }
+            _pendingUploads.Clear();
+            _uploadLocks.Clear();
 
             base.OnDisconnected();
+        }
+
+        private void DeleteFileOrDirectory(string fullPath, string relativePath, string commandId)
+        {
+            try
+            {
+                if (File.Exists(fullPath))
+                {
+                    File.Delete(fullPath);
+                    context.SendResponse(new { type = "fs_action_result", agent_id = context.AgentId, command_id = commandId, path = relativePath, success = true, action = "delete" });
+                }
+                else if (Directory.Exists(fullPath))
+                {
+                    Directory.Delete(fullPath, true);
+                    context.SendResponse(new { type = "fs_action_result", agent_id = context.AgentId, command_id = commandId, path = relativePath, success = true, action = "delete" });
+                }
+                else
+                {
+                    SendError(commandId, "fs_delete", relativePath, "Path does not exist.");
+                }
+            }
+            catch (Exception ex)
+            {
+                SendError(commandId, "fs_delete", relativePath, ex.Message);
+            }
         }
     }
 }

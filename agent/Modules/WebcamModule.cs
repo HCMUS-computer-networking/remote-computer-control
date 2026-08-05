@@ -25,6 +25,7 @@ namespace AgentSystem.Modules
         // Cải tiến sử dụng SemaphoreSlim thay thế lock để có thể dùng với async/await
         private readonly SemaphoreSlim captureSemaphore = new SemaphoreSlim(1, 1);
         private CancellationTokenSource webcamCts;
+        private CancellationTokenSource _startupCts;
 
         public override string[] SupportedCommands => new[] { "webcam_start", "webcam_stop" };
 
@@ -47,6 +48,7 @@ namespace AgentSystem.Modules
 
         public override void OnDisconnected()
         {
+            _startupCts?.Cancel();
             if (isCapturing)
             {
                 Log.Warning("[WebcamModule] Phát hiện mất kết nối mạng. Đang tự động tắt Webcam...");
@@ -64,7 +66,16 @@ namespace AgentSystem.Modules
             }
 
             ui.ShowCountdown(10, "Cảnh báo Ghi hình", "Camera sẽ được kích hoạt sau {0} giây...");
-            await Task.Delay(10000);
+            
+            _startupCts = new CancellationTokenSource();
+            try
+            {
+                await Task.Delay(10000, _startupCts.Token);
+            }
+            catch (TaskCanceledException)
+            {
+                return;
+            }
 
             capture = new VideoCapture(0); 
             if (!capture.IsOpened())
@@ -185,6 +196,8 @@ namespace AgentSystem.Modules
         {
             isCapturing = false;
             
+            _startupCts?.Cancel();
+
             // Ra lệnh ngừng delay ngay lập tức
             webcamCts?.Cancel();
             webcamCts?.Dispose();

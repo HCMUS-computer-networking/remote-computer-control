@@ -31,11 +31,17 @@ namespace AgentSystem.Core
             { "proc_list", "process" }, { "proc_kill", "process" },
             { "screenshot", "screen" }, { "screen_stream", "screen" }, { "screen_stream_stop", "screen" },
             { "keylog_start", "keylog" }, { "keylog_stop", "keylog" },
-            { "fs_list", "file" }, { "fs_get", "file" }, { "fs_put", "file" },
+            { "fs_list", "file" }, { "fs_get", "file" }, { "fs_put", "file" }, { "fs_delete", "file" },
             { "webcam_start", "webcam" }, { "webcam_stop", "webcam" },
             { "power", "power" },
             { "input_mouse_move", "input" }, { "input_mouse_click", "input" }, { "input_key", "input" }, { "input_type", "input" }
         };
+
+        public bool IsConnected { get; private set; }
+        public event Action OnConnectedEvent;
+        public event Action OnDisconnectedEvent;
+        
+        public string GatewayUrl => gatewayUrl;
 
         public AgentClient(string agentId, string gatewayUrl, SecurityManager security, UIManager ui)
         {
@@ -49,6 +55,7 @@ namespace AgentSystem.Core
             Dispatcher = new MessageDispatcher(this);
             wsClient = new WebSocketClient(this, gatewayUrl);
 
+            wsClient.OnConnectedEvent += HandleAgentConnected;
             wsClient.OnDisconnectedEvent += HandleAgentDisconnected;
             _moduleRegistry = new Dictionary<string, BaseModule>();
         }
@@ -64,8 +71,16 @@ namespace AgentSystem.Core
             }
         }
 
+        private void HandleAgentConnected()
+        {
+            IsConnected = true;
+            OnConnectedEvent?.Invoke();
+        }
+
         private void HandleAgentDisconnected()
         {
+            IsConnected = false;
+            OnDisconnectedEvent?.Invoke();
             Log.Information("[AgentClient] Mất kết nối! Đang yêu cầu các module dọn dẹp tài nguyên...");
             
             // B3: Reset quyền khi mất kết nối — Controller sẽ phải xin lại
@@ -99,12 +114,18 @@ namespace AgentSystem.Core
                 type = "permissions_reset", 
                 agent_id = AgentId,
                 message = "Agent reconnected. Please re-grant permissions." 
-            });
+            }, false);
             Log.Information("[AgentClient] Đã gửi permissions_reset tới Gateway.");
         }
 
         public void Start() { /* Nội dung giữ nguyên */ wsClient.Connect(); }
         public void Stop() { /* Nội dung giữ nguyên */ wsClient.Disconnect(); }
+        public void Reconnect() 
+        { 
+            wsClient.Disconnect(); 
+            wsClient.Connect(); 
+        }
+        
         public void SendResponse(object responseData) { SendResponse(responseData, true); }
         
         public void SendResponse(object responseData, bool encrypt)

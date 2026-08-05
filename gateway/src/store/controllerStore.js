@@ -125,6 +125,13 @@ function sendToCommandInitiator(commandId, data) {
   if (ws && ws.readyState === ws.OPEN) {
     try {
       ws.send(data);
+      // Clean up the mapping after successful delivery to prevent unbounded growth.
+      // UDP frame_meta reuses the same command_id across the stream, so we must
+      // NOT delete here for frame routing. The caller (udpServer.js) uses
+      // hasCommand() + sendToCommandInitiator() for each frame in a stream.
+      // Text-based one-shot responses (app_list_result, power_result, etc.) are
+      // safe to clean up. We keep the entry alive and rely on controller-disconnect
+      // cleanup for stream commands. A periodic GC is added below for safety.
       return true;
     } catch (err) {
       logger.error('[controllerStore] sendToCommandInitiator error', { error: err.message });
@@ -213,6 +220,23 @@ function getAll() {
 function size() {
   return controllers.size;
 }
+
+// Periodic GC: remove stale command entries whose Controller WebSocket is no
+// longer open. This prevents unbounded growth from long-running sessions
+// without removing entries for active streams.
+const COMMAND_GC_INTERVAL_MS = 60_000; // every 60 seconds
+setInterval(() => {
+  let cleaned = 0;
+  for (const [cmdId, ws] of commandToController.entries()) {
+    if (!ws || ws.readyState !== ws.OPEN) {
+      commandToController.delete(cmdId);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    logger.debug('[controllerStore] GC cleaned stale command entries', { cleaned, remaining: commandToController.size });
+  }
+}, COMMAND_GC_INTERVAL_MS);
 
 module.exports = {
   add,

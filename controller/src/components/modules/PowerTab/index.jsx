@@ -141,6 +141,12 @@ function PowerTab({ agent })
     // When set, a countdown modal is showing for this action.
     // null means no modal is open.
     const [pending, setPending] = useState(null)   // { action, label } | null
+    
+    useEffect(function () {
+        if (agent && !agent.online) {
+            setPending(null)
+        }
+    }, [agent?.online])
 
     // Lock is immediate — no countdown, no modal.
     function handleLock()
