@@ -14,6 +14,9 @@
 | `File.json` | File (sandbox) | `fs_list`, `fs_get`, `fs_put` |
 | `Webcam.json` | Webcam | `frame_meta` (module=webcam) + binary JPEG |
 | `Power.json` | Power | `lock`, `restart`, `shutdown`, `sleep` |
+| `Input.json` | Remote Input | `input_mouse_click`, `input_key`, vv... |
+| `PolicyUpdate.json` | Policy Update | Đẩy `app_whitelist` và `sandbox_path` động |
+| `SysInfo.json` | SysInfo | Dashboard CPU, RAM, Disk real-time |
 
 ## Quy ước chung
 
