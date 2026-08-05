@@ -103,7 +103,7 @@ Actions
 ### `ConnectionStore.js`
 State
 - `status` — `'idle' | 'connecting' | 'open' | 'closed'`.
-- `gateway_url` — WS destination (`ws://localhost:8080` by default).
+- `gateway_url` — WS destination (`wss://localhost:8080` by default).
 - `auth_token` — access JWT held **in memory only**; never in
   sessionStorage / localStorage. A page reload signs the operator out; the
   Gateway's HttpOnly refresh cookie is what lets `refreshAccessToken()`
@@ -418,7 +418,7 @@ identical API surface (`connect`, `close`, `send`, `onOpen`, `onMessage`,
 only from `../services`.
 
 ### `Socket.js` (real WebSocket)
-- Base URL from `import.meta.env.VITE_GATEWAY_URL`, fallback `ws://localhost:8080`.
+- Base URL from `import.meta.env.VITE_GATEWAY_URL`, fallback `wss://localhost:8080`.
 - `_buildEndpoint()` appends `/controller?token=<auth_token>` when
   `ConnectionStore.auth_token` is set; before login it falls back to
   `/controller?key=<VITE_CONTROLLER_KEY>`.

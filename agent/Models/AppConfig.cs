@@ -9,7 +9,7 @@ namespace AgentSystem.Models
         public string AgentId { get; set; } = "PC-Lab-01";
 
         [JsonPropertyName("gateway_url")]
-        public string GatewayUrl { get; set; } = "ws://localhost:8080";
+        public string GatewayUrl { get; set; } = "wss://localhost:8080";
 
         [JsonPropertyName("auth_key")]
         public string AuthKey { get; set; } = "agent-secret-key-2024";

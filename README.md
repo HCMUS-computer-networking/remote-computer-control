@@ -5,7 +5,7 @@ A consent-based **remote administration** tool for a lab environment: a web-base
 ## 1. Architecture
 
 ```
-┌──────────────┐   ws://:8080/controller   ┌──────────────┐   ws://:8080/agent   ┌──────────────┐
+┌──────────────┐   wss://:8080/controller   ┌──────────────┐   wss://:8080/agent   ┌──────────────┐
 │  Controller  │ ◄─────────────────────► │   Gateway    │ ◄──────────────────► │    Agent     │
 │ (React SPA)  │      HTTPS /api/login   │ (Node.js WS) │  (many Agents in     │  (C# .NET 8, │
 │              │                          │              │   parallel)          │  Windows tray)│
@@ -68,14 +68,14 @@ npm install
 npm run dev                  # → http://localhost:5173
 ```
 
-By default the Controller runs against `MockSocket` (an in-browser Gateway + Agent simulator). To point at a real Gateway, create `.env.local` with `VITE_USE_MOCK=false` and `VITE_GATEWAY_URL=ws://<host>:8080`.
+By default the Controller runs against `MockSocket` (an in-browser Gateway + Agent simulator). To point at a real Gateway, create `.env.local` with `VITE_USE_MOCK=false` and `VITE_GATEWAY_URL=wss://<host>:8080`.
 
 ### 4.3. Agent
 
 **Option A — Visual Studio 2022:**
 1. Open `agent/agent.sln` in VS 2022.
 2. Edit `agent/config.json`:
-   - `gateway_url` — point at the Gateway (default `ws://127.0.0.1:8080`).
+   - `gateway_url` — point at the Gateway (default `wss://127.0.0.1:8080`).
    - `auth_key` — must match `AGENT_KEY` in the Gateway `.env`.
    - `agent_id` — leave as `"AUTO"` to derive it from hostname + MAC.
 3. Press **F5** to build and run. The Agent minimises to the system tray.

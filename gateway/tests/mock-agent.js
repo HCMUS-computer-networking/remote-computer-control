@@ -4,11 +4,11 @@
 const WebSocket = require('ws');
 
 const AGENT_KEY = 'agent-secret-key-2024';
-const GATEWAY_URL = `ws://localhost:8080/agent?key=${AGENT_KEY}`;
+const GATEWAY_URL = `wss://localhost:8080/agent?key=${AGENT_KEY}`;
 const AGENT_ID = 'MOCK-AGENT-999';
 
 console.log('Starting Mock Agent...');
-const ws = new WebSocket(GATEWAY_URL);
+const ws = new WebSocket(GATEWAY_URL, { rejectUnauthorized: false });
 
 ws.on('open', () => {
   console.log('✅ Connected to Gateway');

@@ -23,7 +23,7 @@ import { logout, refreshAccessToken } from './AuthService'
 
 // Gateway address comes from the Vite env; falls back to localhost for dev.
 // Set VITE_GATEWAY_URL in a .env file to point at the real Gateway.
-const DEFAULT_GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL ?? 'ws://localhost:8080'
+const DEFAULT_GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL ?? 'wss://localhost:8080'
 
 // ─── Reconnect backoff ────────────────────────────────────────────────────────
 

@@ -31,7 +31,7 @@ Hệ thống tuân thủ kiến trúc **Star Topology** (Client-Server-Client) v
 | **Truyền dẫn Video** | JPEG qua WebSocket + MD5 Change Detection (Không gửi khi đứng yên) | Nén H.264/H.265 (Hardware), Delta Encoding (Chỉ gửi điểm ảnh thay đổi) | Change Detection đã giúp giảm 80% băng thông so với bản cũ. Tuy nhiên vẫn thua nén H.264 chuyên dụng. |
 | **Mức độ điều khiển** (bỏ qua, đồ án không yêu cầu) | Chỉ quan sát (View-only), thao tác quản lý qua các Module riêng lẻ | Điều khiển chuột, bàn phím (Remote Input) với độ trễ < 50ms | Cần bổ sung hook API mức OS trên Agent để mô phỏng click/typing. |
 | **Truyền tải File** | Base64 JSON Chunking (512KB) | Binary TCP Stream / WebRTC DataChannel | Base64 làm phình 33% dung lượng file. Tốc độ truyền sẽ chậm hơn chuẩn công nghiệp. |
-| **Mã hóa (Encryption)** | Plaintext (ws://) | TLS 1.3 / End-to-End Encryption (Curve25519) | Đây là lỗ hổng chí mạng ngăn hệ thống hiện tại được dùng ngoài môi trường nội bộ. |
+| **Mã hóa (Encryption)** | Plaintext (wss://) | TLS 1.3 / End-to-End Encryption (Curve25519) | Đây là lỗ hổng chí mạng ngăn hệ thống hiện tại được dùng ngoài môi trường nội bộ. |
 | **Kiểm soát Quyền (Consent)** | Popup Xin quyền có Hard-Timeout 30s, Khóa Tray Icon bằng mật khẩu | Hệ thống ID/Password động ngẫu nhiên, Unattended Access | Hệ thống hiện tại có UX quản lý quyền tiếp cận và bảo vệ (Anti-tamper) cực kỳ tốt, tiệm cận tiêu chuẩn thương mại. |
 
 ---

@@ -26,7 +26,7 @@ graph LR
 - **Star topology** — Agent không nói chuyện trực tiếp với Controller; mọi traffic đi qua Gateway.
 - **Cùng một WebSocket** vừa mang JSON control vừa mang binary JPEG (screen + webcam).
 - **UDP :9000** — Agent bắn frame stream nhanh về Gateway để giảm overhead WebSocket.
-- **UDP :8888** — Agent lắng nghe gói `GATEWAY_ANNOUNCE|ws://ip:port` để auto-discover Gateway trong LAN.
+- **UDP :8888** — Agent lắng nghe gói `GATEWAY_ANNOUNCE|wss://ip:port` để auto-discover Gateway trong LAN.
 - **HTTPS/HTTP** — chỉ dùng cho REST `POST /api/login`, `GET /health`, `GET /api/agents`.
 
 ---

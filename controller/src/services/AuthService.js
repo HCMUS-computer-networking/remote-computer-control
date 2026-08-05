@@ -25,7 +25,7 @@ import useConnectionStore from '../store/ConnectionStore'
 // scheme: ws:// -> http://  and  wss:// -> https://.
 function gatewayHttpUrl()
 {
-    const ws_url = import.meta.env.VITE_GATEWAY_URL ?? 'ws://localhost:8080'
+    const ws_url = import.meta.env.VITE_GATEWAY_URL ?? 'wss://localhost:8080'
     return ws_url.replace(/^ws(s?):\/\//i, 'http$1://')
 }
 

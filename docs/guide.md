@@ -60,7 +60,7 @@ npm run dev
    ```json
    {
      "agent_id": "AUTO",
-     "gateway_url": "ws://192.168.1.150:8080",
+     "gateway_url": "wss://192.168.1.150:8080",
      "auth_key": "agent-secret-key-2024",
      "app_whitelist": ["notepad", "calc", "chrome", "winword"],
      "sandbox_root_path": "C:\\AgentSandbox\\",

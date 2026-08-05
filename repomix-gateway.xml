@@ -1,4 +1,5 @@
 This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+The content has been processed where line numbers have been added.
 
 <file_summary>
 This section contains a summary of this file.
@@ -32,10 +33,10 @@ The content is organized as follows:
 <notes>
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: gateway/src/**/*, scripts/**/*
-- Files matching these patterns are excluded: **/node_modules/**, *.sqlite*
-- Files matching patterns in .gitignore are excluded
+- Only files matching these patterns are included: gateway/src/**/*.js, gateway/src/**/*.json, gateway/package.json, gateway/.env.example, scripts/**/*
+- Files matching these patterns are excluded: **/node_modules/**, **/logs/**, *.sqlite*
 - Files matching default ignore patterns are excluded
+- Line numbers have been added to the beginning of each line
 - Files are sorted by Git change count (files with more changes are at the bottom)
 </notes>
 
@@ -57,9 +58,6 @@ gateway/
       agents.json
       agentStore.js
       controllerStore.js
-      data.sqlite
-      data.sqlite-shm
-      data.sqlite-wal
       heartbeat.js
       users.json
     udp/
@@ -73,6 +71,8 @@ gateway/
     db.js
     index.js
     server.js
+  .env.example
+  package.json
 scripts/
   dev-up.ps1
 </directory_structure>
@@ -81,2584 +81,2662 @@ scripts/
 This section contains the contents of the repository's files.
 
 <file path="gateway/src/store/agents.json">
-[]
+1: []
 </file>
 
 <file path="gateway/src/store/users.json">
-[
-  {
-    "username": "admin",
-    "passwordHash": "$2b$10$Pu779YvFZVuSVA2Jt1kFG.AWzbaQ.MuNbxHuI3xGSXsrzv9Bo0fL2"
-  }
-]
+1: [
+2:   {
+3:     "username": "admin",
+4:     "passwordHash": "$2b$10$Pu779YvFZVuSVA2Jt1kFG.AWzbaQ.MuNbxHuI3xGSXsrzv9Bo0fL2"
+5:   }
+6: ]
 </file>
 
 <file path="gateway/src/udp/fecWorker.js">
-const { parentPort } = require('worker_threads');
-
-// Lắng nghe yêu cầu tính toán XOR từ Main Thread
-parentPort.on('message', (task) => {
-  try {
-    const { taskId, total, totalPayloadLength, chunks, parityData } = task;
-    const MAX_PAYLOAD_SIZE = 1300;
-
-    let missingIndex = -1;
-    for (let i = 0; i < total; i++) {
-      if (!chunks[i]) {
-        missingIndex = i;
-        break;
-      }
-    }
-
-    if (missingIndex === -1 || !parityData) {
-      parentPort.postMessage({ taskId, success: false, error: 'Không tìm thấy chunk thiếu hoặc không có parity data' });
-      return;
-    }
-
-    // Thực hiện tính toán XOR nặng trên Worker Thread (không làm nghẽn Event Loop chính)
-    let recovered = Buffer.from(parityData);
-    for (let i = 0; i < total; i++) {
-      if (i !== missingIndex && chunks[i]) {
-        const chunk = Buffer.from(chunks[i]); // Chuyển đổi an toàn
-        for (let j = 0; j < chunk.length; j++) {
-          recovered[j] ^= chunk[j];
-        }
-      }
-    }
-
-    // Xử lý padding của chunk cuối cùng
-    if (missingIndex === total - 1 && totalPayloadLength > 0) {
-      let lastChunkSize = totalPayloadLength % MAX_PAYLOAD_SIZE;
-      if (lastChunkSize === 0) lastChunkSize = MAX_PAYLOAD_SIZE;
-      recovered = recovered.subarray(0, lastChunkSize);
-    }
-
-    // Trả kết quả về Main Thread dưới dạng Transferable Objects (Zero-copy)
-    parentPort.postMessage({ taskId, success: true, missingIndex, recovered: recovered.buffer }, [recovered.buffer]);
-  } catch (err) {
-    parentPort.postMessage({ taskId, success: false, error: err.message });
-  }
-});
+ 1: const { parentPort } = require('worker_threads');
+ 2: 
+ 3: // Lắng nghe yêu cầu tính toán XOR từ Main Thread
+ 4: parentPort.on('message', (task) => {
+ 5:   try {
+ 6:     const { taskId, total, totalPayloadLength, chunks, parityData } = task;
+ 7:     const MAX_PAYLOAD_SIZE = 1300;
+ 8: 
+ 9:     let missingIndex = -1;
+10:     for (let i = 0; i < total; i++) {
+11:       if (!chunks[i]) {
+12:         missingIndex = i;
+13:         break;
+14:       }
+15:     }
+16: 
+17:     if (missingIndex === -1 || !parityData) {
+18:       parentPort.postMessage({ taskId, success: false, error: 'Không tìm thấy chunk thiếu hoặc không có parity data' });
+19:       return;
+20:     }
+21: 
+22:     // Thực hiện tính toán XOR nặng trên Worker Thread (không làm nghẽn Event Loop chính)
+23:     let recovered = Buffer.from(parityData);
+24:     for (let i = 0; i < total; i++) {
+25:       if (i !== missingIndex && chunks[i]) {
+26:         const chunk = Buffer.from(chunks[i]); // Chuyển đổi an toàn
+27:         for (let j = 0; j < chunk.length; j++) {
+28:           recovered[j] ^= chunk[j];
+29:         }
+30:       }
+31:     }
+32: 
+33:     // Xử lý padding của chunk cuối cùng
+34:     if (missingIndex === total - 1 && totalPayloadLength > 0) {
+35:       let lastChunkSize = totalPayloadLength % MAX_PAYLOAD_SIZE;
+36:       if (lastChunkSize === 0) lastChunkSize = MAX_PAYLOAD_SIZE;
+37:       recovered = recovered.subarray(0, lastChunkSize);
+38:     }
+39: 
+40:     // Trả kết quả về Main Thread dưới dạng Transferable Objects (Zero-copy)
+41:     parentPort.postMessage({ taskId, success: true, missingIndex, recovered: recovered.buffer }, [recovered.buffer]);
+42:   } catch (err) {
+43:     parentPort.postMessage({ taskId, success: false, error: err.message });
+44:   }
+45: });
 </file>
 
 <file path="gateway/src/utils/logger.js">
-// src/utils/logger.js
-// Winston logger — console (colorized) + file (logs/gateway.log).
-// Requirement D7: log mọi kết nối/ngắt/đăng ký + mọi message đi qua.
-
-const winston = require('winston');
-const path = require('path');
-const config = require('../config');
-
-const { combine, timestamp, printf, colorize, errors } = winston.format;
-
-// Custom log format
-const logFormat = printf(({ level, message, timestamp, ...meta }) => {
-  const metaStr = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
-  return `[${timestamp}] [${level}] ${message}${metaStr}`;
-});
-
-const logger = winston.createLogger({
-  level: config.logLevel,
-  format: combine(
-    errors({ stack: true }),
-    timestamp({ format: 'YYYY-MM-DD HH:mm:ss' })
-  ),
-  transports: [
-    // Console — colorized for dev
-    new winston.transports.Console({
-      format: combine(colorize(), logFormat),
-    }),
-
-    // File — JSON structured for production / audit
-    new winston.transports.File({
-      filename: path.resolve(__dirname, '..', '..', 'logs', 'gateway.log'),
-      format: combine(logFormat),
-      maxsize: 10 * 1024 * 1024, // 10 MB
-      maxFiles: 5,
-    }),
-
-    // Separate error log
-    new winston.transports.File({
-      filename: path.resolve(__dirname, '..', '..', 'logs', 'error.log'),
-      level: 'error',
-      format: combine(logFormat),
-      maxsize: 5 * 1024 * 1024,
-      maxFiles: 3,
-    }),
-  ],
-});
-
-module.exports = logger;
+ 1: // src/utils/logger.js
+ 2: // Winston logger — console (colorized) + file (logs/gateway.log).
+ 3: // Requirement D7: log mọi kết nối/ngắt/đăng ký + mọi message đi qua.
+ 4: 
+ 5: const winston = require('winston');
+ 6: const path = require('path');
+ 7: const config = require('../config');
+ 8: 
+ 9: const { combine, timestamp, printf, colorize, errors } = winston.format;
+10: 
+11: // Custom log format
+12: const logFormat = printf(({ level, message, timestamp, ...meta }) => {
+13:   const metaStr = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
+14:   return `[${timestamp}] [${level}] ${message}${metaStr}`;
+15: });
+16: 
+17: const logger = winston.createLogger({
+18:   level: config.logLevel,
+19:   format: combine(
+20:     errors({ stack: true }),
+21:     timestamp({ format: 'YYYY-MM-DD HH:mm:ss' })
+22:   ),
+23:   transports: [
+24:     // Console — colorized for dev
+25:     new winston.transports.Console({
+26:       format: combine(colorize(), logFormat),
+27:     }),
+28: 
+29:     // File — JSON structured for production / audit
+30:     new winston.transports.File({
+31:       filename: path.resolve(__dirname, '..', '..', 'logs', 'gateway.log'),
+32:       format: combine(logFormat),
+33:       maxsize: 10 * 1024 * 1024, // 10 MB
+34:       maxFiles: 5,
+35:     }),
+36: 
+37:     // Separate error log
+38:     new winston.transports.File({
+39:       filename: path.resolve(__dirname, '..', '..', 'logs', 'error.log'),
+40:       level: 'error',
+41:       format: combine(logFormat),
+42:       maxsize: 5 * 1024 * 1024,
+43:       maxFiles: 3,
+44:     }),
+45:   ],
+46: });
+47: 
+48: module.exports = logger;
 </file>
 
 <file path="gateway/src/db.js">
-// src/db.js
-// SQLite database connection and schema initialization using better-sqlite3.
-// Replaces in-memory Maps and static JSON files for users, agents, and refresh tokens.
-
-const path = require('path');
-const fs = require('fs');
-const Database = require('better-sqlite3');
-const logger = require('./utils/logger');
-
-const dbPath = process.env.DB_PATH || path.resolve(__dirname, 'store', 'data.sqlite');
-
-// Ensure directory exists
-const dbDir = path.dirname(dbPath);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
-
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-
-// Initialize database tables on startup
-function initSchema() {
-  const schema = `
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      role TEXT DEFAULT 'admin'
-    );
-
-    CREATE TABLE IF NOT EXISTS agents (
-      agent_id TEXT PRIMARY KEY,
-      secret_hash TEXT NOT NULL,
-      display_name TEXT,
-      created_at INTEGER
-    );
-
-    CREATE TABLE IF NOT EXISTS refresh_tokens (
-      jti TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-  `;
-  db.exec(schema);
-  logger.info('[db] SQLite schema verified/initialized', { path: dbPath });
-}
-
-initSchema();
-
-// ─── User Helper Queries ──────────────────────────────────────
-const getUserByUsernameStmt = db.prepare('SELECT * FROM users WHERE username = ?');
-const getUserByIdStmt = db.prepare('SELECT * FROM users WHERE id = ?');
-const upsertUserStmt = db.prepare(`
-  INSERT INTO users (username, password_hash, role)
-  VALUES (?, ?, ?)
-  ON CONFLICT(username) DO UPDATE SET
-    password_hash = excluded.password_hash,
-    role = excluded.role
-`);
-
-// ─── Agent Helper Queries ─────────────────────────────────────
-const getAgentByIdStmt = db.prepare('SELECT * FROM agents WHERE agent_id = ?');
-const getAllAgentsStmt = db.prepare('SELECT * FROM agents');
-const upsertAgentStmt = db.prepare(`
-  INSERT INTO agents (agent_id, secret_hash, display_name, created_at)
-  VALUES (?, ?, ?, ?)
-  ON CONFLICT(agent_id) DO UPDATE SET
-    secret_hash = excluded.secret_hash,
-    display_name = COALESCE(excluded.display_name, agents.display_name)
-`);
-
-// ─── Refresh Token Helper Queries ─────────────────────────────
-const insertRefreshTokenStmt = db.prepare('INSERT OR REPLACE INTO refresh_tokens (jti, user_id, expires_at) VALUES (?, ?, ?)');
-const getRefreshTokenStmt = db.prepare('SELECT * FROM refresh_tokens WHERE jti = ?');
-const deleteRefreshTokenStmt = db.prepare('DELETE FROM refresh_tokens WHERE jti = ?');
-const cleanExpiredTokensStmt = db.prepare('DELETE FROM refresh_tokens WHERE expires_at < ?');
-
-const queries = {
-  getUserByUsername: (username) => getUserByUsernameStmt.get(username),
-  getUserById: (id) => getUserByIdStmt.get(id),
-  upsertUser: (username, passwordHash, role = 'admin') => upsertUserStmt.run(username, passwordHash, role),
-
-  getAgentById: (agentId) => getAgentByIdStmt.get(agentId),
-  getAllAgents: () => getAllAgentsStmt.all(),
-  upsertAgent: (agentId, secretHash, displayName = '', createdAt = Date.now()) => upsertAgentStmt.run(agentId, secretHash, displayName, createdAt),
-
-  insertRefreshToken: (jti, userId, expiresAt) => insertRefreshTokenStmt.run(jti, userId, expiresAt),
-  getRefreshToken: (jti) => getRefreshTokenStmt.get(jti),
-  deleteRefreshToken: (jti) => deleteRefreshTokenStmt.run(jti),
-  cleanExpiredTokens: (nowMs = Date.now()) => cleanExpiredTokensStmt.run(nowMs),
-};
-
-module.exports = {
-  db,
-  queries,
-  initSchema,
-};
+ 1: // src/db.js
+ 2: // SQLite database connection and schema initialization using better-sqlite3.
+ 3: // Replaces in-memory Maps and static JSON files for users, agents, and refresh tokens.
+ 4: 
+ 5: const path = require('path');
+ 6: const fs = require('fs');
+ 7: const Database = require('better-sqlite3');
+ 8: const logger = require('./utils/logger');
+ 9: 
+10: const dbPath = process.env.DB_PATH || path.resolve(__dirname, 'store', 'data.sqlite');
+11: 
+12: // Ensure directory exists
+13: const dbDir = path.dirname(dbPath);
+14: if (!fs.existsSync(dbDir)) {
+15:   fs.mkdirSync(dbDir, { recursive: true });
+16: }
+17: 
+18: const db = new Database(dbPath);
+19: db.pragma('journal_mode = WAL');
+20: 
+21: // Initialize database tables on startup
+22: function initSchema() {
+23:   const schema = `
+24:     CREATE TABLE IF NOT EXISTS users (
+25:       id INTEGER PRIMARY KEY AUTOINCREMENT,
+26:       username TEXT UNIQUE NOT NULL,
+27:       password_hash TEXT NOT NULL,
+28:       role TEXT DEFAULT 'admin'
+29:     );
+30: 
+31:     CREATE TABLE IF NOT EXISTS agents (
+32:       agent_id TEXT PRIMARY KEY,
+33:       secret_hash TEXT NOT NULL,
+34:       display_name TEXT,
+35:       created_at INTEGER
+36:     );
+37: 
+38:     CREATE TABLE IF NOT EXISTS refresh_tokens (
+39:       jti TEXT PRIMARY KEY,
+40:       user_id INTEGER NOT NULL,
+41:       expires_at INTEGER NOT NULL,
+42:       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+43:     );
+44:   `;
+45:   db.exec(schema);
+46:   logger.info('[db] SQLite schema verified/initialized', { path: dbPath });
+47: }
+48: 
+49: initSchema();
+50: 
+51: // ─── User Helper Queries ──────────────────────────────────────
+52: const getUserByUsernameStmt = db.prepare('SELECT * FROM users WHERE username = ?');
+53: const getUserByIdStmt = db.prepare('SELECT * FROM users WHERE id = ?');
+54: const upsertUserStmt = db.prepare(`
+55:   INSERT INTO users (username, password_hash, role)
+56:   VALUES (?, ?, ?)
+57:   ON CONFLICT(username) DO UPDATE SET
+58:     password_hash = excluded.password_hash,
+59:     role = excluded.role
+60: `);
+61: 
+62: // ─── Agent Helper Queries ─────────────────────────────────────
+63: const getAgentByIdStmt = db.prepare('SELECT * FROM agents WHERE agent_id = ?');
+64: const getAllAgentsStmt = db.prepare('SELECT * FROM agents');
+65: const upsertAgentStmt = db.prepare(`
+66:   INSERT INTO agents (agent_id, secret_hash, display_name, created_at)
+67:   VALUES (?, ?, ?, ?)
+68:   ON CONFLICT(agent_id) DO UPDATE SET
+69:     secret_hash = excluded.secret_hash,
+70:     display_name = COALESCE(excluded.display_name, agents.display_name)
+71: `);
+72: 
+73: // ─── Refresh Token Helper Queries ─────────────────────────────
+74: const insertRefreshTokenStmt = db.prepare('INSERT OR REPLACE INTO refresh_tokens (jti, user_id, expires_at) VALUES (?, ?, ?)');
+75: const getRefreshTokenStmt = db.prepare('SELECT * FROM refresh_tokens WHERE jti = ?');
+76: const deleteRefreshTokenStmt = db.prepare('DELETE FROM refresh_tokens WHERE jti = ?');
+77: const cleanExpiredTokensStmt = db.prepare('DELETE FROM refresh_tokens WHERE expires_at < ?');
+78: 
+79: const queries = {
+80:   getUserByUsername: (username) => getUserByUsernameStmt.get(username),
+81:   getUserById: (id) => getUserByIdStmt.get(id),
+82:   upsertUser: (username, passwordHash, role = 'admin') => upsertUserStmt.run(username, passwordHash, role),
+83: 
+84:   getAgentById: (agentId) => getAgentByIdStmt.get(agentId),
+85:   getAllAgents: () => getAllAgentsStmt.all(),
+86:   upsertAgent: (agentId, secretHash, displayName = '', createdAt = Date.now()) => upsertAgentStmt.run(agentId, secretHash, displayName, createdAt),
+87: 
+88:   insertRefreshToken: (jti, userId, expiresAt) => insertRefreshTokenStmt.run(jti, userId, expiresAt),
+89:   getRefreshToken: (jti) => getRefreshTokenStmt.get(jti),
+90:   deleteRefreshToken: (jti) => deleteRefreshTokenStmt.run(jti),
+91:   cleanExpiredTokens: (nowMs = Date.now()) => cleanExpiredTokensStmt.run(nowMs),
+92: };
+93: 
+94: module.exports = {
+95:   db,
+96:   queries,
+97:   initSchema,
+98: };
 </file>
 
 <file path="gateway/src/index.js">
-// src/index.js
-// Gateway entry point.
-
-const { start } = require('./server');
-
-start();
+1: // src/index.js
+2: // Gateway entry point.
+3: 
+4: const { start } = require('./server');
+5: 
+6: start();
 </file>
 
 <file path="scripts/dev-up.ps1">
-# dev-up.ps1 — launch Gateway (background) + Controller (foreground) in parallel.
-# Run from repo root: pwsh ./scripts/dev-up.ps1
-#
-# Gateway starts as a PowerShell background job (stdout/stderr streamed to logs/).
-# Controller runs in the current console so Ctrl+C stops it cleanly. On exit, the
-# Gateway job is stopped too.
-
-$ErrorActionPreference = "Stop"
-
-$repo_root       = Split-Path -Parent $PSScriptRoot
-$gateway_dir     = Join-Path $repo_root "gateway"
-$controller_dir  = Join-Path $repo_root "controller"
-$log_dir         = Join-Path $repo_root "logs"
-
-New-Item -ItemType Directory -Force -Path $log_dir | Out-Null
-
-Write-Host ""
-Write-Host "==============================================" -ForegroundColor Cyan
-Write-Host "  Remote Computer Control — dev-up"          -ForegroundColor Cyan
-Write-Host "==============================================" -ForegroundColor Cyan
-Write-Host "  Gateway    → http://localhost:8080"          -ForegroundColor Yellow
-Write-Host "  Controller → http://localhost:5173"          -ForegroundColor Yellow
-Write-Host "  Health     → http://localhost:8080/health"   -ForegroundColor Yellow
-Write-Host "  Gateway log: $log_dir\gateway-dev.log"       -ForegroundColor DarkGray
-Write-Host ""
-
-# Ensure dependencies are installed (idempotent, skips if node_modules exists).
-if (-not (Test-Path (Join-Path $gateway_dir "node_modules")))
-{
-    Write-Host "[dev-up] Installing gateway dependencies..." -ForegroundColor Green
-    Push-Location $gateway_dir; npm install; Pop-Location
-}
-if (-not (Test-Path (Join-Path $controller_dir "node_modules")))
-{
-    Write-Host "[dev-up] Installing controller dependencies..." -ForegroundColor Green
-    Push-Location $controller_dir; npm install; Pop-Location
-}
-
-# Launch gateway as background job. Redirects both streams to a rolling log.
-Write-Host "[dev-up] Starting Gateway (background)..." -ForegroundColor Green
-$gateway_job = Start-Job -Name "gateway-dev" -ScriptBlock {
-    param($dir, $log)
-    Set-Location $dir
-    npm run dev *>&1 | Tee-Object -FilePath $log
-} -ArgumentList $gateway_dir, (Join-Path $log_dir "gateway-dev.log")
-
-# Give the gateway a moment to bind :8080 before controller opens its browser.
-Start-Sleep -Seconds 2
-
-try
-{
-    Write-Host "[dev-up] Starting Controller (foreground, Ctrl+C to stop both)..." -ForegroundColor Green
-    Push-Location $controller_dir
-    npm run dev
-    Pop-Location
-}
-finally
-{
-    Write-Host ""
-    Write-Host "[dev-up] Stopping Gateway job..." -ForegroundColor Yellow
-    Stop-Job   -Job $gateway_job -ErrorAction SilentlyContinue
-    Remove-Job -Job $gateway_job -ErrorAction SilentlyContinue
-    Write-Host "[dev-up] Done."                    -ForegroundColor Yellow
-}
+ 1: # dev-up.ps1 — launch Gateway (background) + Controller (foreground) in parallel.
+ 2: # Run from repo root: pwsh ./scripts/dev-up.ps1
+ 3: #
+ 4: # Gateway starts as a PowerShell background job (stdout/stderr streamed to logs/).
+ 5: # Controller runs in the current console so Ctrl+C stops it cleanly. On exit, the
+ 6: # Gateway job is stopped too.
+ 7: 
+ 8: $ErrorActionPreference = "Stop"
+ 9: 
+10: $repo_root       = Split-Path -Parent $PSScriptRoot
+11: $gateway_dir     = Join-Path $repo_root "gateway"
+12: $controller_dir  = Join-Path $repo_root "controller"
+13: $log_dir         = Join-Path $repo_root "logs"
+14: 
+15: New-Item -ItemType Directory -Force -Path $log_dir | Out-Null
+16: 
+17: Write-Host ""
+18: Write-Host "==============================================" -ForegroundColor Cyan
+19: Write-Host "  Remote Computer Control — dev-up"          -ForegroundColor Cyan
+20: Write-Host "==============================================" -ForegroundColor Cyan
+21: Write-Host "  Gateway    → http://localhost:8080"          -ForegroundColor Yellow
+22: Write-Host "  Controller → http://localhost:5173"          -ForegroundColor Yellow
+23: Write-Host "  Health     → http://localhost:8080/health"   -ForegroundColor Yellow
+24: Write-Host "  Gateway log: $log_dir\gateway-dev.log"       -ForegroundColor DarkGray
+25: Write-Host ""
+26: 
+27: # Ensure dependencies are installed (idempotent, skips if node_modules exists).
+28: if (-not (Test-Path (Join-Path $gateway_dir "node_modules")))
+29: {
+30:     Write-Host "[dev-up] Installing gateway dependencies..." -ForegroundColor Green
+31:     Push-Location $gateway_dir; npm install; Pop-Location
+32: }
+33: if (-not (Test-Path (Join-Path $controller_dir "node_modules")))
+34: {
+35:     Write-Host "[dev-up] Installing controller dependencies..." -ForegroundColor Green
+36:     Push-Location $controller_dir; npm install; Pop-Location
+37: }
+38: 
+39: # Launch gateway as background job. Redirects both streams to a rolling log.
+40: Write-Host "[dev-up] Starting Gateway (background)..." -ForegroundColor Green
+41: $gateway_job = Start-Job -Name "gateway-dev" -ScriptBlock {
+42:     param($dir, $log)
+43:     Set-Location $dir
+44:     npm run dev *>&1 | Tee-Object -FilePath $log
+45: } -ArgumentList $gateway_dir, (Join-Path $log_dir "gateway-dev.log")
+46: 
+47: # Give the gateway a moment to bind :8080 before controller opens its browser.
+48: Start-Sleep -Seconds 2
+49: 
+50: try
+51: {
+52:     Write-Host "[dev-up] Starting Controller (foreground, Ctrl+C to stop both)..." -ForegroundColor Green
+53:     Push-Location $controller_dir
+54:     npm run dev
+55:     Pop-Location
+56: }
+57: finally
+58: {
+59:     Write-Host ""
+60:     Write-Host "[dev-up] Stopping Gateway job..." -ForegroundColor Yellow
+61:     Stop-Job   -Job $gateway_job -ErrorAction SilentlyContinue
+62:     Remove-Job -Job $gateway_job -ErrorAction SilentlyContinue
+63:     Write-Host "[dev-up] Done."                    -ForegroundColor Yellow
+64: }
 </file>
 
 <file path="gateway/src/middleware/auth.js">
-// src/middleware/auth.js
-// Authentication helpers for WebSocket handshake.
-// Note: Agent authentication now happens during the REGISTER message via bcrypt (agentStore.js), not at HTTP upgrade.
-// D8: Controller xác thực JWT ở query ?token=, fallback ?key=CONTROLLER_KEY.
-
-const jwt = require('jsonwebtoken');
-const config = require('../config');
-const logger = require('../utils/logger');
-
-/**
- * Verify Controller connection auth from query params.
- * Tries JWT (?token=) first if JWT_SECRET is configured, then falls back to ?key=.
- * @param {URLSearchParams} query - Parsed query parameters from upgrade URL
- * @returns {{ ok: boolean, payload: object|null }} ok=true if auth passed; payload = decoded JWT or null
- */
-function verifyControllerAuth(query) {
-  const token = query.get('token');
-  const key = query.get('key');
-
-  // --- Try JWT first (if JWT_SECRET is configured) ---
-  if (token && config.jwtSecret) {
-    try {
-      const payload = jwt.verify(token, config.jwtSecret);
-      logger.info('[auth] Controller authenticated via JWT', {
-        username: payload.username,
-      });
-      return { ok: true, payload };
-    } catch (err) {
-      logger.warn('[auth] Controller JWT verification FAILED', {
-        error: err.message,
-      });
-      // Don't return false yet — fall through to key check
-    }
-  }
-
-  // --- Fallback: shared key ---
-  if (key) {
-    if (key === config.controllerKey) {
-      logger.info('[auth] Controller authenticated via shared key');
-      return { ok: true, payload: null };
-    }
-    logger.warn('[auth] Controller connection REJECTED: invalid key');
-    return { ok: false, payload: null };
-  }
-
-  // --- Neither token nor key provided ---
-  logger.warn(
-    '[auth] Controller connection REJECTED: no ?token= or ?key= provided'
-  );
-  return { ok: false, payload: null };
-}
-
-module.exports = { verifyControllerAuth };
+ 1: // src/middleware/auth.js
+ 2: // Authentication helpers for WebSocket handshake.
+ 3: // Note: Agent authentication now happens during the REGISTER message via bcrypt (agentStore.js), not at HTTP upgrade.
+ 4: // D8: Controller xác thực JWT ở query ?token=, fallback ?key=CONTROLLER_KEY.
+ 5: 
+ 6: const jwt = require('jsonwebtoken');
+ 7: const config = require('../config');
+ 8: const logger = require('../utils/logger');
+ 9: 
+10: /**
+11:  * Verify Controller connection auth from query params.
+12:  * Tries JWT (?token=) first if JWT_SECRET is configured, then falls back to ?key=.
+13:  * @param {URLSearchParams} query - Parsed query parameters from upgrade URL
+14:  * @returns {{ ok: boolean, payload: object|null }} ok=true if auth passed; payload = decoded JWT or null
+15:  */
+16: function verifyControllerAuth(query) {
+17:   const token = query.get('token');
+18:   const key = query.get('key');
+19: 
+20:   // --- Try JWT first (if JWT_SECRET is configured) ---
+21:   if (token && config.jwtSecret) {
+22:     try {
+23:       const payload = jwt.verify(token, config.jwtSecret);
+24:       logger.info('[auth] Controller authenticated via JWT', {
+25:         username: payload.username,
+26:       });
+27:       return { ok: true, payload };
+28:     } catch (err) {
+29:       logger.warn('[auth] Controller JWT verification FAILED', {
+30:         error: err.message,
+31:       });
+32:       // Don't return false yet — fall through to key check
+33:     }
+34:   }
+35: 
+36:   // --- Fallback: shared key ---
+37:   if (key) {
+38:     if (key === config.controllerKey) {
+39:       logger.info('[auth] Controller authenticated via shared key');
+40:       return { ok: true, payload: null };
+41:     }
+42:     logger.warn('[auth] Controller connection REJECTED: invalid key');
+43:     return { ok: false, payload: null };
+44:   }
+45: 
+46:   // --- Neither token nor key provided ---
+47:   logger.warn(
+48:     '[auth] Controller connection REJECTED: no ?token= or ?key= provided'
+49:   );
+50:   return { ok: false, payload: null };
+51: }
+52: 
+53: module.exports = { verifyControllerAuth };
 </file>
 
 <file path="gateway/src/store/heartbeat.js">
-// src/managers/heartbeat.js
-// Ping-Pong heartbeat mechanism for WebSocket connections.
-// Detects dead connections early by sending periodic pings and
-// terminating sockets that don't respond with a pong in time.
-
-const config = require('../config');
-const logger = require('../utils/logger');
-
-/**
- * Attach heartbeat monitoring to a WebSocket.
- * Sends a WS-level ping every PING_INTERVAL ms.
- * If no pong is received within PING_TIMEOUT ms, the socket is terminated.
- *
- * @param {WebSocket} ws - The WebSocket to monitor
- * @param {string} label - Identifier for logging (e.g. "agent:PC-Lab-01" or "controller:1")
- * @returns {{ clear: () => void }} Call clear() to stop heartbeat (e.g. on close)
- */
-function attach(ws, label) {
-  let isAlive = true;
-
-  // When we receive a pong, mark as alive
-  ws.on('pong', () => {
-    isAlive = true;
-  });
-
-  const interval = setInterval(() => {
-    if (!isAlive) {
-      logger.warn('[heartbeat] No pong received, terminating', { label });
-      ws.terminate();
-      clearInterval(interval);
-      return;
-    }
-
-    isAlive = false;
-
-    // ── Check access token expiration (for JWT authenticated sessions) ──
-    if (ws._gwJwtPayload && typeof ws._gwJwtPayload.exp === 'number') {
-      const nowSeconds = Math.floor(Date.now() / 1000);
-      if (nowSeconds >= ws._gwJwtPayload.exp) {
-        logger.warn('[auth] Access token expired during active WebSocket session', { label, exp: ws._gwJwtPayload.exp });
-        try {
-          ws.send(JSON.stringify({ type: 'auth_expired' }));
-        } catch (err) {
-          // ignore send error on closing socket
-        }
-        ws.close(4001, 'auth_expired');
-        clearInterval(interval);
-        return;
-      }
-    }
-
-    try {
-      ws.ping();
-    } catch (err) {
-      logger.error('[heartbeat] Ping failed', {
-        label,
-        error: err.message,
-      });
-      ws.terminate();
-      clearInterval(interval);
-    }
-  }, config.pingInterval);
-
-  return {
-    clear() {
-      clearInterval(interval);
-    },
-  };
-}
-
-module.exports = { attach };
+ 1: // src/managers/heartbeat.js
+ 2: // Ping-Pong heartbeat mechanism for WebSocket connections.
+ 3: // Detects dead connections early by sending periodic pings and
+ 4: // terminating sockets that don't respond with a pong in time.
+ 5: 
+ 6: const config = require('../config');
+ 7: const logger = require('../utils/logger');
+ 8: 
+ 9: /**
+10:  * Attach heartbeat monitoring to a WebSocket.
+11:  * Sends a WS-level ping every PING_INTERVAL ms.
+12:  * If no pong is received within PING_TIMEOUT ms, the socket is terminated.
+13:  *
+14:  * @param {WebSocket} ws - The WebSocket to monitor
+15:  * @param {string} label - Identifier for logging (e.g. "agent:PC-Lab-01" or "controller:1")
+16:  * @returns {{ clear: () => void }} Call clear() to stop heartbeat (e.g. on close)
+17:  */
+18: function attach(ws, label) {
+19:   let isAlive = true;
+20: 
+21:   // When we receive a pong, mark as alive
+22:   ws.on('pong', () => {
+23:     isAlive = true;
+24:   });
+25: 
+26:   const interval = setInterval(() => {
+27:     if (!isAlive) {
+28:       logger.warn('[heartbeat] No pong received, terminating', { label });
+29:       ws.terminate();
+30:       clearInterval(interval);
+31:       return;
+32:     }
+33: 
+34:     isAlive = false;
+35: 
+36:     // ── Check access token expiration (for JWT authenticated sessions) ──
+37:     if (ws._gwJwtPayload && typeof ws._gwJwtPayload.exp === 'number') {
+38:       const nowSeconds = Math.floor(Date.now() / 1000);
+39:       if (nowSeconds >= ws._gwJwtPayload.exp) {
+40:         logger.warn('[auth] Access token expired during active WebSocket session', { label, exp: ws._gwJwtPayload.exp });
+41:         try {
+42:           ws.send(JSON.stringify({ type: 'auth_expired' }));
+43:         } catch (err) {
+44:           // ignore send error on closing socket
+45:         }
+46:         ws.close(4001, 'auth_expired');
+47:         clearInterval(interval);
+48:         return;
+49:       }
+50:     }
+51: 
+52:     try {
+53:       ws.ping();
+54:     } catch (err) {
+55:       logger.error('[heartbeat] Ping failed', {
+56:         label,
+57:         error: err.message,
+58:       });
+59:       ws.terminate();
+60:       clearInterval(interval);
+61:     }
+62:   }, config.pingInterval);
+63: 
+64:   return {
+65:     clear() {
+66:       clearInterval(interval);
+67:     },
+68:   };
+69: }
+70: 
+71: module.exports = { attach };
 </file>
 
 <file path="gateway/src/config.js">
-// src/config.js
-// Load environment variables and export validated config object.
+ 1: // src/config.js
+ 2: // Load environment variables and export validated config object.
+ 3: 
+ 4: const dotenv = require('dotenv');
+ 5: const path = require('path');
+ 6: 
+ 7: dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+ 8: 
+ 9: const config = {
+10:   // Server
+11:   port: parseInt(process.env.PORT, 10) || 8080,
+12: 
+13:   // Authentication keys
+14:   agentKey: process.env.AGENT_KEY || '',
+15:   controllerKey: process.env.CONTROLLER_KEY || '',
+16:   jwtSecret: process.env.JWT_SECRET || '',
+17: 
+18:   // Heartbeat (ms)
+19:   pingInterval: parseInt(process.env.PING_INTERVAL, 10) || 30000,
+20:   pingTimeout: parseInt(process.env.PING_TIMEOUT, 10) || 10000,
+21: 
+22:   // Logging
+23:   logLevel: process.env.LOG_LEVEL || 'info',
+24: 
+25:   // ─── TLS (Phase 1: Security Hardening) ─────────────────────────
+26:   // Set TLS_ENABLED=true to start in HTTPS/WSS mode.
+27:   // When false (default), server runs plain HTTP/WS (dev mode).
+28:   //
+29:   // Generate a self-signed certificate for local testing:
+30:   //   openssl req -x509 -newkey rsa:2048 -nodes \
+31:   //     -keyout certs/server.key -out certs/server.cert \
+32:   //     -days 365 -subj "/CN=localhost"
+33:   //
+34:   tlsEnabled: process.env.TLS_ENABLED === 'true',
+35:   tlsCertPath: process.env.TLS_CERT_PATH || './certs/server.cert',
+36:   tlsKeyPath: process.env.TLS_KEY_PATH || './certs/server.key',
+37: 
+38:   // ─── CORS Whitelist (Phase 1: Security Hardening) ────────────
+39:   // Comma-separated list of allowed origins for CORS.
+40:   // Example: "http://localhost:5173,https://controller.example.com"
+41:   // Default: Vite dev server port for Controller.
+42:   allowedOrigins: process.env.ALLOWED_ORIGINS || 'http://localhost:5173',
+43: 
+44:   // ─── Rate Limiting (Phase 1: Security Hardening) ─────────────
+45:   // Window duration (ms) and max requests per window for REST API.
+46:   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 minutes
+47:   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,       // 100 requests per window
+48: 
+49:   // Stricter limit specifically for /api/login (anti brute-force).
+50:   loginRateLimitWindowMs: parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 minutes
+51:   loginRateLimitMaxRequests: parseInt(process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS, 10) || 10,       // 10 attempts per window
+52: };
+53: 
+54: // --- Validation ---
+55: const required = ['controllerKey'];
+56: const missing = required.filter((key) => !config[key]);
+57: 
+58: if (missing.length > 0) {
+59:   console.error(
+60:     `[config] FATAL: Missing required env vars: ${missing.join(', ')}. Check .env file.`
+61:   );
+62:   process.exit(1);
+63: }
+64: 
+65: if (!config.jwtSecret) {
+66:   console.warn(
+67:     '[config] WARNING: JWT_SECRET is not set. JWT authentication will be disabled; falling back to CONTROLLER_KEY only.'
+68:   );
+69: }
+70: 
+71: module.exports = config;
+</file>
 
-const dotenv = require('dotenv');
-const path = require('path');
-
-dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
-
-const config = {
-  // Server
-  port: parseInt(process.env.PORT, 10) || 8080,
-
-  // Authentication keys
-  agentKey: process.env.AGENT_KEY || '',
-  controllerKey: process.env.CONTROLLER_KEY || '',
-  jwtSecret: process.env.JWT_SECRET || '',
-
-  // Heartbeat (ms)
-  pingInterval: parseInt(process.env.PING_INTERVAL, 10) || 30000,
-  pingTimeout: parseInt(process.env.PING_TIMEOUT, 10) || 10000,
-
-  // Logging
-  logLevel: process.env.LOG_LEVEL || 'info',
-
-  // ─── TLS (Phase 1: Security Hardening) ─────────────────────────
-  // Set TLS_ENABLED=true to start in HTTPS/WSS mode.
-  // When false (default), server runs plain HTTP/WS (dev mode).
-  //
-  // Generate a self-signed certificate for local testing:
-  //   openssl req -x509 -newkey rsa:2048 -nodes \
-  //     -keyout certs/server.key -out certs/server.cert \
-  //     -days 365 -subj "/CN=localhost"
-  //
-  tlsEnabled: process.env.TLS_ENABLED === 'true',
-  tlsCertPath: process.env.TLS_CERT_PATH || './certs/server.cert',
-  tlsKeyPath: process.env.TLS_KEY_PATH || './certs/server.key',
-
-  // ─── CORS Whitelist (Phase 1: Security Hardening) ────────────
-  // Comma-separated list of allowed origins for CORS.
-  // Example: "http://localhost:5173,https://controller.example.com"
-  // Default: Vite dev server port for Controller.
-  allowedOrigins: process.env.ALLOWED_ORIGINS || 'http://localhost:5173',
-
-  // ─── Rate Limiting (Phase 1: Security Hardening) ─────────────
-  // Window duration (ms) and max requests per window for REST API.
-  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 minutes
-  rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,       // 100 requests per window
-
-  // Stricter limit specifically for /api/login (anti brute-force).
-  loginRateLimitWindowMs: parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 minutes
-  loginRateLimitMaxRequests: parseInt(process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS, 10) || 10,       // 10 attempts per window
-};
-
-// --- Validation ---
-const required = ['controllerKey'];
-const missing = required.filter((key) => !config[key]);
-
-if (missing.length > 0) {
-  console.error(
-    `[config] FATAL: Missing required env vars: ${missing.join(', ')}. Check .env file.`
-  );
-  process.exit(1);
-}
-
-if (!config.jwtSecret) {
-  console.warn(
-    '[config] WARNING: JWT_SECRET is not set. JWT authentication will be disabled; falling back to CONTROLLER_KEY only.'
-  );
-}
-
-module.exports = config;
+<file path="gateway/.env.example">
+ 1: # Gateway Server Configuration
+ 2: PORT=8080
+ 3: 
+ 4: # Authentication keys (change in production!)
+ 5: AGENT_KEY=your-agent-key-here
+ 6: CONTROLLER_KEY=your-controller-key-here
+ 7: JWT_SECRET=your-jwt-secret-here
+ 8: 
+ 9: # Heartbeat (ms)
+10: PING_INTERVAL=30000
+11: PING_TIMEOUT=10000
+12: 
+13: # Logging
+14: LOG_LEVEL=info
+15: 
+16: # ─── Phase 1: Security Hardening ────────────────────────────────
+17: 
+18: # TLS/SSL — Provide paths to certificate and private key to enable HTTPS/WSS.
+19: # If omitted, server runs in plain HTTP/WS mode (development only).
+20: # SSL_CERT_PATH=./certs/server.cert
+21: # SSL_KEY_PATH=./certs/server.key
+22: 
+23: # CORS — Comma-separated list of allowed origins.
+24: # Use '*' for development only. In production, specify exact origins:
+25: # CORS_ORIGINS=http://localhost:3000,https://controller.yourdomain.com
+26: CORS_ORIGINS=*
+27: 
+28: # Rate Limiting — General API limits (all /api/* routes).
+29: # RATE_LIMIT_WINDOW_MS = time window in milliseconds (default: 900000 = 15 min)
+30: # RATE_LIMIT_MAX_REQUESTS = max requests per window (default: 100)
+31: RATE_LIMIT_WINDOW_MS=900000
+32: RATE_LIMIT_MAX_REQUESTS=100
+33: 
+34: # Rate Limiting — Login brute-force protection (/api/login only, stricter).
+35: # LOGIN_RATE_LIMIT_WINDOW_MS = time window in milliseconds (default: 900000 = 15 min)
+36: # LOGIN_RATE_LIMIT_MAX_REQUESTS = max login attempts per window (default: 10)
+37: LOGIN_RATE_LIMIT_WINDOW_MS=900000
+38: LOGIN_RATE_LIMIT_MAX_REQUESTS=10
 </file>
 
 <file path="gateway/src/store/controllerStore.js">
-// src/managers/controllerStore.js
-// Set of connected Controller WebSocket clients and their Agent subscriptions.
-// Provides add/remove/broadcast, subscribe/unsubscribe, and request matching for routing Agent responses.
-
-const logger = require('../utils/logger');
-
-/** @type {Set<WebSocket>} */
-const controllers = new Set();
-
-/** @type {Map<WebSocket, Set<string>>} */
-const controllerSubscriptions = new Map();
-
-/** @type {Map<string, WebSocket>} */
-const commandToController = new Map();
-
-/**
- * Add a Controller WebSocket to the set and initialize its subscription set.
- * @param {WebSocket} ws
- */
-function add(ws) {
-  controllers.add(ws);
-  controllerSubscriptions.set(ws, new Set());
-  logger.info('[controllerStore] Controller added', {
-    total: controllers.size,
-  });
-}
-
-/**
- * Remove a Controller WebSocket from the set, deleting its subscriptions and pending command mappings.
- * @param {WebSocket} ws
- */
-function remove(ws) {
-  controllers.delete(ws);
-  controllerSubscriptions.delete(ws);
-
-  // Clean up command mappings associated with this controller
-  for (const [cmdId, controllerWs] of commandToController.entries()) {
-    if (controllerWs === ws) {
-      commandToController.delete(cmdId);
-    }
-  }
-
-  logger.info('[controllerStore] Controller removed and subscriptions cleared', {
-    total: controllers.size,
-  });
-}
-
-/**
- * Subscribe a Controller to messages from a specific Agent.
- * @param {WebSocket} ws
- * @param {string} agentId
- */
-function subscribe(ws, agentId) {
-  let subs = controllerSubscriptions.get(ws);
-  if (!subs) {
-    subs = new Set();
-    controllerSubscriptions.set(ws, subs);
-  }
-  subs.add(agentId);
-  logger.info('[controllerStore] Subscribed to agent', { agentId, totalSubs: subs.size });
-}
-
-/**
- * Unsubscribe a Controller from messages from a specific Agent.
- * @param {WebSocket} ws
- * @param {string} agentId
- */
-function unsubscribe(ws, agentId) {
-  const subs = controllerSubscriptions.get(ws);
-  if (subs) {
-    subs.delete(agentId);
-    logger.info('[controllerStore] Unsubscribed from agent', { agentId, remainingSubs: subs.size });
-  }
-}
-
-/**
- * Check if a Controller is subscribed to a specific Agent.
- * @param {WebSocket} ws
- * @param {string} agentId
- * @returns {boolean}
- */
-function isSubscribed(ws, agentId) {
-  const subs = controllerSubscriptions.get(ws);
-  return subs ? subs.has(agentId) : false;
-}
-
-/**
- * Get all subscriptions for a specific Controller.
- * @param {WebSocket} ws
- * @returns {Set<string>|null}
- */
-function getSubscriptions(ws) {
-  return controllerSubscriptions.get(ws) || null;
-}
-
-/**
- * Register a command ID (or req_id) issued by a Controller for later response matching.
- * @param {string} commandId
- * @param {WebSocket} ws
- */
-function registerCommand(commandId, ws) {
-  if (commandId && typeof commandId === 'string' && ws) {
-    commandToController.set(commandId, ws);
-  }
-}
-
-/**
- * Check if a command ID is recorded and mapped to an active Controller.
- * @param {string} commandId
- * @returns {boolean}
- */
-function hasCommand(commandId) {
-  const ws = commandToController.get(commandId);
-  return ws && ws.readyState === ws.OPEN;
-}
-
-/**
- * Send data directly to the Controller that initiated a given command/req ID.
- * @param {string} commandId
- * @param {string|Buffer} data
- * @returns {boolean} true if sent successfully
- */
-function sendToCommandInitiator(commandId, data) {
-  const ws = commandToController.get(commandId);
-  if (ws && ws.readyState === ws.OPEN) {
-    try {
-      ws.send(data);
-      // Clean up the mapping after successful delivery to prevent unbounded growth.
-      // UDP frame_meta reuses the same command_id across the stream, so we must
-      // NOT delete here for frame routing. The caller (udpServer.js) uses
-      // hasCommand() + sendToCommandInitiator() for each frame in a stream.
-      // Text-based one-shot responses (app_list_result, power_result, etc.) are
-      // safe to clean up. We keep the entry alive and rely on controller-disconnect
-      // cleanup for stream commands. A periodic GC is added below for safety.
-      return true;
-    } catch (err) {
-      logger.error('[controllerStore] sendToCommandInitiator error', { error: err.message });
-    }
-  }
-  return false;
-}
-
-/**
- * Broadcast data (text or binary) ONLY to Controllers subscribed to the specified Agent.
- * @param {string} agentId
- * @param {string|Buffer} data
- * @param {{ binary?: boolean }} [options]
- * @returns {number} number of controllers sent to
- */
-function broadcastToSubscribers(agentId, data, options = {}) {
-  const isBinary = options.binary || false;
-  let sentCount = 0;
-
-  for (const [ws, subs] of controllerSubscriptions.entries()) {
-    if (subs.has(agentId)) {
-      try {
-        if (ws.readyState === ws.OPEN) {
-          ws.send(data, { binary: isBinary });
-          sentCount++;
-        }
-      } catch (err) {
-        logger.error('[controllerStore] broadcastToSubscribers send error', {
-          error: err.message,
-        });
-      }
-    }
-  }
-  return sentCount;
-}
-
-/**
- * Broadcast data (text or binary) to ALL connected Controllers.
- * Wraps each send in try-catch to avoid crash if one controller disconnected.
- * @param {string|Buffer} data - text string or binary buffer
- * @param {{ binary?: boolean }} [options] - pass { binary: true } for binary frames
- */
-function broadcast(data, options = {}) {
-  const isBinary = options.binary || false;
-
-  for (const ws of controllers) {
-    try {
-      if (ws.readyState === ws.OPEN) {
-        ws.send(data, { binary: isBinary });
-      }
-    } catch (err) {
-      logger.error('[controllerStore] Broadcast send error', {
-        error: err.message,
-      });
-    }
-  }
-}
-
-/**
- * Send data to a single Controller WebSocket.
- * @param {WebSocket} ws
- * @param {string|Buffer} data
- */
-function sendTo(ws, data) {
-  try {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(data);
-    }
-  } catch (err) {
-    logger.error('[controllerStore] sendTo error', { error: err.message });
-  }
-}
-
-/**
- * Get all connected Controller WebSockets.
- * @returns {Set<WebSocket>}
- */
-function getAll() {
-  return controllers;
-}
-
-/**
- * Get the number of connected controllers.
- * @returns {number}
- */
-function size() {
-  return controllers.size;
-}
-
-// Periodic GC: remove stale command entries whose Controller WebSocket is no
-// longer open. This prevents unbounded growth from long-running sessions
-// without removing entries for active streams.
-const COMMAND_GC_INTERVAL_MS = 60_000; // every 60 seconds
-setInterval(() => {
-  let cleaned = 0;
-  for (const [cmdId, ws] of commandToController.entries()) {
-    if (!ws || ws.readyState !== ws.OPEN) {
-      commandToController.delete(cmdId);
-      cleaned++;
-    }
-  }
-  if (cleaned > 0) {
-    logger.debug('[controllerStore] GC cleaned stale command entries', { cleaned, remaining: commandToController.size });
-  }
-}, COMMAND_GC_INTERVAL_MS);
-
-module.exports = {
-  add,
-  remove,
-  subscribe,
-  unsubscribe,
-  isSubscribed,
-  getSubscriptions,
-  registerCommand,
-  hasCommand,
-  sendToCommandInitiator,
-  broadcastToSubscribers,
-  broadcast,
-  sendTo,
-  getAll,
-  size,
-};
+  1: // src/managers/controllerStore.js
+  2: // Set of connected Controller WebSocket clients and their Agent subscriptions.
+  3: // Provides add/remove/broadcast, subscribe/unsubscribe, and request matching for routing Agent responses.
+  4: 
+  5: const logger = require('../utils/logger');
+  6: 
+  7: /** @type {Set<WebSocket>} */
+  8: const controllers = new Set();
+  9: 
+ 10: /** @type {Map<WebSocket, Set<string>>} */
+ 11: const controllerSubscriptions = new Map();
+ 12: 
+ 13: /** @type {Map<string, WebSocket>} */
+ 14: const commandToController = new Map();
+ 15: 
+ 16: /**
+ 17:  * Add a Controller WebSocket to the set and initialize its subscription set.
+ 18:  * @param {WebSocket} ws
+ 19:  */
+ 20: function add(ws) {
+ 21:   controllers.add(ws);
+ 22:   controllerSubscriptions.set(ws, new Set());
+ 23:   logger.info('[controllerStore] Controller added', {
+ 24:     total: controllers.size,
+ 25:   });
+ 26: }
+ 27: 
+ 28: /**
+ 29:  * Remove a Controller WebSocket from the set, deleting its subscriptions and pending command mappings.
+ 30:  * @param {WebSocket} ws
+ 31:  */
+ 32: function remove(ws) {
+ 33:   controllers.delete(ws);
+ 34:   controllerSubscriptions.delete(ws);
+ 35: 
+ 36:   // Clean up command mappings associated with this controller
+ 37:   for (const [cmdId, controllerWs] of commandToController.entries()) {
+ 38:     if (controllerWs === ws) {
+ 39:       commandToController.delete(cmdId);
+ 40:     }
+ 41:   }
+ 42: 
+ 43:   logger.info('[controllerStore] Controller removed and subscriptions cleared', {
+ 44:     total: controllers.size,
+ 45:   });
+ 46: }
+ 47: 
+ 48: /**
+ 49:  * Subscribe a Controller to messages from a specific Agent.
+ 50:  * @param {WebSocket} ws
+ 51:  * @param {string} agentId
+ 52:  */
+ 53: function subscribe(ws, agentId) {
+ 54:   let subs = controllerSubscriptions.get(ws);
+ 55:   if (!subs) {
+ 56:     subs = new Set();
+ 57:     controllerSubscriptions.set(ws, subs);
+ 58:   }
+ 59:   subs.add(agentId);
+ 60:   logger.info('[controllerStore] Subscribed to agent', { agentId, totalSubs: subs.size });
+ 61: }
+ 62: 
+ 63: /**
+ 64:  * Unsubscribe a Controller from messages from a specific Agent.
+ 65:  * @param {WebSocket} ws
+ 66:  * @param {string} agentId
+ 67:  */
+ 68: function unsubscribe(ws, agentId) {
+ 69:   const subs = controllerSubscriptions.get(ws);
+ 70:   if (subs) {
+ 71:     subs.delete(agentId);
+ 72:     logger.info('[controllerStore] Unsubscribed from agent', { agentId, remainingSubs: subs.size });
+ 73:   }
+ 74: }
+ 75: 
+ 76: /**
+ 77:  * Check if a Controller is subscribed to a specific Agent.
+ 78:  * @param {WebSocket} ws
+ 79:  * @param {string} agentId
+ 80:  * @returns {boolean}
+ 81:  */
+ 82: function isSubscribed(ws, agentId) {
+ 83:   const subs = controllerSubscriptions.get(ws);
+ 84:   return subs ? subs.has(agentId) : false;
+ 85: }
+ 86: 
+ 87: /**
+ 88:  * Get all subscriptions for a specific Controller.
+ 89:  * @param {WebSocket} ws
+ 90:  * @returns {Set<string>|null}
+ 91:  */
+ 92: function getSubscriptions(ws) {
+ 93:   return controllerSubscriptions.get(ws) || null;
+ 94: }
+ 95: 
+ 96: /**
+ 97:  * Register a command ID (or req_id) issued by a Controller for later response matching.
+ 98:  * @param {string} commandId
+ 99:  * @param {WebSocket} ws
+100:  */
+101: function registerCommand(commandId, ws) {
+102:   if (commandId && typeof commandId === 'string' && ws) {
+103:     commandToController.set(commandId, ws);
+104:   }
+105: }
+106: 
+107: /**
+108:  * Check if a command ID is recorded and mapped to an active Controller.
+109:  * @param {string} commandId
+110:  * @returns {boolean}
+111:  */
+112: function hasCommand(commandId) {
+113:   const ws = commandToController.get(commandId);
+114:   return ws && ws.readyState === ws.OPEN;
+115: }
+116: 
+117: /**
+118:  * Send data directly to the Controller that initiated a given command/req ID.
+119:  * @param {string} commandId
+120:  * @param {string|Buffer} data
+121:  * @returns {boolean} true if sent successfully
+122:  */
+123: function sendToCommandInitiator(commandId, data) {
+124:   const ws = commandToController.get(commandId);
+125:   if (ws && ws.readyState === ws.OPEN) {
+126:     try {
+127:       ws.send(data);
+128:       // Clean up the mapping after successful delivery to prevent unbounded growth.
+129:       // UDP frame_meta reuses the same command_id across the stream, so we must
+130:       // NOT delete here for frame routing. The caller (udpServer.js) uses
+131:       // hasCommand() + sendToCommandInitiator() for each frame in a stream.
+132:       // Text-based one-shot responses (app_list_result, power_result, etc.) are
+133:       // safe to clean up. We keep the entry alive and rely on controller-disconnect
+134:       // cleanup for stream commands. A periodic GC is added below for safety.
+135:       return true;
+136:     } catch (err) {
+137:       logger.error('[controllerStore] sendToCommandInitiator error', { error: err.message });
+138:     }
+139:   }
+140:   return false;
+141: }
+142: 
+143: /**
+144:  * Broadcast data (text or binary) ONLY to Controllers subscribed to the specified Agent.
+145:  * @param {string} agentId
+146:  * @param {string|Buffer} data
+147:  * @param {{ binary?: boolean }} [options]
+148:  * @returns {number} number of controllers sent to
+149:  */
+150: function broadcastToSubscribers(agentId, data, options = {}) {
+151:   const isBinary = options.binary || false;
+152:   let sentCount = 0;
+153: 
+154:   for (const [ws, subs] of controllerSubscriptions.entries()) {
+155:     if (subs.has(agentId)) {
+156:       try {
+157:         if (ws.readyState === ws.OPEN) {
+158:           ws.send(data, { binary: isBinary });
+159:           sentCount++;
+160:         }
+161:       } catch (err) {
+162:         logger.error('[controllerStore] broadcastToSubscribers send error', {
+163:           error: err.message,
+164:         });
+165:       }
+166:     }
+167:   }
+168:   return sentCount;
+169: }
+170: 
+171: /**
+172:  * Broadcast data (text or binary) to ALL connected Controllers.
+173:  * Wraps each send in try-catch to avoid crash if one controller disconnected.
+174:  * @param {string|Buffer} data - text string or binary buffer
+175:  * @param {{ binary?: boolean }} [options] - pass { binary: true } for binary frames
+176:  */
+177: function broadcast(data, options = {}) {
+178:   const isBinary = options.binary || false;
+179: 
+180:   for (const ws of controllers) {
+181:     try {
+182:       if (ws.readyState === ws.OPEN) {
+183:         ws.send(data, { binary: isBinary });
+184:       }
+185:     } catch (err) {
+186:       logger.error('[controllerStore] Broadcast send error', {
+187:         error: err.message,
+188:       });
+189:     }
+190:   }
+191: }
+192: 
+193: /**
+194:  * Send data to a single Controller WebSocket.
+195:  * @param {WebSocket} ws
+196:  * @param {string|Buffer} data
+197:  */
+198: function sendTo(ws, data) {
+199:   try {
+200:     if (ws.readyState === ws.OPEN) {
+201:       ws.send(data);
+202:     }
+203:   } catch (err) {
+204:     logger.error('[controllerStore] sendTo error', { error: err.message });
+205:   }
+206: }
+207: 
+208: /**
+209:  * Get all connected Controller WebSockets.
+210:  * @returns {Set<WebSocket>}
+211:  */
+212: function getAll() {
+213:   return controllers;
+214: }
+215: 
+216: /**
+217:  * Get the number of connected controllers.
+218:  * @returns {number}
+219:  */
+220: function size() {
+221:   return controllers.size;
+222: }
+223: 
+224: // Periodic GC: remove stale command entries whose Controller WebSocket is no
+225: // longer open. This prevents unbounded growth from long-running sessions
+226: // without removing entries for active streams.
+227: const COMMAND_GC_INTERVAL_MS = 60_000; // every 60 seconds
+228: setInterval(() => {
+229:   let cleaned = 0;
+230:   for (const [cmdId, ws] of commandToController.entries()) {
+231:     if (!ws || ws.readyState !== ws.OPEN) {
+232:       commandToController.delete(cmdId);
+233:       cleaned++;
+234:     }
+235:   }
+236:   if (cleaned > 0) {
+237:     logger.debug('[controllerStore] GC cleaned stale command entries', { cleaned, remaining: commandToController.size });
+238:   }
+239: }, COMMAND_GC_INTERVAL_MS);
+240: 
+241: module.exports = {
+242:   add,
+243:   remove,
+244:   subscribe,
+245:   unsubscribe,
+246:   isSubscribed,
+247:   getSubscriptions,
+248:   registerCommand,
+249:   hasCommand,
+250:   sendToCommandInitiator,
+251:   broadcastToSubscribers,
+252:   broadcast,
+253:   sendTo,
+254:   getAll,
+255:   size,
+256: };
 </file>
 
 <file path="gateway/src/validation/commandSchemas.js">
-const Ajv = require('ajv');
-const ajv = new Ajv({ allErrors: true });
-
-// Schema mặc định cho các lệnh không yêu cầu params
-const emptyParamsSchema = {
-  type: ['object', 'null'],
-  maxProperties: 0,
-};
-
-// Định nghĩa JSON Schema cho từng Module/Command
-const schemas = {
-  // Application Module
-  app_list: emptyParamsSchema,
-  app_start: {
-    type: 'object',
-    properties: { name: { type: 'string' } },
-    required: ['name'],
-    additionalProperties: false,
-  },
-  app_stop: {
-    type: 'object',
-    properties: { name: { type: 'string' } },
-    required: ['name'],
-    additionalProperties: false,
-  },
-
-  // Process Module
-  proc_list: emptyParamsSchema,
-  proc_kill: {
-    type: 'object',
-    properties: { pid: { type: 'integer', minimum: 1 } },
-    required: ['pid'],
-    additionalProperties: false,
-  },
-
-  // System Info Module
-  sysinfo: emptyParamsSchema,
-
-  // Power Module (all use type 'power' but we can route them via action if needed, or by type)
-  power_lock: emptyParamsSchema,
-  power_restart: emptyParamsSchema,
-  power_shutdown: emptyParamsSchema,
-  power_sleep: emptyParamsSchema,
-
-  // Input Module
-  input_mouse_move: {
-    type: 'object',
-    properties: { x: { type: 'integer' }, y: { type: 'integer' } },
-    required: ['x', 'y'],
-    additionalProperties: false,
-  },
-  input_mouse_click: {
-    type: 'object',
-    properties: {
-      button: { type: 'string', enum: ['left', 'right', 'middle'] },
-      action: { type: 'string', enum: ['click', 'down', 'up'] },
-    },
-    required: ['button', 'action'],
-    additionalProperties: false,
-  },
-  input_key: {
-    type: 'object',
-    properties: {
-      vk: { type: 'integer' },
-      action: { type: 'string', enum: ['press', 'down', 'up'] },
-    },
-    required: ['vk', 'action'],
-    additionalProperties: false,
-  },
-  input_type: {
-    type: 'object',
-    properties: { text: { type: 'string' } },
-    required: ['text'],
-    additionalProperties: false,
-  },
-
-  // Keylogger Module
-  keylog_start: emptyParamsSchema,
-  keylog_stop: emptyParamsSchema,
-
-  // Screen Streaming Module
-  screen_stream: {
-    type: 'object',
-    properties: {
-      mode: { type: 'string', enum: ['stream'] },
-      fps: { type: 'integer', minimum: 1 },
-      quality: { type: 'integer', minimum: 1, maximum: 100 },
-    },
-    required: ['mode'],
-    additionalProperties: false,
-  },
-  screen_stream_stop: emptyParamsSchema,
-  screenshot: {
-    type: 'object',
-    properties: {
-      mode: { type: 'string', enum: ['once'] },
-      quality: { type: 'integer', minimum: 1, maximum: 100 },
-    },
-    required: ['mode'],
-    additionalProperties: false,
-  },
-
-  // Webcam Module
-  webcam_start: {
-    type: 'object',
-    properties: {
-      fps: { type: 'integer', minimum: 1 },
-      quality: { type: 'integer', minimum: 1, maximum: 100 },
-    },
-    additionalProperties: false,
-  },
-  webcam_stop: emptyParamsSchema,
-
-  // File System Module
-  fs_list: {
-    type: 'object',
-    properties: { path: { type: 'string' } },
-    required: ['path'],
-    additionalProperties: false,
-  },
-  fs_get: {
-    type: 'object',
-    properties: {
-      path: { type: 'string' },
-      transfer_id: { type: 'string' },
-    },
-    required: ['path'],
-    additionalProperties: false,
-  },
-  fs_put: {
-    type: 'object',
-    properties: {
-      path: { type: 'string' },
-      chunk_index: { type: 'integer', minimum: 0 },
-      total_chunks: { type: 'integer', minimum: 1 },
-      transfer_id: { type: 'string' },
-      total_size: { type: 'integer', minimum: 0 },
-      data_base64: { type: 'string' },
-    },
-    required: ['path', 'chunk_index', 'total_chunks', 'transfer_id', 'data_base64'],
-    additionalProperties: false,
-  },
-  fs_delete: {
-    type: 'object',
-    properties: { path: { type: 'string' } },
-    required: ['path'],
-    additionalProperties: false,
-  },
-
-  // Policy & Permissions
-  policy_update: {
-    type: 'object',
-    properties: {
-      app_whitelist: { type: 'array', items: { type: 'string' } },
-      sandbox_path: { type: 'string' },
-    },
-    minProperties: 1,
-    additionalProperties: false,
-  },
-  permission_request: emptyParamsSchema,
-  permission_revoke: emptyParamsSchema,
-  stop_module: emptyParamsSchema,
-};
-
-// Biên dịch sẵn các schema để tăng hiệu suất
-const validators = {};
-for (const [key, schema] of Object.entries(schemas)) {
-  validators[key] = ajv.compile(schema);
-}
-
-/**
- * Validate params of a command
- * @param {string} commandKey - The module/action name (e.g. 'proc_kill')
- * @param {object} params - The params object to validate
- * @returns {object} { valid: boolean, errors: array, errorText: string }
- */
-function validateParams(commandKey, params) {
-  const validator = validators[commandKey];
-  if (!validator) {
-    return { valid: true, errors: null, errorText: null };
-  }
-
-  const data = params === undefined ? null : params;
-  const valid = validator(data);
-
-  return {
-    valid,
-    errors: validator.errors,
-    errorText: valid ? null : ajv.errorsText(validator.errors)
-  };
-}
-
-module.exports = {
-  validateParams,
-};
+  1: const Ajv = require('ajv');
+  2: const ajv = new Ajv({ allErrors: true });
+  3: 
+  4: // Schema mặc định cho các lệnh không yêu cầu params
+  5: const emptyParamsSchema = {
+  6:   type: ['object', 'null'],
+  7:   maxProperties: 0,
+  8: };
+  9: 
+ 10: // Định nghĩa JSON Schema cho từng Module/Command
+ 11: const schemas = {
+ 12:   // Application Module
+ 13:   app_list: emptyParamsSchema,
+ 14:   app_start: {
+ 15:     type: 'object',
+ 16:     properties: { name: { type: 'string' } },
+ 17:     required: ['name'],
+ 18:     additionalProperties: false,
+ 19:   },
+ 20:   app_stop: {
+ 21:     type: 'object',
+ 22:     properties: { name: { type: 'string' } },
+ 23:     required: ['name'],
+ 24:     additionalProperties: false,
+ 25:   },
+ 26: 
+ 27:   // Process Module
+ 28:   proc_list: emptyParamsSchema,
+ 29:   proc_kill: {
+ 30:     type: 'object',
+ 31:     properties: { pid: { type: 'integer', minimum: 1 } },
+ 32:     required: ['pid'],
+ 33:     additionalProperties: false,
+ 34:   },
+ 35: 
+ 36:   // System Info Module
+ 37:   sysinfo: emptyParamsSchema,
+ 38: 
+ 39:   // Power Module (all use type 'power' but we can route them via action if needed, or by type)
+ 40:   power_lock: emptyParamsSchema,
+ 41:   power_restart: emptyParamsSchema,
+ 42:   power_shutdown: emptyParamsSchema,
+ 43:   power_sleep: emptyParamsSchema,
+ 44: 
+ 45:   // Input Module
+ 46:   input_mouse_move: {
+ 47:     type: 'object',
+ 48:     properties: { x: { type: 'integer' }, y: { type: 'integer' } },
+ 49:     required: ['x', 'y'],
+ 50:     additionalProperties: false,
+ 51:   },
+ 52:   input_mouse_click: {
+ 53:     type: 'object',
+ 54:     properties: {
+ 55:       button: { type: 'string', enum: ['left', 'right', 'middle'] },
+ 56:       action: { type: 'string', enum: ['click', 'down', 'up'] },
+ 57:     },
+ 58:     required: ['button', 'action'],
+ 59:     additionalProperties: false,
+ 60:   },
+ 61:   input_key: {
+ 62:     type: 'object',
+ 63:     properties: {
+ 64:       vk: { type: 'integer' },
+ 65:       action: { type: 'string', enum: ['press', 'down', 'up'] },
+ 66:     },
+ 67:     required: ['vk', 'action'],
+ 68:     additionalProperties: false,
+ 69:   },
+ 70:   input_type: {
+ 71:     type: 'object',
+ 72:     properties: { text: { type: 'string' } },
+ 73:     required: ['text'],
+ 74:     additionalProperties: false,
+ 75:   },
+ 76: 
+ 77:   // Keylogger Module
+ 78:   keylog_start: emptyParamsSchema,
+ 79:   keylog_stop: emptyParamsSchema,
+ 80: 
+ 81:   // Screen Streaming Module
+ 82:   screen_stream: {
+ 83:     type: 'object',
+ 84:     properties: {
+ 85:       mode: { type: 'string', enum: ['stream'] },
+ 86:       fps: { type: 'integer', minimum: 1 },
+ 87:       quality: { type: 'integer', minimum: 1, maximum: 100 },
+ 88:     },
+ 89:     required: ['mode'],
+ 90:     additionalProperties: false,
+ 91:   },
+ 92:   screen_stream_stop: emptyParamsSchema,
+ 93:   screenshot: {
+ 94:     type: 'object',
+ 95:     properties: {
+ 96:       mode: { type: 'string', enum: ['once'] },
+ 97:       quality: { type: 'integer', minimum: 1, maximum: 100 },
+ 98:     },
+ 99:     required: ['mode'],
+100:     additionalProperties: false,
+101:   },
+102: 
+103:   // Webcam Module
+104:   webcam_start: {
+105:     type: 'object',
+106:     properties: {
+107:       fps: { type: 'integer', minimum: 1 },
+108:       quality: { type: 'integer', minimum: 1, maximum: 100 },
+109:     },
+110:     additionalProperties: false,
+111:   },
+112:   webcam_stop: emptyParamsSchema,
+113: 
+114:   // File System Module
+115:   fs_list: {
+116:     type: 'object',
+117:     properties: { path: { type: 'string' } },
+118:     required: ['path'],
+119:     additionalProperties: false,
+120:   },
+121:   fs_get: {
+122:     type: 'object',
+123:     properties: {
+124:       path: { type: 'string' },
+125:       transfer_id: { type: 'string' },
+126:     },
+127:     required: ['path'],
+128:     additionalProperties: false,
+129:   },
+130:   fs_put: {
+131:     type: 'object',
+132:     properties: {
+133:       path: { type: 'string' },
+134:       chunk_index: { type: 'integer', minimum: 0 },
+135:       total_chunks: { type: 'integer', minimum: 1 },
+136:       transfer_id: { type: 'string' },
+137:       total_size: { type: 'integer', minimum: 0 },
+138:       data_base64: { type: 'string' },
+139:     },
+140:     required: ['path', 'chunk_index', 'total_chunks', 'transfer_id', 'data_base64'],
+141:     additionalProperties: false,
+142:   },
+143:   fs_delete: {
+144:     type: 'object',
+145:     properties: { path: { type: 'string' } },
+146:     required: ['path'],
+147:     additionalProperties: false,
+148:   },
+149: 
+150:   // Policy & Permissions
+151:   policy_update: {
+152:     type: 'object',
+153:     properties: {
+154:       app_whitelist: { type: 'array', items: { type: 'string' } },
+155:       sandbox_path: { type: 'string' },
+156:     },
+157:     minProperties: 1,
+158:     additionalProperties: false,
+159:   },
+160:   permission_request: emptyParamsSchema,
+161:   permission_revoke: emptyParamsSchema,
+162:   stop_module: emptyParamsSchema,
+163: };
+164: 
+165: // Biên dịch sẵn các schema để tăng hiệu suất
+166: const validators = {};
+167: for (const [key, schema] of Object.entries(schemas)) {
+168:   validators[key] = ajv.compile(schema);
+169: }
+170: 
+171: /**
+172:  * Validate params of a command
+173:  * @param {string} commandKey - The module/action name (e.g. 'proc_kill')
+174:  * @param {object} params - The params object to validate
+175:  * @returns {object} { valid: boolean, errors: array, errorText: string }
+176:  */
+177: function validateParams(commandKey, params) {
+178:   const validator = validators[commandKey];
+179:   if (!validator) {
+180:     return { valid: true, errors: null, errorText: null };
+181:   }
+182: 
+183:   const data = params === undefined ? null : params;
+184:   const valid = validator(data);
+185: 
+186:   return {
+187:     valid,
+188:     errors: validator.errors,
+189:     errorText: valid ? null : ajv.errorsText(validator.errors)
+190:   };
+191: }
+192: 
+193: module.exports = {
+194:   validateParams,
+195: };
 </file>
 
 <file path="gateway/src/auth/login.js">
-// src/auth/login.js
-// REST POST /api/login — bcrypt verify + JWT sign (access 30m + refresh 7d in HttpOnly cookie).
-// REST POST /api/refresh — check refresh token JTI, issue new 30m access token and rotate refresh token.
-// REST POST /api/logout — revoke refresh token JTI in Map + clear cookie.
-
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const path = require('path');
-const { v4: uuidv4 } = require('uuid');
-
-const config = require('../config');
-const logger = require('../utils/logger');
-const { queries } = require('../db');
-
-const router = express.Router();
-
-/**
- * POST /api/login
- * Body: { username: string, password: string }
- * Response: { ok: boolean, token: string|null, message: string } (Refresh token set in HttpOnly Cookie)
- */
-router.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-
-  // --- Validate input ---
-  if (!username || !password) {
-    logger.warn('[login] Login FAILED: missing username or password');
-    return res.status(400).json({
-      ok: false,
-      token: null,
-      message: 'Username and password are required',
-    });
-  }
-
-  // --- Find user ---
-  const user = queries.getUserByUsername(username);                                                 // SQLite row: { id, username, password_hash, role }
-  if (!user) {
-    logger.warn('[login] Login FAILED: unknown username', { username });
-    return res.status(401).json({
-      ok: false,
-      token: null,
-      message: 'Sai tài khoản hoặc mật khẩu',
-    });
-  }
-
-  // --- Verify password with bcrypt ---
-  try {
-    const match = await bcrypt.compare(password, user.password_hash);                               // Column name in SQLite schema is snake_case
-    if (!match) {
-      logger.warn('[login] Login FAILED: wrong password', { username });
-      return res.status(401).json({
-        ok: false,
-        token: null,
-        message: 'Sai tài khoản hoặc mật khẩu',
-      });
-    }
-  } catch (err) {
-    logger.error('[login] bcrypt error', { error: err.message });
-    return res.status(500).json({
-      ok: false,
-      token: null,
-      message: 'Internal server error',
-    });
-  }
-
-  // --- Sign JWT ---
-  if (!config.jwtSecret) {
-    logger.warn('[login] JWT_SECRET not configured, cannot issue token');
-    return res.status(500).json({
-      ok: false,
-      token: null,
-      message: 'JWT is not configured on this server',
-    });
-  }
-
-  const role = user.role || 'admin';
-  const payload = { username: user.username, role };
-
-  // 1. Access token TTL 30 minutes, embedding role
-  const token = jwt.sign(payload, config.jwtSecret, { expiresIn: '30m' });
-
-  // 2. Issue refresh token with 7-day TTL and save JTI to SQLite
-  const jti = uuidv4();
-  const refreshPayload = { username: user.username, jti };
-  const refreshToken = jwt.sign(refreshPayload, config.jwtSecret, { expiresIn: '7d' });
-  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
-
-  queries.insertRefreshToken(jti, user.id, expiresAt);
-  queries.cleanExpiredTokens(Date.now());
-
-  // 4. Set refresh token via HttpOnly Cookie (NOT in response body)
-  res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    secure: config.tlsEnabled, // Secure when WSS/TLS enabled
-    sameSite: 'Strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  });
-
-  logger.info('[login] Login SUCCESS & refresh token saved to SQLite', { username, role, jti });
-  return res.json({
-    ok: true,
-    token,
-    message: 'Đăng nhập thành công',
-  });
-});
-
-/**
- * POST /api/refresh
- * Reads refreshToken from HttpOnly Cookie (or body fallback), verifies JTI in SQLite,
- * issues a new 30m access token with role, and rotates the refresh token in DB.
- */
-router.post('/refresh', (req, res) => {
-  const token = req.cookies?.refreshToken || req.body?.refreshToken;
-
-  if (!token) {
-    logger.warn('[refresh] FAILED: No refresh token provided');
-    return res.status(401).json({
-      ok: false,
-      token: null,
-      message: 'Refresh token required',
-    });
-  }
-
-  if (!config.jwtSecret) {
-    return res.status(500).json({ ok: false, token: null, message: 'JWT not configured' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, config.jwtSecret);
-    const jti = decoded.jti;
-
-    if (!jti) {
-      return res.status(401).json({ ok: false, token: null, message: 'Invalid refresh token' });
-    }
-
-    // Verify JTI exists and has not expired in SQLite
-    const tokenRecord = queries.getRefreshToken(jti);
-    if (!tokenRecord || tokenRecord.expires_at < Date.now()) {
-      logger.warn('[refresh] FAILED: Revoked or expired JTI in SQLite', { jti, username: decoded.username });
-      if (tokenRecord) {
-        queries.deleteRefreshToken(jti);
-      }
-      return res.status(401).json({
-        ok: false,
-        token: null,
-        message: 'Invalid or expired refresh token',
-      });
-    }
-
-    // Get latest user info from DB
-    const user = queries.getUserById(tokenRecord.user_id) || queries.getUserByUsername(decoded.username);
-    if (!user) {
-      logger.warn('[refresh] FAILED: User associated with token no longer exists in DB');
-      queries.deleteRefreshToken(jti);
-      return res.status(401).json({ ok: false, token: null, message: 'User no longer exists' });
-    }
-
-    const role = user.role || 'admin';
-
-    // Rotate refresh token: delete old JTI and generate a new one in SQLite
-    queries.deleteRefreshToken(jti);
-    const newJti = uuidv4();
-    const newRefreshToken = jwt.sign({ username: user.username, jti: newJti }, config.jwtSecret, { expiresIn: '7d' });
-    const newExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
-    queries.insertRefreshToken(newJti, user.id, newExpiresAt);
-
-    res.cookie('refreshToken', newRefreshToken, {
-      httpOnly: true,
-      secure: config.tlsEnabled,
-      sameSite: 'Strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    // Issue new 30-minute access token embedding role
-    const newAccessToken = jwt.sign({ username: user.username, role }, config.jwtSecret, { expiresIn: '30m' });
-
-    logger.info('[refresh] Token refreshed & rotated successfully via SQLite', { username: user.username, role, oldJti: jti, newJti });
-    return res.json({
-      ok: true,
-      token: newAccessToken,
-      message: 'Token refreshed successfully',
-    });
-  } catch (err) {
-    logger.warn('[refresh] FAILED: Token verification failed', { error: err.message });
-    return res.status(401).json({
-      ok: false,
-      token: null,
-      message: 'Expired or invalid refresh token',
-    });
-  }
-});
-
-/**
- * POST /api/logout
- * Revokes refresh token JTI in Map and clears HttpOnly cookie.
- */
-router.post('/logout', (req, res) => {
-  const token = req.cookies?.refreshToken || req.body?.refreshToken;
-
-  if (token && config.jwtSecret) {
-    try {
-      const decoded = jwt.decode(token);
-      if (decoded && decoded.jti) {
-        queries.deleteRefreshToken(decoded.jti);
-        logger.info('[logout] Revoked refresh token JTI in SQLite', { jti: decoded.jti, username: decoded.username });
-      }
-    } catch (err) {
-      logger.debug('[logout] Error decoding token during logout', { error: err.message });
-    }
-  }
-
-  res.clearCookie('refreshToken', {
-    httpOnly: true,
-    secure: config.tlsEnabled,
-    sameSite: 'Strict',
-  });
-
-  return res.json({
-    ok: true,
-    message: 'Đăng xuất thành công',
-  });
-});
-
-module.exports = router;
+  1: // src/auth/login.js
+  2: // REST POST /api/login — bcrypt verify + JWT sign (access 30m + refresh 7d in HttpOnly cookie).
+  3: // REST POST /api/refresh — check refresh token JTI, issue new 30m access token and rotate refresh token.
+  4: // REST POST /api/logout — revoke refresh token JTI in Map + clear cookie.
+  5: 
+  6: const express = require('express');
+  7: const bcrypt = require('bcryptjs');
+  8: const jwt = require('jsonwebtoken');
+  9: const path = require('path');
+ 10: const { v4: uuidv4 } = require('uuid');
+ 11: 
+ 12: const config = require('../config');
+ 13: const logger = require('../utils/logger');
+ 14: const { queries } = require('../db');
+ 15: 
+ 16: const router = express.Router();
+ 17: 
+ 18: /**
+ 19:  * POST /api/login
+ 20:  * Body: { username: string, password: string }
+ 21:  * Response: { ok: boolean, token: string|null, message: string } (Refresh token set in HttpOnly Cookie)
+ 22:  */
+ 23: router.post('/login', async (req, res) => {
+ 24:   const { username, password } = req.body;
+ 25: 
+ 26:   // --- Validate input ---
+ 27:   if (!username || !password) {
+ 28:     logger.warn('[login] Login FAILED: missing username or password');
+ 29:     return res.status(400).json({
+ 30:       ok: false,
+ 31:       token: null,
+ 32:       message: 'Username and password are required',
+ 33:     });
+ 34:   }
+ 35: 
+ 36:   // --- Find user ---
+ 37:   const user = queries.getUserByUsername(username);                                                 // SQLite row: { id, username, password_hash, role }
+ 38:   if (!user) {
+ 39:     logger.warn('[login] Login FAILED: unknown username', { username });
+ 40:     return res.status(401).json({
+ 41:       ok: false,
+ 42:       token: null,
+ 43:       message: 'Sai tài khoản hoặc mật khẩu',
+ 44:     });
+ 45:   }
+ 46: 
+ 47:   // --- Verify password with bcrypt ---
+ 48:   try {
+ 49:     const match = await bcrypt.compare(password, user.password_hash);                               // Column name in SQLite schema is snake_case
+ 50:     if (!match) {
+ 51:       logger.warn('[login] Login FAILED: wrong password', { username });
+ 52:       return res.status(401).json({
+ 53:         ok: false,
+ 54:         token: null,
+ 55:         message: 'Sai tài khoản hoặc mật khẩu',
+ 56:       });
+ 57:     }
+ 58:   } catch (err) {
+ 59:     logger.error('[login] bcrypt error', { error: err.message });
+ 60:     return res.status(500).json({
+ 61:       ok: false,
+ 62:       token: null,
+ 63:       message: 'Internal server error',
+ 64:     });
+ 65:   }
+ 66: 
+ 67:   // --- Sign JWT ---
+ 68:   if (!config.jwtSecret) {
+ 69:     logger.warn('[login] JWT_SECRET not configured, cannot issue token');
+ 70:     return res.status(500).json({
+ 71:       ok: false,
+ 72:       token: null,
+ 73:       message: 'JWT is not configured on this server',
+ 74:     });
+ 75:   }
+ 76: 
+ 77:   const role = user.role || 'admin';
+ 78:   const payload = { username: user.username, role };
+ 79: 
+ 80:   // 1. Access token TTL 30 minutes, embedding role
+ 81:   const token = jwt.sign(payload, config.jwtSecret, { expiresIn: '30m' });
+ 82: 
+ 83:   // 2. Issue refresh token with 7-day TTL and save JTI to SQLite
+ 84:   const jti = uuidv4();
+ 85:   const refreshPayload = { username: user.username, jti };
+ 86:   const refreshToken = jwt.sign(refreshPayload, config.jwtSecret, { expiresIn: '7d' });
+ 87:   const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+ 88: 
+ 89:   queries.insertRefreshToken(jti, user.id, expiresAt);
+ 90:   queries.cleanExpiredTokens(Date.now());
+ 91: 
+ 92:   // 4. Set refresh token via HttpOnly Cookie (NOT in response body)
+ 93:   res.cookie('refreshToken', refreshToken, {
+ 94:     httpOnly: true,
+ 95:     secure: config.tlsEnabled, // Secure when WSS/TLS enabled
+ 96:     sameSite: 'Strict',
+ 97:     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+ 98:   });
+ 99: 
+100:   logger.info('[login] Login SUCCESS & refresh token saved to SQLite', { username, role, jti });
+101:   return res.json({
+102:     ok: true,
+103:     token,
+104:     message: 'Đăng nhập thành công',
+105:   });
+106: });
+107: 
+108: /**
+109:  * POST /api/refresh
+110:  * Reads refreshToken from HttpOnly Cookie (or body fallback), verifies JTI in SQLite,
+111:  * issues a new 30m access token with role, and rotates the refresh token in DB.
+112:  */
+113: router.post('/refresh', (req, res) => {
+114:   const token = req.cookies?.refreshToken || req.body?.refreshToken;
+115: 
+116:   if (!token) {
+117:     logger.warn('[refresh] FAILED: No refresh token provided');
+118:     return res.status(401).json({
+119:       ok: false,
+120:       token: null,
+121:       message: 'Refresh token required',
+122:     });
+123:   }
+124: 
+125:   if (!config.jwtSecret) {
+126:     return res.status(500).json({ ok: false, token: null, message: 'JWT not configured' });
+127:   }
+128: 
+129:   try {
+130:     const decoded = jwt.verify(token, config.jwtSecret);
+131:     const jti = decoded.jti;
+132: 
+133:     if (!jti) {
+134:       return res.status(401).json({ ok: false, token: null, message: 'Invalid refresh token' });
+135:     }
+136: 
+137:     // Verify JTI exists and has not expired in SQLite
+138:     const tokenRecord = queries.getRefreshToken(jti);
+139:     if (!tokenRecord || tokenRecord.expires_at < Date.now()) {
+140:       logger.warn('[refresh] FAILED: Revoked or expired JTI in SQLite', { jti, username: decoded.username });
+141:       if (tokenRecord) {
+142:         queries.deleteRefreshToken(jti);
+143:       }
+144:       return res.status(401).json({
+145:         ok: false,
+146:         token: null,
+147:         message: 'Invalid or expired refresh token',
+148:       });
+149:     }
+150: 
+151:     // Get latest user info from DB
+152:     const user = queries.getUserById(tokenRecord.user_id) || queries.getUserByUsername(decoded.username);
+153:     if (!user) {
+154:       logger.warn('[refresh] FAILED: User associated with token no longer exists in DB');
+155:       queries.deleteRefreshToken(jti);
+156:       return res.status(401).json({ ok: false, token: null, message: 'User no longer exists' });
+157:     }
+158: 
+159:     const role = user.role || 'admin';
+160: 
+161:     // Rotate refresh token: delete old JTI and generate a new one in SQLite
+162:     queries.deleteRefreshToken(jti);
+163:     const newJti = uuidv4();
+164:     const newRefreshToken = jwt.sign({ username: user.username, jti: newJti }, config.jwtSecret, { expiresIn: '7d' });
+165:     const newExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+166:     queries.insertRefreshToken(newJti, user.id, newExpiresAt);
+167: 
+168:     res.cookie('refreshToken', newRefreshToken, {
+169:       httpOnly: true,
+170:       secure: config.tlsEnabled,
+171:       sameSite: 'Strict',
+172:       maxAge: 7 * 24 * 60 * 60 * 1000,
+173:     });
+174: 
+175:     // Issue new 30-minute access token embedding role
+176:     const newAccessToken = jwt.sign({ username: user.username, role }, config.jwtSecret, { expiresIn: '30m' });
+177: 
+178:     logger.info('[refresh] Token refreshed & rotated successfully via SQLite', { username: user.username, role, oldJti: jti, newJti });
+179:     return res.json({
+180:       ok: true,
+181:       token: newAccessToken,
+182:       message: 'Token refreshed successfully',
+183:     });
+184:   } catch (err) {
+185:     logger.warn('[refresh] FAILED: Token verification failed', { error: err.message });
+186:     return res.status(401).json({
+187:       ok: false,
+188:       token: null,
+189:       message: 'Expired or invalid refresh token',
+190:     });
+191:   }
+192: });
+193: 
+194: /**
+195:  * POST /api/logout
+196:  * Revokes refresh token JTI in Map and clears HttpOnly cookie.
+197:  */
+198: router.post('/logout', (req, res) => {
+199:   const token = req.cookies?.refreshToken || req.body?.refreshToken;
+200: 
+201:   if (token && config.jwtSecret) {
+202:     try {
+203:       const decoded = jwt.decode(token);
+204:       if (decoded && decoded.jti) {
+205:         queries.deleteRefreshToken(decoded.jti);
+206:         logger.info('[logout] Revoked refresh token JTI in SQLite', { jti: decoded.jti, username: decoded.username });
+207:       }
+208:     } catch (err) {
+209:       logger.debug('[logout] Error decoding token during logout', { error: err.message });
+210:     }
+211:   }
+212: 
+213:   res.clearCookie('refreshToken', {
+214:     httpOnly: true,
+215:     secure: config.tlsEnabled,
+216:     sameSite: 'Strict',
+217:   });
+218: 
+219:   return res.json({
+220:     ok: true,
+221:     message: 'Đăng xuất thành công',
+222:   });
+223: });
+224: 
+225: module.exports = router;
 </file>
 
 <file path="gateway/src/socket/agentHandler.js">
-// src/socket/agentHandler.js
-// Handle Agent WebSocket connections.
-//
-// Protocol:
-//   Text REGISTER { agent_id, secret, hostname, ip, os }
-//     → verify secret (bcrypt) against agents.json
-//     → if invalid secret → close 1008 (Policy Violation)
-//     → if already online  → close 1008 "already_online"
-//     → if ok → store + broadcast agent_status online
-//   Binary  → forward raw Buffer to all controllers (broadcast).
-//   Text other → stamp agent_id → broadcast JSON to all controllers.
-//   Close      → removeByWs + broadcast agent_status offline.
-
-const agentStore = require('../store/agentStore');
-const controllerStore = require('../store/controllerStore');
-const heartbeat = require('../store/heartbeat');
-const logger = require('../utils/logger');
-
-/**
- * Attach event handlers to an Agent WebSocket.
- * @param {WebSocket} ws - The Agent WebSocket (already upgraded)
- * @param {import('http').IncomingMessage} req - The original HTTP upgrade request
- */
-function handleAgent(ws, req) {
-  const ip =
-    req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
-
-  // This will be set after REGISTER
-  let agentId = null;
-
-  logger.info('[agent] New agent connection (awaiting REGISTER)', { ip });
-
-  // Attach heartbeat
-  const hb = heartbeat.attach(ws, `agent:${ip}`);
-
-  // ─── message ─────────────────────────────────────────────────
-  ws.on('message', async (data, isBinary) => {
-    // ── Binary frame → forward ONLY to subscribed Controllers ──────
-    if (isBinary) {
-      logger.debug('[agent] Binary frame relay to subscribers', {
-        agentId,
-        bytes: data.length,
-      });
-      if (agentId) {
-        controllerStore.broadcastToSubscribers(agentId, data, { binary: true });
-      } else {
-        logger.warn('[agent] Binary frame from unregistered agent, dropping');
-      }
-      return;
-    }
-
-    // ── Text frame → parse JSON ──────────────────────────────
-    let msg;
-    try {
-      msg = JSON.parse(data.toString());
-    } catch (err) {
-      logger.warn('[agent] Invalid JSON from agent', {
-        agentId,
-        ip,
-        error: err.message,
-        preview: data.toString().substring(0, 200),
-      });
-      return;
-    }
-
-    // ── REGISTER ─────────────────────────────────────────────
-    if (msg.type === 'REGISTER') {
-      const id = msg.agent_id;
-      const secret = msg.secret;
-
-      if (!id || !secret) {
-        logger.warn('[agent] REGISTER missing agent_id or secret', { ip });
-        ws.close(1008, 'missing_credentials');
-        return;
-      }
-
-      // Verify secret against bcrypt hash in agents.json
-      const valid = await agentStore.verifySecret(id, secret);
-      if (!valid) {
-        logger.warn('[agent] REGISTER failed — invalid secret', { agentId: id, ip });
-        ws.close(1008, 'invalid_secret');
-        return;
-      }
-
-      // Try to register (will be rejected if already online)
-      const registered = agentStore.register(id, ws, {
-        hostname: msg.hostname || id,
-        ip: msg.ip || ip,
-        os: msg.os || 'unknown',
-      });
-
-      if (!registered) {
-        logger.warn('[agent] REGISTER rejected — agent already online', { agentId: id, ip });
-        ws.close(1008, 'already_online');
-        return;
-      }
-
-      agentId = id;
-
-      // Update heartbeat label now that we know the agentId
-      hb.clear();
-      const hb2 = heartbeat.attach(ws, `agent:${agentId}`);
-      // Replace reference for cleanup on close
-      ws._gwHeartbeat = hb2;
-
-      logger.info('[agent] REGISTER', {
-        agentId,
-        hostname: msg.hostname,
-        ip: msg.ip,
-        os: msg.os,
-      });
-
-      // Broadcast agent_status online to all controllers
-      const statusMsg = JSON.stringify({
-        type: 'agent_status',
-        agent_id: agentId,
-        hostname: msg.hostname || agentId,
-        ip: msg.ip || ip,
-        os: msg.os || 'unknown',
-        online: true,
-      });
-      controllerStore.broadcast(statusMsg);
-
-      return;
-    }
-
-    // ── All other messages → stamp agent_id & route to initiator or subscribers ──
-    if (!agentId) {
-      logger.warn('[agent] Message from unregistered agent, dropping', {
-        ip,
-        type: msg.type,
-      });
-      return;
-    }
-
-    // CHÈN/GHI ĐÈ agent_id
-    msg.agent_id = agentId;
-    const outStr = JSON.stringify(msg);
-
-    // 1. Streaming frames & Keylog → CHỈ forward tới các Controller trong tập subscribe
-    if (msg.type === 'frame_meta' || msg.type === 'keylog' || msg.type === 'keylog_data' || msg.module === 'keylog') {
-      logger.debug('[agent→controller] Stream/Keylog relay to subscribers', {
-        agentId,
-        type: msg.type,
-      });
-      controllerStore.broadcastToSubscribers(agentId, outStr);
-      return;
-    }
-
-    // 1.5. E2EE payload — opaque envelope, command_id is encrypted inside.
-    //      Cannot do command-initiator routing; broadcast to subscribers.
-    //      The Controller decrypts and dispatches internally.
-    if (msg.type === 'e2ee_payload') {
-      logger.debug('[agent→controller] e2ee_payload relay to subscribers', {
-        agentId,
-        seq: msg.seq,
-      });
-      controllerStore.broadcastToSubscribers(agentId, outStr);
-      return;
-    }
-
-    // 2. Response cho lệnh (có command_id khớp req_id Controller đã gửi) → gửi đúng Controller, KHÔNG broadcast
-    const cmdId = msg.command_id || msg.req_id || msg.id;
-    if (cmdId && typeof cmdId === 'string' && controllerStore.hasCommand(cmdId)) {
-      logger.info('[agent→controller] Command response relay to initiator', {
-        agentId,
-        type: msg.type,
-        commandId: cmdId,
-      });
-      controllerStore.sendToCommandInitiator(cmdId, outStr);
-      return;
-    }
-
-    // 3. Các message khác (không khớp command_id và không phải stream/keylog) → forward tới subscribers
-    if (msg.type === 'e2ee_ready') {
-      logger.info('[agent→controller] e2ee_ready relay to all controllers', { agentId });
-      controllerStore.broadcast(outStr);
-      return;
-    }
-
-    logger.info('[agent→controller] General relay to subscribers', {
-      agentId,
-      type: msg.type,
-    });
-    controllerStore.broadcastToSubscribers(agentId, outStr);
-  });
-
-  // ─── close ───────────────────────────────────────────────────
-  ws.on('close', (code, reason) => {
-    // Clear heartbeat
-    if (ws._gwHeartbeat) {
-      ws._gwHeartbeat.clear();
-    } else {
-      hb.clear();
-    }
-
-    // Remove from store strictly by ws object (to avoid deleting new socket if reconnected quickly)
-    const removedId = agentStore.removeByWs(ws);
-
-    if (removedId) {
-      logger.info('[agent] Disconnected', {
-        agentId: removedId,
-        code,
-        reason: reason?.toString(),
-      });
-
-      // Broadcast agent_status offline to all controllers
-      const statusMsg = JSON.stringify({
-        type: 'agent_status',
-        agent_id: removedId,
-        online: false,
-      });
-      controllerStore.broadcast(statusMsg);
-    } else {
-      logger.info('[agent] Unregistered agent disconnected', { ip, code });
-    }
-  });
-
-  // ─── error ───────────────────────────────────────────────────
-  ws.on('error', (err) => {
-    logger.error('[agent] WebSocket error', {
-      agentId,
-      ip,
-      error: err.message,
-    });
-  });
-}
-
-module.exports = handleAgent;
+  1: // src/socket/agentHandler.js
+  2: // Handle Agent WebSocket connections.
+  3: //
+  4: // Protocol:
+  5: //   Text REGISTER { agent_id, secret, hostname, ip, os }
+  6: //     → verify secret (bcrypt) against agents.json
+  7: //     → if invalid secret → close 1008 (Policy Violation)
+  8: //     → if already online  → close 1008 "already_online"
+  9: //     → if ok → store + broadcast agent_status online
+ 10: //   Binary  → forward raw Buffer to all controllers (broadcast).
+ 11: //   Text other → stamp agent_id → broadcast JSON to all controllers.
+ 12: //   Close      → removeByWs + broadcast agent_status offline.
+ 13: 
+ 14: const agentStore = require('../store/agentStore');
+ 15: const controllerStore = require('../store/controllerStore');
+ 16: const heartbeat = require('../store/heartbeat');
+ 17: const logger = require('../utils/logger');
+ 18: 
+ 19: /**
+ 20:  * Attach event handlers to an Agent WebSocket.
+ 21:  * @param {WebSocket} ws - The Agent WebSocket (already upgraded)
+ 22:  * @param {import('http').IncomingMessage} req - The original HTTP upgrade request
+ 23:  */
+ 24: function handleAgent(ws, req) {
+ 25:   const ip =
+ 26:     req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+ 27: 
+ 28:   // This will be set after REGISTER
+ 29:   let agentId = null;
+ 30: 
+ 31:   logger.info('[agent] New agent connection (awaiting REGISTER)', { ip });
+ 32: 
+ 33:   // Attach heartbeat
+ 34:   const hb = heartbeat.attach(ws, `agent:${ip}`);
+ 35: 
+ 36:   // ─── message ─────────────────────────────────────────────────
+ 37:   ws.on('message', async (data, isBinary) => {
+ 38:     // ── Binary frame → forward ONLY to subscribed Controllers ──────
+ 39:     if (isBinary) {
+ 40:       logger.debug('[agent] Binary frame relay to subscribers', {
+ 41:         agentId,
+ 42:         bytes: data.length,
+ 43:       });
+ 44:       if (agentId) {
+ 45:         controllerStore.broadcastToSubscribers(agentId, data, { binary: true });
+ 46:       } else {
+ 47:         logger.warn('[agent] Binary frame from unregistered agent, dropping');
+ 48:       }
+ 49:       return;
+ 50:     }
+ 51: 
+ 52:     // ── Text frame → parse JSON ──────────────────────────────
+ 53:     let msg;
+ 54:     try {
+ 55:       msg = JSON.parse(data.toString());
+ 56:     } catch (err) {
+ 57:       logger.warn('[agent] Invalid JSON from agent', {
+ 58:         agentId,
+ 59:         ip,
+ 60:         error: err.message,
+ 61:         preview: data.toString().substring(0, 200),
+ 62:       });
+ 63:       return;
+ 64:     }
+ 65: 
+ 66:     // ── REGISTER ─────────────────────────────────────────────
+ 67:     if (msg.type === 'REGISTER') {
+ 68:       const id = msg.agent_id;
+ 69:       const secret = msg.secret;
+ 70: 
+ 71:       if (!id || !secret) {
+ 72:         logger.warn('[agent] REGISTER missing agent_id or secret', { ip });
+ 73:         ws.close(1008, 'missing_credentials');
+ 74:         return;
+ 75:       }
+ 76: 
+ 77:       // Verify secret against bcrypt hash in agents.json
+ 78:       const valid = await agentStore.verifySecret(id, secret);
+ 79:       if (!valid) {
+ 80:         logger.warn('[agent] REGISTER failed — invalid secret', { agentId: id, ip });
+ 81:         ws.close(1008, 'invalid_secret');
+ 82:         return;
+ 83:       }
+ 84: 
+ 85:       // Try to register (will be rejected if already online)
+ 86:       const registered = agentStore.register(id, ws, {
+ 87:         hostname: msg.hostname || id,
+ 88:         ip: msg.ip || ip,
+ 89:         os: msg.os || 'unknown',
+ 90:       });
+ 91: 
+ 92:       if (!registered) {
+ 93:         logger.warn('[agent] REGISTER rejected — agent already online', { agentId: id, ip });
+ 94:         ws.close(1008, 'already_online');
+ 95:         return;
+ 96:       }
+ 97: 
+ 98:       agentId = id;
+ 99: 
+100:       // Update heartbeat label now that we know the agentId
+101:       hb.clear();
+102:       const hb2 = heartbeat.attach(ws, `agent:${agentId}`);
+103:       // Replace reference for cleanup on close
+104:       ws._gwHeartbeat = hb2;
+105: 
+106:       logger.info('[agent] REGISTER', {
+107:         agentId,
+108:         hostname: msg.hostname,
+109:         ip: msg.ip,
+110:         os: msg.os,
+111:       });
+112: 
+113:       // Broadcast agent_status online to all controllers
+114:       const statusMsg = JSON.stringify({
+115:         type: 'agent_status',
+116:         agent_id: agentId,
+117:         hostname: msg.hostname || agentId,
+118:         ip: msg.ip || ip,
+119:         os: msg.os || 'unknown',
+120:         online: true,
+121:       });
+122:       controllerStore.broadcast(statusMsg);
+123: 
+124:       return;
+125:     }
+126: 
+127:     // ── All other messages → stamp agent_id & route to initiator or subscribers ──
+128:     if (!agentId) {
+129:       logger.warn('[agent] Message from unregistered agent, dropping', {
+130:         ip,
+131:         type: msg.type,
+132:       });
+133:       return;
+134:     }
+135: 
+136:     // CHÈN/GHI ĐÈ agent_id
+137:     msg.agent_id = agentId;
+138:     const outStr = JSON.stringify(msg);
+139: 
+140:     // 1. Streaming frames & Keylog → CHỈ forward tới các Controller trong tập subscribe
+141:     if (msg.type === 'frame_meta' || msg.type === 'keylog' || msg.type === 'keylog_data' || msg.module === 'keylog') {
+142:       logger.debug('[agent→controller] Stream/Keylog relay to subscribers', {
+143:         agentId,
+144:         type: msg.type,
+145:       });
+146:       controllerStore.broadcastToSubscribers(agentId, outStr);
+147:       return;
+148:     }
+149: 
+150:     // 1.5. E2EE payload — opaque envelope, command_id is encrypted inside.
+151:     //      Cannot do command-initiator routing; broadcast to subscribers.
+152:     //      The Controller decrypts and dispatches internally.
+153:     if (msg.type === 'e2ee_payload') {
+154:       logger.debug('[agent→controller] e2ee_payload relay to subscribers', {
+155:         agentId,
+156:         seq: msg.seq,
+157:       });
+158:       controllerStore.broadcastToSubscribers(agentId, outStr);
+159:       return;
+160:     }
+161: 
+162:     // 2. Response cho lệnh (có command_id khớp req_id Controller đã gửi) → gửi đúng Controller, KHÔNG broadcast
+163:     const cmdId = msg.command_id || msg.req_id || msg.id;
+164:     if (cmdId && typeof cmdId === 'string' && controllerStore.hasCommand(cmdId)) {
+165:       logger.info('[agent→controller] Command response relay to initiator', {
+166:         agentId,
+167:         type: msg.type,
+168:         commandId: cmdId,
+169:       });
+170:       controllerStore.sendToCommandInitiator(cmdId, outStr);
+171:       return;
+172:     }
+173: 
+174:     // 3. Các message khác (không khớp command_id và không phải stream/keylog) → forward tới subscribers
+175:     if (msg.type === 'e2ee_ready') {
+176:       logger.info('[agent→controller] e2ee_ready relay to all controllers', { agentId });
+177:       controllerStore.broadcast(outStr);
+178:       return;
+179:     }
+180: 
+181:     logger.info('[agent→controller] General relay to subscribers', {
+182:       agentId,
+183:       type: msg.type,
+184:     });
+185:     controllerStore.broadcastToSubscribers(agentId, outStr);
+186:   });
+187: 
+188:   // ─── close ───────────────────────────────────────────────────
+189:   ws.on('close', (code, reason) => {
+190:     // Clear heartbeat
+191:     if (ws._gwHeartbeat) {
+192:       ws._gwHeartbeat.clear();
+193:     } else {
+194:       hb.clear();
+195:     }
+196: 
+197:     // Remove from store strictly by ws object (to avoid deleting new socket if reconnected quickly)
+198:     const removedId = agentStore.removeByWs(ws);
+199: 
+200:     if (removedId) {
+201:       logger.info('[agent] Disconnected', {
+202:         agentId: removedId,
+203:         code,
+204:         reason: reason?.toString(),
+205:       });
+206: 
+207:       // Broadcast agent_status offline to all controllers
+208:       const statusMsg = JSON.stringify({
+209:         type: 'agent_status',
+210:         agent_id: removedId,
+211:         online: false,
+212:       });
+213:       controllerStore.broadcast(statusMsg);
+214:     } else {
+215:       logger.info('[agent] Unregistered agent disconnected', { ip, code });
+216:     }
+217:   });
+218: 
+219:   // ─── error ───────────────────────────────────────────────────
+220:   ws.on('error', (err) => {
+221:     logger.error('[agent] WebSocket error', {
+222:       agentId,
+223:       ip,
+224:       error: err.message,
+225:     });
+226:   });
+227: }
+228: 
+229: module.exports = handleAgent;
 </file>
 
 <file path="gateway/src/store/agentStore.js">
-// src/store/agentStore.js
-// Registry of connected Agent WebSocket clients.
-// Key: agentId (string) → Value: { agentId, ws, hostname, ip, os, connectedAt }
-//
-// Credential verification: agents.json maps agent_id → secretHash (bcrypt).
-// Duplicate rejection: if agent_id is already online, NEW connection is refused.
-
-const path = require('path');
-const bcrypt = require('bcryptjs');
-const logger = require('../utils/logger');
-const { queries } = require('../db');
-const config = require('../config');
-
-/** @type {Map<string, {agentId: string, ws: WebSocket, hostname: string, ip: string, os: string, connectedAt: number}>} */
-const agents = new Map();
-
-/**
- * Verify an agent's secret against the stored bcrypt hash in SQLite database.
- * @param {string} agentId
- * @param {string} secret - Plaintext secret sent by the agent
- * @returns {Promise<boolean>} true if valid
- */
-async function verifySecret(agentId, secret) {
-  const agent = queries.getAgentById(agentId);
-
-  // 1. Nếu Agent đã tồn tại trong DB, xác thực bằng hash bcrypt
-  if (agent && agent.secret_hash) {
-    return bcrypt.compare(secret, agent.secret_hash);
-  }
-
-  // 2. Cơ chế Auto-Register cho Agent mới
-  // Nếu Agent chưa có trong DB nhưng secret gửi lên khớp với AGENT_KEY toàn cục
-  if (config.agentKey && secret === config.agentKey) {
-    try {
-      const salt = await bcrypt.genSalt(10);
-      const hash = await bcrypt.hash(secret, salt);
-      
-      // Tự động lưu trữ thông tin Agent vào SQLite với mã băm an toàn
-      queries.upsertAgent(agentId, hash, agentId, Date.now());
-      logger.info('[agentStore] Auto-registered new agent to DB', { agentId });
-      return true;
-    } catch (err) {
-      logger.error('[agentStore] Failed to auto-register agent', { error: err.message });
-      return false;
-    }
-  }
-
-  // Từ chối nếu không tìm thấy trong DB và secret cũng không khớp global key
-  logger.warn('[agentStore] Unknown agent_id and secret does not match global key', { agentId });
-  return false;
-}
-
-/**
- * Register an agent after it sends the REGISTER message.
- * If agent_id is already online → REJECT the new connection (return false).
- *
- * @param {string} agentId
- * @param {WebSocket} ws
- * @param {{ hostname: string, ip: string, os: string }} meta
- * @returns {boolean} true if registered, false if rejected (already online)
- */
-function register(agentId, ws, meta) {
-  // If an agent with the same id is already connected → REJECT the NEW socket
-  if (agents.has(agentId)) {
-    const existing = agents.get(agentId);
-    if (existing.ws.readyState === existing.ws.OPEN) {
-      logger.warn('[agentStore] Agent already online — rejecting NEW connection', {
-        agentId,
-      });
-      return false; // Caller must close the NEW socket
-    }
-    // Existing socket is not OPEN (stale entry) — clean it up and allow
-    agents.delete(agentId);
-    logger.info('[agentStore] Cleaned stale entry for agent', { agentId });
-  }
-
-  agents.set(agentId, {
-    agentId,
-    ws,
-    hostname: meta.hostname || agentId,
-    ip: meta.ip || 'unknown',
-    os: meta.os || 'unknown',
-    connectedAt: Date.now(),
-  });
-
-  logger.info('[agentStore] Agent registered', {
-    agentId,
-    hostname: meta.hostname,
-    ip: meta.ip,
-    os: meta.os,
-  });
-
-  return true;
-}
-
-/**
- * Unregister an agent by its agentId.
- * @param {string} agentId
- * @returns {boolean} true if the agent was found and removed
- */
-function unregister(agentId) {
-  const removed = agents.delete(agentId);
-  if (removed) {
-    logger.info('[agentStore] Agent unregistered', { agentId });
-  }
-  return removed;
-}
-
-/**
- * Remove an agent by its WebSocket reference (used on 'close' event
- * when we only have the ws object, not the agentId).
- * @param {WebSocket} ws
- * @returns {string|null} the agentId that was removed, or null
- */
-function removeByWs(ws) {
-  for (const [agentId, entry] of agents) {
-    if (entry.ws === ws) {
-      agents.delete(agentId);
-      logger.info('[agentStore] Agent removed by ws ref', { agentId });
-      return agentId;
-    }
-  }
-  return null;
-}
-
-/**
- * Lookup an agent entry by its WebSocket reference.
- * @param {WebSocket} ws
- * @returns {{ agentId: string, ws: WebSocket, hostname: string, ip: string, os: string, connectedAt: number }|null}
- */
-function getByWs(ws) {
-  for (const entry of agents.values()) {
-    if (entry.ws === ws) {
-      return entry;
-    }
-  }
-  return null;
-}
-
-/**
- * Get the WebSocket for a specific agent.
- * @param {string} agentId
- * @returns {WebSocket|null}
- */
-function getSocket(agentId) {
-  const entry = agents.get(agentId);
-  return entry ? entry.ws : null;
-}
-
-/**
- * Get a specific agent entry.
- * @param {string} agentId
- * @returns {{ agentId: string, ws: WebSocket, hostname: string, ip: string, os: string, connectedAt: number }|null}
- */
-function get(agentId) {
-  return agents.get(agentId) || null;
-}
-
-/**
- * Get all agents in the clean shape expected by Controller's agents_list.
- * Matches Controller Protocol.js normalizeAgent: { id, name, os, ip, online }
- * @returns {Array<{ id: string, name: string, os: string, ip: string, online: boolean }>}
- */
-function getAll() {
-  const list = [];
-  for (const entry of agents.values()) {
-    list.push({
-      id: entry.agentId,
-      name: entry.hostname, // name = hostname
-      os: entry.os,
-      ip: entry.ip,
-      online: true, // Only connected agents are in the store
-    });
-  }
-  return list;
-}
-
-/**
- * Get the number of connected agents.
- * @returns {number}
- */
-function size() {
-  return agents.size;
-}
-
-module.exports = {
-  verifySecret,
-  register,
-  unregister,
-  removeByWs,
-  getByWs,
-  getSocket,
-  get,
-  getAll,
-  size,
-};
+  1: // src/store/agentStore.js
+  2: // Registry of connected Agent WebSocket clients.
+  3: // Key: agentId (string) → Value: { agentId, ws, hostname, ip, os, connectedAt }
+  4: //
+  5: // Credential verification: agents.json maps agent_id → secretHash (bcrypt).
+  6: // Duplicate rejection: if agent_id is already online, NEW connection is refused.
+  7: 
+  8: const path = require('path');
+  9: const bcrypt = require('bcryptjs');
+ 10: const logger = require('../utils/logger');
+ 11: const { queries } = require('../db');
+ 12: const config = require('../config');
+ 13: 
+ 14: /** @type {Map<string, {agentId: string, ws: WebSocket, hostname: string, ip: string, os: string, connectedAt: number}>} */
+ 15: const agents = new Map();
+ 16: 
+ 17: /**
+ 18:  * Verify an agent's secret against the stored bcrypt hash in SQLite database.
+ 19:  * @param {string} agentId
+ 20:  * @param {string} secret - Plaintext secret sent by the agent
+ 21:  * @returns {Promise<boolean>} true if valid
+ 22:  */
+ 23: async function verifySecret(agentId, secret) {
+ 24:   const agent = queries.getAgentById(agentId);
+ 25: 
+ 26:   // 1. Nếu Agent đã tồn tại trong DB, xác thực bằng hash bcrypt
+ 27:   if (agent && agent.secret_hash) {
+ 28:     return bcrypt.compare(secret, agent.secret_hash);
+ 29:   }
+ 30: 
+ 31:   // 2. Cơ chế Auto-Register cho Agent mới
+ 32:   // Nếu Agent chưa có trong DB nhưng secret gửi lên khớp với AGENT_KEY toàn cục
+ 33:   if (config.agentKey && secret === config.agentKey) {
+ 34:     try {
+ 35:       const salt = await bcrypt.genSalt(10);
+ 36:       const hash = await bcrypt.hash(secret, salt);
+ 37:       
+ 38:       // Tự động lưu trữ thông tin Agent vào SQLite với mã băm an toàn
+ 39:       queries.upsertAgent(agentId, hash, agentId, Date.now());
+ 40:       logger.info('[agentStore] Auto-registered new agent to DB', { agentId });
+ 41:       return true;
+ 42:     } catch (err) {
+ 43:       logger.error('[agentStore] Failed to auto-register agent', { error: err.message });
+ 44:       return false;
+ 45:     }
+ 46:   }
+ 47: 
+ 48:   // Từ chối nếu không tìm thấy trong DB và secret cũng không khớp global key
+ 49:   logger.warn('[agentStore] Unknown agent_id and secret does not match global key', { agentId });
+ 50:   return false;
+ 51: }
+ 52: 
+ 53: /**
+ 54:  * Register an agent after it sends the REGISTER message.
+ 55:  * If agent_id is already online → REJECT the new connection (return false).
+ 56:  *
+ 57:  * @param {string} agentId
+ 58:  * @param {WebSocket} ws
+ 59:  * @param {{ hostname: string, ip: string, os: string }} meta
+ 60:  * @returns {boolean} true if registered, false if rejected (already online)
+ 61:  */
+ 62: function register(agentId, ws, meta) {
+ 63:   // If an agent with the same id is already connected → REJECT the NEW socket
+ 64:   if (agents.has(agentId)) {
+ 65:     const existing = agents.get(agentId);
+ 66:     if (existing.ws.readyState === existing.ws.OPEN) {
+ 67:       logger.warn('[agentStore] Agent already online — rejecting NEW connection', {
+ 68:         agentId,
+ 69:       });
+ 70:       return false; // Caller must close the NEW socket
+ 71:     }
+ 72:     // Existing socket is not OPEN (stale entry) — clean it up and allow
+ 73:     agents.delete(agentId);
+ 74:     logger.info('[agentStore] Cleaned stale entry for agent', { agentId });
+ 75:   }
+ 76: 
+ 77:   agents.set(agentId, {
+ 78:     agentId,
+ 79:     ws,
+ 80:     hostname: meta.hostname || agentId,
+ 81:     ip: meta.ip || 'unknown',
+ 82:     os: meta.os || 'unknown',
+ 83:     connectedAt: Date.now(),
+ 84:   });
+ 85: 
+ 86:   logger.info('[agentStore] Agent registered', {
+ 87:     agentId,
+ 88:     hostname: meta.hostname,
+ 89:     ip: meta.ip,
+ 90:     os: meta.os,
+ 91:   });
+ 92: 
+ 93:   return true;
+ 94: }
+ 95: 
+ 96: /**
+ 97:  * Unregister an agent by its agentId.
+ 98:  * @param {string} agentId
+ 99:  * @returns {boolean} true if the agent was found and removed
+100:  */
+101: function unregister(agentId) {
+102:   const removed = agents.delete(agentId);
+103:   if (removed) {
+104:     logger.info('[agentStore] Agent unregistered', { agentId });
+105:   }
+106:   return removed;
+107: }
+108: 
+109: /**
+110:  * Remove an agent by its WebSocket reference (used on 'close' event
+111:  * when we only have the ws object, not the agentId).
+112:  * @param {WebSocket} ws
+113:  * @returns {string|null} the agentId that was removed, or null
+114:  */
+115: function removeByWs(ws) {
+116:   for (const [agentId, entry] of agents) {
+117:     if (entry.ws === ws) {
+118:       agents.delete(agentId);
+119:       logger.info('[agentStore] Agent removed by ws ref', { agentId });
+120:       return agentId;
+121:     }
+122:   }
+123:   return null;
+124: }
+125: 
+126: /**
+127:  * Lookup an agent entry by its WebSocket reference.
+128:  * @param {WebSocket} ws
+129:  * @returns {{ agentId: string, ws: WebSocket, hostname: string, ip: string, os: string, connectedAt: number }|null}
+130:  */
+131: function getByWs(ws) {
+132:   for (const entry of agents.values()) {
+133:     if (entry.ws === ws) {
+134:       return entry;
+135:     }
+136:   }
+137:   return null;
+138: }
+139: 
+140: /**
+141:  * Get the WebSocket for a specific agent.
+142:  * @param {string} agentId
+143:  * @returns {WebSocket|null}
+144:  */
+145: function getSocket(agentId) {
+146:   const entry = agents.get(agentId);
+147:   return entry ? entry.ws : null;
+148: }
+149: 
+150: /**
+151:  * Get a specific agent entry.
+152:  * @param {string} agentId
+153:  * @returns {{ agentId: string, ws: WebSocket, hostname: string, ip: string, os: string, connectedAt: number }|null}
+154:  */
+155: function get(agentId) {
+156:   return agents.get(agentId) || null;
+157: }
+158: 
+159: /**
+160:  * Get all agents in the clean shape expected by Controller's agents_list.
+161:  * Matches Controller Protocol.js normalizeAgent: { id, name, os, ip, online }
+162:  * @returns {Array<{ id: string, name: string, os: string, ip: string, online: boolean }>}
+163:  */
+164: function getAll() {
+165:   const list = [];
+166:   for (const entry of agents.values()) {
+167:     list.push({
+168:       id: entry.agentId,
+169:       name: entry.hostname, // name = hostname
+170:       os: entry.os,
+171:       ip: entry.ip,
+172:       online: true, // Only connected agents are in the store
+173:     });
+174:   }
+175:   return list;
+176: }
+177: 
+178: /**
+179:  * Get the number of connected agents.
+180:  * @returns {number}
+181:  */
+182: function size() {
+183:   return agents.size;
+184: }
+185: 
+186: module.exports = {
+187:   verifySecret,
+188:   register,
+189:   unregister,
+190:   removeByWs,
+191:   getByWs,
+192:   getSocket,
+193:   get,
+194:   getAll,
+195:   size,
+196: };
 </file>
 
 <file path="gateway/src/udp/udpServer.js">
-const dgram = require('dgram');
-const logger = require('../utils/logger');
-const controllerStore = require('../store/controllerStore');
-const { Worker } = require('worker_threads');
-const path = require('path');
-const os = require('os');
-
-const server = dgram.createSocket('udp4');
-const PORT = 9000;
-
-// Frame buffer map
-// Key: `${agentId}_${moduleType}_${frameId}`
-// Value: { chunks: Array, receivedCount: number, timestamp: number, total: number, meta: object, recovering: boolean }
-// Cấu trúc: Map<streamKey, { expectedSeq: number, pending: Array<{seq, frame, fullBuffer}> }>
-const streamBuffers = new Map();
-
-// frameBuffer is used to assemble chunks of a single frame
-const frameBuffer = new Map();
-
-// Worker Pool State
-const numWorkers = Math.max(1, Math.min(os.cpus().length - 1, 4));
-const workers = [];
-let nextWorkerIndex = 0;
-const pendingTasks = new Map();
-
-function initWorkerPool() {
-  for (let i = 0; i < numWorkers; i++) {
-    const worker = new Worker(path.resolve(__dirname, 'fecWorker.js'));
-    worker.on('message', (result) => {
-      const task = pendingTasks.get(result.taskId);
-      if (!task) return;
-      pendingTasks.delete(result.taskId);
-      if (task.timeoutId) clearTimeout(task.timeoutId);
-
-      if (result.success) {
-        task.resolve(result);
-      } else {
-        task.reject(new Error(result.error));
-      }
-    });
-    worker.on('error', (err) => logger.error(`[FEC Worker ${i}] Error: ${err.message}`));
-    workers.push(worker);
-  }
-}
-
-function recoverChunkAsync(frameKey, total, totalPayloadLength, chunks, parityData) {
-  return new Promise((resolve, reject) => {
-    // Timeout chống kẹt 40ms để drop frame cũ kịp thời
-    const timeoutId = setTimeout(() => {
-      pendingTasks.delete(frameKey);
-      reject(new Error('FEC calculation timed out (40ms)'));
-    }, 40);
-
-    pendingTasks.set(frameKey, { resolve, reject, timeoutId });
-
-    const worker = workers[nextWorkerIndex++ % workers.length];
-    worker.postMessage({ taskId: frameKey, total, totalPayloadLength, chunks, parityData });
-  });
-}
-
-function finalizeFrame(frameKey, frame) {
-  try {
-    const fullBuffer = Buffer.concat(frame.chunks);
-    frame.meta.len = fullBuffer.length;
-    
-    const streamKey = `${frame.meta.agent_id}_${frame.meta.module}`;
-    let streamState = streamBuffers.get(streamKey);
-    if (!streamState) {
-        streamState = { expectedSeq: frame.meta.seq, pending: [] };
-        streamBuffers.set(streamKey, streamState);
-    }
-    
-    streamState.pending.push({ seq: frame.meta.seq, frame, fullBuffer });
-    streamState.pending.sort((a, b) => a.seq - b.seq);
-    
-    while (streamState.pending.length > 0) {
-        if (streamState.pending[0].seq <= streamState.expectedSeq || streamState.pending.length >= 8) {
-            const next = streamState.pending.shift();
-            streamState.expectedSeq = next.seq + 1;
-            
-            const metaString = JSON.stringify(next.frame.meta);
-            
-            if (controllerStore.hasCommand(next.frame.meta.command_id)) {
-              controllerStore.sendToCommandInitiator(next.frame.meta.command_id, metaString);
-              controllerStore.sendToCommandInitiator(next.frame.meta.command_id, next.fullBuffer);
-            } else {
-              controllerStore.broadcastToSubscribers(next.frame.meta.agent_id, metaString);
-              controllerStore.broadcastToSubscribers(next.frame.meta.agent_id, next.fullBuffer, { binary: true });
-            }
-        } else {
-            break;
-        }
-    }
-  } catch (err) {
-    logger.error(`[UDP] Error finalizing frame ${frameKey}: ${err.message}`);
-  } finally {
-    frameBuffer.delete(frameKey);
-  }
-}
-
-server.on('error', (err) => {
-  logger.error(`[UDP] Server error:\n${err.stack}`);
-  server.close();
-});
-
-server.on('message', (msg, rinfo) => {
-  // UDP Header Layout (24 bytes fixed + dynamic strings)
-  // [0] : Chunk_Index
-  // [1] : Total_Chunks
-  // [2] : Module_Type (0: Screen, 1: Webcam)
-  // [3] : Is_Keyframe (0: false, 1: true)
-  // [4-5] : Frame_ID (ushort LE)
-  // [6-13] : X, Y, Width, Height (ushort LE x 4)
-  // [14-21] : Timestamp_MS (ulong LE / bigint)
-  // [22] : AgentID_Length (L1)
-  // [23] : CommandID_Length (L2)
-  // [24 .. 24+L1-1] : AgentID
-  // [24+L1 .. 24+L1+L2-1] : CommandID
-  // [Remaining] : Payload
-
-  if (msg.length < 24) return; // Invalid packet
-
-  try {
-    const chunkIndex = msg.readUInt8(0);
-    const totalChunks = msg.readUInt8(1);
-    const moduleTypeByte = msg.readUInt8(2);
-    const isKeyframe = msg.readUInt8(3) === 1;
-    const frameId = msg.readUInt16LE(4);
-    const x = msg.readUInt16LE(6);
-    const y = msg.readUInt16LE(8);
-    const w = msg.readUInt16LE(10);
-    const h = msg.readUInt16LE(12);
-    const timestampMs = Number(msg.readBigUInt64LE(14));
-    
-    const l1 = msg.readUInt8(22);
-    const l2 = msg.readUInt8(23);
-
-    if (msg.length < 24 + l1 + l2) return; // Incomplete packet
-
-    let offset = 24;
-    const agentId = msg.toString('utf8', offset, offset + l1);
-    offset += l1;
-    const commandId = msg.toString('utf8', offset, offset + l2);
-    offset += l2;
-
-    const payload = msg.subarray(offset);
-    const moduleName = moduleTypeByte === 1 ? 'webcam' : 'screen';
-
-    const frameKey = `${agentId}_${moduleName}_${frameId}`;
-
-    let frame = frameBuffer.get(frameKey);
-    if (!frame) {
-      frame = {
-        chunks: new Array(totalChunks),
-        receivedCount: 0,
-        timestamp: Date.now(),
-        total: totalChunks,
-        meta: {
-          type: "frame_meta",
-          module: moduleName,
-          agent_id: agentId,
-          command_id: commandId,
-          x, y, w, h,
-          is_keyframe: isKeyframe,
-          seq: frameId,
-          timestamp_ms: timestampMs
-        }
-      };
-      frameBuffer.set(frameKey, frame);
-    }
-
-    // FEC Logic (Chú ý 2: Tách biệt Parity Chunk)
-    if (chunkIndex === totalChunks) {
-      if (!frame.parityData && payload.length >= 4) {
-        frame.totalPayloadLength = payload.readUInt32LE(0);
-        frame.parityData = payload.subarray(4);
-      }
-    } else if (chunkIndex < totalChunks) {
-      if (!frame.chunks[chunkIndex]) {
-        frame.chunks[chunkIndex] = payload;
-        frame.receivedCount++;
-      }
-    }
-
-    // Kiểm tra đã nhận đủ, hoặc có thể khôi phục bằng FEC
-    if (frame.receivedCount === frame.total) {
-      finalizeFrame(frameKey, frame);
-    } else if (frame.receivedCount === frame.total - 1 && frame.parityData && !frame.recovering) {
-      frame.recovering = true; // Chặn các luồng xử lý trùng lặp
-      
-      recoverChunkAsync(frameKey, frame.total, frame.totalPayloadLength, frame.chunks, frame.parityData)
-        .then((res) => {
-             let finalFrame = frameBuffer.get(frameKey);
-             if (!finalFrame) return; // Đã bị Garbage Collector xóa mất do timeout 100ms
-             
-             finalFrame.chunks[res.missingIndex] = Buffer.from(res.recovered);
-             finalFrame.receivedCount++;
-             
-             finalizeFrame(frameKey, finalFrame);
-        })
-        .catch(err => {
-             frameBuffer.delete(frameKey); // Xóa frame hỏng
-        });
-    }
-  } catch (err) {
-    logger.error(`[UDP] Packet parsing error: ${err.message}`);
-  }
-});
-
-server.on('listening', () => {
-  const address = server.address();
-  logger.info(`[UDP] Server listening on ${address.address}:${address.port}`);
-});
-
-// Garbage collector for incomplete frames
-let gcInterval;
-
-function start(port = PORT) {
-  initWorkerPool();
-  server.bind(port);
-  
-  gcInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [key, frame] of frameBuffer.entries()) {
-      if (now - frame.timestamp > 100) { // 100ms timeout is plenty for local/fast UDP
-        frameBuffer.delete(key);
-      }
-    }
-  }, 100);
-}
-
-function shutdown() {
-  if (gcInterval) clearInterval(gcInterval);
-  for (const worker of workers) {
-    worker.terminate();
-  }
-  try {
-    server.close(() => {
-      logger.info('[UDP] Server closed');
-    });
-  } catch (e) {}
-}
-
-module.exports = { start, shutdown };
+  1: const dgram = require('dgram');
+  2: const logger = require('../utils/logger');
+  3: const controllerStore = require('../store/controllerStore');
+  4: const { Worker } = require('worker_threads');
+  5: const path = require('path');
+  6: const os = require('os');
+  7: 
+  8: const server = dgram.createSocket('udp4');
+  9: const PORT = 9000;
+ 10: 
+ 11: // Frame buffer map
+ 12: // Key: `${agentId}_${moduleType}_${frameId}`
+ 13: // Value: { chunks: Array, receivedCount: number, timestamp: number, total: number, meta: object, recovering: boolean }
+ 14: // Cấu trúc: Map<streamKey, { expectedSeq: number, pending: Array<{seq, frame, fullBuffer}> }>
+ 15: const streamBuffers = new Map();
+ 16: 
+ 17: // frameBuffer is used to assemble chunks of a single frame
+ 18: const frameBuffer = new Map();
+ 19: 
+ 20: // Worker Pool State
+ 21: const numWorkers = Math.max(1, Math.min(os.cpus().length - 1, 4));
+ 22: const workers = [];
+ 23: let nextWorkerIndex = 0;
+ 24: const pendingTasks = new Map();
+ 25: 
+ 26: function initWorkerPool() {
+ 27:   for (let i = 0; i < numWorkers; i++) {
+ 28:     const worker = new Worker(path.resolve(__dirname, 'fecWorker.js'));
+ 29:     worker.on('message', (result) => {
+ 30:       const task = pendingTasks.get(result.taskId);
+ 31:       if (!task) return;
+ 32:       pendingTasks.delete(result.taskId);
+ 33:       if (task.timeoutId) clearTimeout(task.timeoutId);
+ 34: 
+ 35:       if (result.success) {
+ 36:         task.resolve(result);
+ 37:       } else {
+ 38:         task.reject(new Error(result.error));
+ 39:       }
+ 40:     });
+ 41:     worker.on('error', (err) => logger.error(`[FEC Worker ${i}] Error: ${err.message}`));
+ 42:     workers.push(worker);
+ 43:   }
+ 44: }
+ 45: 
+ 46: function recoverChunkAsync(frameKey, total, totalPayloadLength, chunks, parityData) {
+ 47:   return new Promise((resolve, reject) => {
+ 48:     // Timeout chống kẹt 40ms để drop frame cũ kịp thời
+ 49:     const timeoutId = setTimeout(() => {
+ 50:       pendingTasks.delete(frameKey);
+ 51:       reject(new Error('FEC calculation timed out (40ms)'));
+ 52:     }, 40);
+ 53: 
+ 54:     pendingTasks.set(frameKey, { resolve, reject, timeoutId });
+ 55: 
+ 56:     const worker = workers[nextWorkerIndex++ % workers.length];
+ 57:     worker.postMessage({ taskId: frameKey, total, totalPayloadLength, chunks, parityData });
+ 58:   });
+ 59: }
+ 60: 
+ 61: function finalizeFrame(frameKey, frame) {
+ 62:   try {
+ 63:     const fullBuffer = Buffer.concat(frame.chunks);
+ 64:     frame.meta.len = fullBuffer.length;
+ 65:     
+ 66:     const streamKey = `${frame.meta.agent_id}_${frame.meta.module}`;
+ 67:     let streamState = streamBuffers.get(streamKey);
+ 68:     if (!streamState) {
+ 69:         streamState = { expectedSeq: frame.meta.seq, pending: [] };
+ 70:         streamBuffers.set(streamKey, streamState);
+ 71:     }
+ 72:     
+ 73:     streamState.pending.push({ seq: frame.meta.seq, frame, fullBuffer });
+ 74:     streamState.pending.sort((a, b) => a.seq - b.seq);
+ 75:     
+ 76:     while (streamState.pending.length > 0) {
+ 77:         if (streamState.pending[0].seq <= streamState.expectedSeq || streamState.pending.length >= 8) {
+ 78:             const next = streamState.pending.shift();
+ 79:             streamState.expectedSeq = next.seq + 1;
+ 80:             
+ 81:             const metaString = JSON.stringify(next.frame.meta);
+ 82:             
+ 83:             if (controllerStore.hasCommand(next.frame.meta.command_id)) {
+ 84:               controllerStore.sendToCommandInitiator(next.frame.meta.command_id, metaString);
+ 85:               controllerStore.sendToCommandInitiator(next.frame.meta.command_id, next.fullBuffer);
+ 86:             } else {
+ 87:               controllerStore.broadcastToSubscribers(next.frame.meta.agent_id, metaString);
+ 88:               controllerStore.broadcastToSubscribers(next.frame.meta.agent_id, next.fullBuffer, { binary: true });
+ 89:             }
+ 90:         } else {
+ 91:             break;
+ 92:         }
+ 93:     }
+ 94:   } catch (err) {
+ 95:     logger.error(`[UDP] Error finalizing frame ${frameKey}: ${err.message}`);
+ 96:   } finally {
+ 97:     frameBuffer.delete(frameKey);
+ 98:   }
+ 99: }
+100: 
+101: server.on('error', (err) => {
+102:   logger.error(`[UDP] Server error:\n${err.stack}`);
+103:   server.close();
+104: });
+105: 
+106: server.on('message', (msg, rinfo) => {
+107:   // UDP Header Layout (24 bytes fixed + dynamic strings)
+108:   // [0] : Chunk_Index
+109:   // [1] : Total_Chunks
+110:   // [2] : Module_Type (0: Screen, 1: Webcam)
+111:   // [3] : Is_Keyframe (0: false, 1: true)
+112:   // [4-5] : Frame_ID (ushort LE)
+113:   // [6-13] : X, Y, Width, Height (ushort LE x 4)
+114:   // [14-21] : Timestamp_MS (ulong LE / bigint)
+115:   // [22] : AgentID_Length (L1)
+116:   // [23] : CommandID_Length (L2)
+117:   // [24 .. 24+L1-1] : AgentID
+118:   // [24+L1 .. 24+L1+L2-1] : CommandID
+119:   // [Remaining] : Payload
+120: 
+121:   if (msg.length < 24) return; // Invalid packet
+122: 
+123:   try {
+124:     const chunkIndex = msg.readUInt8(0);
+125:     const totalChunks = msg.readUInt8(1);
+126:     const moduleTypeByte = msg.readUInt8(2);
+127:     const isKeyframe = msg.readUInt8(3) === 1;
+128:     const frameId = msg.readUInt16LE(4);
+129:     const x = msg.readUInt16LE(6);
+130:     const y = msg.readUInt16LE(8);
+131:     const w = msg.readUInt16LE(10);
+132:     const h = msg.readUInt16LE(12);
+133:     const timestampMs = Number(msg.readBigUInt64LE(14));
+134:     
+135:     const l1 = msg.readUInt8(22);
+136:     const l2 = msg.readUInt8(23);
+137: 
+138:     if (msg.length < 24 + l1 + l2) return; // Incomplete packet
+139: 
+140:     let offset = 24;
+141:     const agentId = msg.toString('utf8', offset, offset + l1);
+142:     offset += l1;
+143:     const commandId = msg.toString('utf8', offset, offset + l2);
+144:     offset += l2;
+145: 
+146:     const payload = msg.subarray(offset);
+147:     const moduleName = moduleTypeByte === 1 ? 'webcam' : 'screen';
+148: 
+149:     const frameKey = `${agentId}_${moduleName}_${frameId}`;
+150: 
+151:     let frame = frameBuffer.get(frameKey);
+152:     if (!frame) {
+153:       frame = {
+154:         chunks: new Array(totalChunks),
+155:         receivedCount: 0,
+156:         timestamp: Date.now(),
+157:         total: totalChunks,
+158:         meta: {
+159:           type: "frame_meta",
+160:           module: moduleName,
+161:           agent_id: agentId,
+162:           command_id: commandId,
+163:           x, y, w, h,
+164:           is_keyframe: isKeyframe,
+165:           seq: frameId,
+166:           timestamp_ms: timestampMs
+167:         }
+168:       };
+169:       frameBuffer.set(frameKey, frame);
+170:     }
+171: 
+172:     // FEC Logic (Chú ý 2: Tách biệt Parity Chunk)
+173:     if (chunkIndex === totalChunks) {
+174:       if (!frame.parityData && payload.length >= 4) {
+175:         frame.totalPayloadLength = payload.readUInt32LE(0);
+176:         frame.parityData = payload.subarray(4);
+177:       }
+178:     } else if (chunkIndex < totalChunks) {
+179:       if (!frame.chunks[chunkIndex]) {
+180:         frame.chunks[chunkIndex] = payload;
+181:         frame.receivedCount++;
+182:       }
+183:     }
+184: 
+185:     // Kiểm tra đã nhận đủ, hoặc có thể khôi phục bằng FEC
+186:     if (frame.receivedCount === frame.total) {
+187:       finalizeFrame(frameKey, frame);
+188:     } else if (frame.receivedCount === frame.total - 1 && frame.parityData && !frame.recovering) {
+189:       frame.recovering = true; // Chặn các luồng xử lý trùng lặp
+190:       
+191:       recoverChunkAsync(frameKey, frame.total, frame.totalPayloadLength, frame.chunks, frame.parityData)
+192:         .then((res) => {
+193:              let finalFrame = frameBuffer.get(frameKey);
+194:              if (!finalFrame) return; // Đã bị Garbage Collector xóa mất do timeout 100ms
+195:              
+196:              finalFrame.chunks[res.missingIndex] = Buffer.from(res.recovered);
+197:              finalFrame.receivedCount++;
+198:              
+199:              finalizeFrame(frameKey, finalFrame);
+200:         })
+201:         .catch(err => {
+202:              frameBuffer.delete(frameKey); // Xóa frame hỏng
+203:         });
+204:     }
+205:   } catch (err) {
+206:     logger.error(`[UDP] Packet parsing error: ${err.message}`);
+207:   }
+208: });
+209: 
+210: server.on('listening', () => {
+211:   const address = server.address();
+212:   logger.info(`[UDP] Server listening on ${address.address}:${address.port}`);
+213: });
+214: 
+215: // Garbage collector for incomplete frames
+216: let gcInterval;
+217: 
+218: function start(port = PORT) {
+219:   initWorkerPool();
+220:   server.bind(port);
+221:   
+222:   gcInterval = setInterval(() => {
+223:     const now = Date.now();
+224:     for (const [key, frame] of frameBuffer.entries()) {
+225:       if (now - frame.timestamp > 100) { // 100ms timeout is plenty for local/fast UDP
+226:         frameBuffer.delete(key);
+227:       }
+228:     }
+229:   }, 100);
+230: }
+231: 
+232: function shutdown() {
+233:   if (gcInterval) clearInterval(gcInterval);
+234:   for (const worker of workers) {
+235:     worker.terminate();
+236:   }
+237:   try {
+238:     server.close(() => {
+239:       logger.info('[UDP] Server closed');
+240:     });
+241:   } catch (e) {}
+242: }
+243: 
+244: module.exports = { start, shutdown };
 </file>
 
 <file path="gateway/src/server.js">
-// src/server.js
-// Phase 1: Security Hardening — HTTPS/WSS + CORS Whitelist + Rate Limiting.
-//
-// 1 HTTP/HTTPS server (Express for REST) + 1 ws.WebSocketServer ({ noServer: true }).
-// Upgrade event routes by pathname: /agent and /controller.
-// Automatically selects HTTPS/WSS when SSL_CERT_PATH and SSL_KEY_PATH are configured.
+  1: // src/server.js
+  2: // Phase 1: Security Hardening — HTTPS/WSS + CORS Whitelist + Rate Limiting.
+  3: //
+  4: // 1 HTTP/HTTPS server (Express for REST) + 1 ws.WebSocketServer ({ noServer: true }).
+  5: // Upgrade event routes by pathname: /agent and /controller.
+  6: // Automatically selects HTTPS/WSS when SSL_CERT_PATH and SSL_KEY_PATH are configured.
+  7: 
+  8: const http = require('http');
+  9: const https = require('https');
+ 10: const fs = require('fs');
+ 11: const express = require('express');
+ 12: 
+ 13: const rateLimit = require('express-rate-limit');
+ 14: const { WebSocketServer } = require('ws');
+ 15: const { URL } = require('url');
+ 16: 
+ 17: const config = require('./config');
+ 18: const logger = require('./utils/logger');
+ 19: const { verifyControllerAuth } = require('./middleware/auth');
+ 20: const handleAgent = require('./socket/agentHandler');
+ 21: const handleController = require('./socket/controllerHandler');
+ 22: const udpServer = require('./udp/udpServer');
+ 23: 
+ 24: // ─── Express App ───────────────────────────────────────────────
+ 25: const cookieParser = require('cookie-parser');
+ 26: const app = express();
+ 27: app.use(express.json());
+ 28: app.use(cookieParser());
+ 29: 
+ 30: // ─── CORS Whitelist (Phase 1: Security Hardening) ──────────────
+ 31: // Hand-rolled middleware — reads ALLOWED_ORIGINS from config (comma-separated).
+ 32: // Preflight OPTIONS returns 403 if the origin is not in the whitelist.
+ 33: const allowedOriginsList = config.allowedOrigins
+ 34:   .split(',')
+ 35:   .map((o) => o.trim())
+ 36:   .filter(Boolean);
+ 37: 
+ 38: app.use((req, res, next) => {
+ 39:   const origin = req.headers.origin;
+ 40: 
+ 41:   if (origin && allowedOriginsList.includes(origin)) {
+ 42:     res.header('Access-Control-Allow-Origin', origin);
+ 43:     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+ 44:     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+ 45:     res.header('Access-Control-Allow-Credentials', 'true');
+ 46:   }
+ 47: 
+ 48:   // Preflight: respond immediately
+ 49:   if (req.method === 'OPTIONS') {
+ 50:     if (!origin || !allowedOriginsList.includes(origin)) {
+ 51:       logger.warn('[cors] Preflight BLOCKED — origin not in whitelist', { origin });
+ 52:       return res.status(403).json({ ok: false, message: 'CORS: origin not allowed' });
+ 53:     }
+ 54:     return res.sendStatus(204);
+ 55:   }
+ 56: 
+ 57:   next();
+ 58: });
+ 59: 
+ 60: logger.info('[security] CORS configured', {
+ 61:   allowedOrigins: allowedOriginsList,
+ 62: });
+ 63: 
+ 64: // ─── Rate Limiting — Login only (Phase 1: Security Hardening) ──
+ 65: // 10 requests per minute per IP on POST /api/login.
+ 66: // NOT applied globally — avoids blocking WS handshake or normal traffic.
+ 67: const loginLimiter = rateLimit({
+ 68:   windowMs: 60 * 1000, // 1 minute
+ 69:   max: 10,             // 10 attempts per window per IP
+ 70:   standardHeaders: true,
+ 71:   legacyHeaders: false,
+ 72:   message: {
+ 73:     ok: false,
+ 74:     token: null,
+ 75:     message: 'Too many login attempts. Please try again later.',
+ 76:   },
+ 77:   handler: (req, res, _next, options) => {
+ 78:     logger.warn('[rate-limit] Login brute-force protection triggered', {
+ 79:       ip: req.ip,
+ 80:       username: req.body?.username || 'unknown',
+ 81:     });
+ 82:     res.status(options.statusCode).json(options.message);
+ 83:   },
+ 84: });
+ 85: app.use('/api/login', loginLimiter);
+ 86: 
+ 87: logger.info('[security] Rate limiting configured', {
+ 88:   loginLimit: '10 attempts / 60s per IP',
+ 89: });
+ 90: 
+ 91: 
+ 92: 
+ 93: // ─── Health check ──────────────────────────────────────────────
+ 94: app.get('/', (_req, res) => {
+ 95:   res.json({ status: 'ok', uptime: process.uptime() });
+ 96: });
+ 97: app.get('/health', (_req, res) => {
+ 98:   res.json({ status: 'ok', uptime: process.uptime() });
+ 99: });
+100: 
+101: // GET /api/agents - Return all connected agents
+102: const agentStore = require('./store/agentStore');
+103: app.get('/api/agents', (_req, res) => {
+104:   res.json({ agents: agentStore.getAll() });
+105: });
+106: 
+107: // REST routes
+108: const loginRouter = require('./auth/login');
+109: app.use('/api', loginRouter);
+110: 
+111: // ─── HTTP / HTTPS Server (Phase 1: TLS Support) ───────────────
+112: // TLS_ENABLED=true  → https.createServer (wss://)
+113: // TLS_ENABLED=false → http.createServer  (ws://)  — dev mode
+114: let server;
+115: let protocol;
+116: 
+117: if (config.tlsEnabled) {
+118:   try {
+119:     const tlsOptions = {
+120:       cert: fs.readFileSync(config.tlsCertPath),
+121:       key: fs.readFileSync(config.tlsKeyPath),
+122:     };
+123:     server = https.createServer(tlsOptions, app);
+124:     protocol = 'https';
+125:     logger.info('[security] TLS enabled — running in HTTPS/WSS mode', {
+126:       cert: config.tlsCertPath,
+127:       key: config.tlsKeyPath,
+128:     });
+129:   } catch (err) {
+130:     logger.error('[security] TLS_ENABLED=true but failed to load certificates — aborting', {
+131:       error: err.message,
+132:       certPath: config.tlsCertPath,
+133:       keyPath: config.tlsKeyPath,
+134:     });
+135:     process.exit(1);
+136:   }
+137: } else {
+138:   server = http.createServer(app);
+139:   protocol = 'http';
+140:   logger.warn('[security] TLS disabled — running in plain HTTP/WS mode (dev only)');
+141: }
+142: 
+143: // ─── WebSocket Server (noServer mode) ──────────────────────────
+144: const wss = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
+145: 
+146: // ─── Upgrade Handler ───────────────────────────────────────────
+147: // Parse URL → route by pathname → authenticate → handleUpgrade.
+148: server.on('upgrade', (req, socket, head) => {
+149:   // Parse the request URL (req.url is relative, e.g. "/agent?key=xxx")
+150:   const baseUrl = `${protocol}://${req.headers.host || 'localhost'}`;
+151:   let parsedUrl;
+152:   try {
+153:     parsedUrl = new URL(req.url, baseUrl);
+154:   } catch {
+155:     logger.warn('[upgrade] Failed to parse URL, destroying socket', {
+156:       url: req.url,
+157:     });
+158:     socket.destroy();
+159:     return;
+160:   }
+161: 
+162:   const pathname = parsedUrl.pathname;
+163:   const query = parsedUrl.searchParams;
+164: 
+165:   // ── /agent path ────────────────────────────────────────────
+166:   // Authentication moves to REGISTER message handshake with { agent_id, secret }
+167:   if (pathname === '/agent') {
+168:     wss.handleUpgrade(req, socket, head, (ws) => {
+169:       // Tag the socket so handlers can distinguish agent vs controller
+170:       ws._gwRole = 'agent';
+171:       ws._gwAuthTime = Date.now();
+172:       wss.emit('connection', ws, req, 'agent');
+173:     });
+174:     return;
+175:   }
+176: 
+177:   // ── /controller path ──────────────────────────────────────
+178:   if (pathname === '/controller') {
+179:     const authResult = verifyControllerAuth(query);
+180:     if (!authResult.ok) {
+181:       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+182:       socket.destroy();
+183:       return;
+184:     }
+185: 
+186:     wss.handleUpgrade(req, socket, head, (ws) => {
+187:       ws._gwRole = 'controller';
+188:       ws._gwAuthTime = Date.now();
+189:       ws._gwJwtPayload = authResult.payload; // null if key-auth
+190:       wss.emit('connection', ws, req, 'controller');
+191:     });
+192:     return;
+193:   }
+194: 
+195:   // ── Unknown path ──────────────────────────────────────────
+196:   logger.warn('[upgrade] Unknown path, destroying socket', { pathname });
+197:   socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+198:   socket.destroy();
+199: });
+200: 
+201: // ─── WSS Connection Dispatcher ─────────────────────────────────
+202: // Route to the appropriate handler based on role tag set during upgrade.
+203: wss.on('connection', (ws, req, role) => {
+204:   if (role === 'agent') {
+205:     handleAgent(ws, req);
+206:   } else if (role === 'controller') {
+207:     handleController(ws, req);
+208:   }
+209: });
+210: 
+211: // ─── Start ─────────────────────────────────────────────────────
+212: const wsProtocol = protocol === 'https' ? 'wss' : 'ws';
+213: 
+214: function start() {
+215:   server.listen(config.port, () => {
+216:     logger.info('═══════════════════════════════════════════════════');
+217:     logger.info(`  Gateway Server started on port ${config.port}`);
+218:     logger.info(`  Mode:       ${protocol.toUpperCase()} / ${wsProtocol.toUpperCase()}`);
+219:     logger.info(`  Health:     ${protocol}://localhost:${config.port}/health`);
+220:     logger.info(`  Agent:      ${wsProtocol}://localhost:${config.port}/agent`);
+221:     logger.info(`  Controller: ${wsProtocol}://localhost:${config.port}/controller`);
+222:     logger.info('═══════════════════════════════════════════════════');
+223:   });
+224:   udpServer.start(9000);
+225: }
+226: 
+227: // ─── Graceful Shutdown ─────────────────────────────────────────
+228: function shutdown(signal) {
+229:   logger.info(`[server] ${signal} received — shutting down gracefully...`);
+230: 
+231:   // Close all WebSocket connections
+232:   for (const client of wss.clients) {
+233:     try {
+234:       client.close(1001, 'Server shutting down');
+235:     } catch {
+236:       // ignore
+237:     }
+238:   }
+239:   
+240:   udpServer.shutdown();
+241: 
+242:   // Close WebSocket server
+243:   wss.close(() => {
+244:     logger.info('[server] WebSocket server closed');
+245: 
+246:     // Close HTTP/HTTPS server
+247:     server.close(() => {
+248:       logger.info('[server] HTTP/HTTPS server closed — goodbye');
+249:       process.exit(0);
+250:     });
+251:   });
+252: 
+253:   // Force exit after 5s if graceful shutdown hangs
+254:   setTimeout(() => {
+255:     logger.warn('[server] Forced exit after timeout');
+256:     process.exit(1);
+257:   }, 5000);
+258: }
+259: 
+260: process.on('SIGINT', () => shutdown('SIGINT'));
+261: process.on('SIGTERM', () => shutdown('SIGTERM'));
+262: 
+263: module.exports = { app, httpServer: server, wss, start };
+</file>
 
-const http = require('http');
-const https = require('https');
-const fs = require('fs');
-const express = require('express');
-
-const rateLimit = require('express-rate-limit');
-const { WebSocketServer } = require('ws');
-const { URL } = require('url');
-
-const config = require('./config');
-const logger = require('./utils/logger');
-const { verifyControllerAuth } = require('./middleware/auth');
-const handleAgent = require('./socket/agentHandler');
-const handleController = require('./socket/controllerHandler');
-const udpServer = require('./udp/udpServer');
-
-// ─── Express App ───────────────────────────────────────────────
-const cookieParser = require('cookie-parser');
-const app = express();
-app.use(express.json());
-app.use(cookieParser());
-
-// ─── CORS Whitelist (Phase 1: Security Hardening) ──────────────
-// Hand-rolled middleware — reads ALLOWED_ORIGINS from config (comma-separated).
-// Preflight OPTIONS returns 403 if the origin is not in the whitelist.
-const allowedOriginsList = config.allowedOrigins
-  .split(',')
-  .map((o) => o.trim())
-  .filter(Boolean);
-
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-
-  if (origin && allowedOriginsList.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.header('Access-Control-Allow-Credentials', 'true');
-  }
-
-  // Preflight: respond immediately
-  if (req.method === 'OPTIONS') {
-    if (!origin || !allowedOriginsList.includes(origin)) {
-      logger.warn('[cors] Preflight BLOCKED — origin not in whitelist', { origin });
-      return res.status(403).json({ ok: false, message: 'CORS: origin not allowed' });
-    }
-    return res.sendStatus(204);
-  }
-
-  next();
-});
-
-logger.info('[security] CORS configured', {
-  allowedOrigins: allowedOriginsList,
-});
-
-// ─── Rate Limiting — Login only (Phase 1: Security Hardening) ──
-// 10 requests per minute per IP on POST /api/login.
-// NOT applied globally — avoids blocking WS handshake or normal traffic.
-const loginLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 10,             // 10 attempts per window per IP
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    ok: false,
-    token: null,
-    message: 'Too many login attempts. Please try again later.',
-  },
-  handler: (req, res, _next, options) => {
-    logger.warn('[rate-limit] Login brute-force protection triggered', {
-      ip: req.ip,
-      username: req.body?.username || 'unknown',
-    });
-    res.status(options.statusCode).json(options.message);
-  },
-});
-app.use('/api/login', loginLimiter);
-
-logger.info('[security] Rate limiting configured', {
-  loginLimit: '10 attempts / 60s per IP',
-});
-
-
-
-// ─── Health check ──────────────────────────────────────────────
-app.get('/', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
-});
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
-});
-
-// GET /api/agents - Return all connected agents
-const agentStore = require('./store/agentStore');
-app.get('/api/agents', (_req, res) => {
-  res.json({ agents: agentStore.getAll() });
-});
-
-// REST routes
-const loginRouter = require('./auth/login');
-app.use('/api', loginRouter);
-
-// ─── HTTP / HTTPS Server (Phase 1: TLS Support) ───────────────
-// TLS_ENABLED=true  → https.createServer (wss://)
-// TLS_ENABLED=false → http.createServer  (ws://)  — dev mode
-let server;
-let protocol;
-
-if (config.tlsEnabled) {
-  try {
-    const tlsOptions = {
-      cert: fs.readFileSync(config.tlsCertPath),
-      key: fs.readFileSync(config.tlsKeyPath),
-    };
-    server = https.createServer(tlsOptions, app);
-    protocol = 'https';
-    logger.info('[security] TLS enabled — running in HTTPS/WSS mode', {
-      cert: config.tlsCertPath,
-      key: config.tlsKeyPath,
-    });
-  } catch (err) {
-    logger.error('[security] TLS_ENABLED=true but failed to load certificates — aborting', {
-      error: err.message,
-      certPath: config.tlsCertPath,
-      keyPath: config.tlsKeyPath,
-    });
-    process.exit(1);
-  }
-} else {
-  server = http.createServer(app);
-  protocol = 'http';
-  logger.warn('[security] TLS disabled — running in plain HTTP/WS mode (dev only)');
-}
-
-// ─── WebSocket Server (noServer mode) ──────────────────────────
-const wss = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
-
-// ─── Upgrade Handler ───────────────────────────────────────────
-// Parse URL → route by pathname → authenticate → handleUpgrade.
-server.on('upgrade', (req, socket, head) => {
-  // Parse the request URL (req.url is relative, e.g. "/agent?key=xxx")
-  const baseUrl = `${protocol}://${req.headers.host || 'localhost'}`;
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(req.url, baseUrl);
-  } catch {
-    logger.warn('[upgrade] Failed to parse URL, destroying socket', {
-      url: req.url,
-    });
-    socket.destroy();
-    return;
-  }
-
-  const pathname = parsedUrl.pathname;
-  const query = parsedUrl.searchParams;
-
-  // ── /agent path ────────────────────────────────────────────
-  // Authentication moves to REGISTER message handshake with { agent_id, secret }
-  if (pathname === '/agent') {
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      // Tag the socket so handlers can distinguish agent vs controller
-      ws._gwRole = 'agent';
-      ws._gwAuthTime = Date.now();
-      wss.emit('connection', ws, req, 'agent');
-    });
-    return;
-  }
-
-  // ── /controller path ──────────────────────────────────────
-  if (pathname === '/controller') {
-    const authResult = verifyControllerAuth(query);
-    if (!authResult.ok) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      ws._gwRole = 'controller';
-      ws._gwAuthTime = Date.now();
-      ws._gwJwtPayload = authResult.payload; // null if key-auth
-      wss.emit('connection', ws, req, 'controller');
-    });
-    return;
-  }
-
-  // ── Unknown path ──────────────────────────────────────────
-  logger.warn('[upgrade] Unknown path, destroying socket', { pathname });
-  socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-  socket.destroy();
-});
-
-// ─── WSS Connection Dispatcher ─────────────────────────────────
-// Route to the appropriate handler based on role tag set during upgrade.
-wss.on('connection', (ws, req, role) => {
-  if (role === 'agent') {
-    handleAgent(ws, req);
-  } else if (role === 'controller') {
-    handleController(ws, req);
-  }
-});
-
-// ─── Start ─────────────────────────────────────────────────────
-const wsProtocol = protocol === 'https' ? 'wss' : 'ws';
-
-function start() {
-  server.listen(config.port, () => {
-    logger.info('═══════════════════════════════════════════════════');
-    logger.info(`  Gateway Server started on port ${config.port}`);
-    logger.info(`  Mode:       ${protocol.toUpperCase()} / ${wsProtocol.toUpperCase()}`);
-    logger.info(`  Health:     ${protocol}://localhost:${config.port}/health`);
-    logger.info(`  Agent:      ${wsProtocol}://localhost:${config.port}/agent`);
-    logger.info(`  Controller: ${wsProtocol}://localhost:${config.port}/controller`);
-    logger.info('═══════════════════════════════════════════════════');
-  });
-  udpServer.start(9000);
-}
-
-// ─── Graceful Shutdown ─────────────────────────────────────────
-function shutdown(signal) {
-  logger.info(`[server] ${signal} received — shutting down gracefully...`);
-
-  // Close all WebSocket connections
-  for (const client of wss.clients) {
-    try {
-      client.close(1001, 'Server shutting down');
-    } catch {
-      // ignore
-    }
-  }
-  
-  udpServer.shutdown();
-
-  // Close WebSocket server
-  wss.close(() => {
-    logger.info('[server] WebSocket server closed');
-
-    // Close HTTP/HTTPS server
-    server.close(() => {
-      logger.info('[server] HTTP/HTTPS server closed — goodbye');
-      process.exit(0);
-    });
-  });
-
-  // Force exit after 5s if graceful shutdown hangs
-  setTimeout(() => {
-    logger.warn('[server] Forced exit after timeout');
-    process.exit(1);
-  }, 5000);
-}
-
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-module.exports = { app, httpServer: server, wss, start };
+<file path="gateway/package.json">
+ 1: {
+ 2:   "name": "gateway",
+ 3:   "version": "1.0.0",
+ 4:   "description": "Gateway Relay Proxy Server — WebSocket relay between Controller and Agents",
+ 5:   "main": "src/index.js",
+ 6:   "scripts": {
+ 7:     "start": "node src/index.js",
+ 8:     "dev": "nodemon src/index.js"
+ 9:   },
+10:   "keywords": [
+11:     "gateway",
+12:     "websocket",
+13:     "relay",
+14:     "proxy"
+15:   ],
+16:   "license": "ISC",
+17:   "dependencies": {
+18:     "ajv": "^8.20.0",
+19:     "bcryptjs": "^3.0.3",
+20:     "better-sqlite3": "^13.0.2",
+21:     "cookie-parser": "^1.4.7",
+22:     "cors": "^2.8.6",
+23:     "dotenv": "^17.4.2",
+24:     "express": "^5.2.1",
+25:     "express-rate-limit": "^8.6.1",
+26:     "jsonwebtoken": "^9.0.3",
+27:     "uuid": "^14.0.1",
+28:     "winston": "^3.19.0",
+29:     "ws": "^8.21.1"
+30:   },
+31:   "devDependencies": {
+32:     "nodemon": "^3.1.14"
+33:   }
+34: }
 </file>
 
 <file path="gateway/src/socket/controllerHandler.js">
-// src/socket/controllerHandler.js
-// Handle Controller WebSocket connections (raw-WS, already authenticated at handshake).
-//
-// Protocol:
-//   list_agents → respond directly from agentStore (KHÔNG xuống Agent).
-//   Other messages with target_agents → forward NGUYÊN message tới ws của từng agent.
-//   target_agents rỗng + policy_update → gửi cho TẤT CẢ agents.
-//   Close → remove from controllerStore.
-
-const agentStore = require('../store/agentStore');
-const controllerStore = require('../store/controllerStore');
-const heartbeat = require('../store/heartbeat');
-const messageRouter = require('../router/messageRouter');
-const logger = require('../utils/logger');
-
-/** Simple incrementing ID for logging */
-let controllerCounter = 0;
-
-/**
- * Attach event handlers to an authenticated Controller WebSocket.
- * @param {WebSocket} ws - The Controller WebSocket (already upgraded & authenticated)
- * @param {import('http').IncomingMessage} req - The original HTTP upgrade request
- */
-function handleController(ws, req) {
-  const ip =
-    req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
-  const controllerId = `ctrl-${++controllerCounter}`;
-  const issuer = ws._gwJwtPayload?.username || controllerId;
-
-  // Add to controller store
-  controllerStore.add(ws);
-
-  logger.info('[controller] Connected', { controllerId, ip, issuer });
-
-  // Attach heartbeat
-  const hb = heartbeat.attach(ws, `controller:${controllerId}`);
-
-  // ─── message ─────────────────────────────────────────────────
-  ws.on('message', (data, isBinary) => {
-    // Controllers should not send binary — ignore if they do
-    if (isBinary) {
-      logger.warn('[controller] Unexpected binary from controller, ignoring', {
-        controllerId,
-        bytes: data.length,
-      });
-      return;
-    }
-
-    // ── Parse JSON ───────────────────────────────────────────
-    let msg;
-    try {
-      msg = JSON.parse(data.toString());
-    } catch (err) {
-      logger.warn('[controller] Invalid JSON', {
-        controllerId,
-        error: err.message,
-        preview: data.toString().substring(0, 200),
-      });
-      return;
-    }
-
-    // ── list_agents → respond directly (không xuống Agent) ───
-    if (msg.type === 'list_agents') {
-      const agents = agentStore.getAll();
-      const response = JSON.stringify({
-        type: 'agents_list',
-        agents,
-      });
-
-      logger.info('[controller] list_agents request', {
-        controllerId,
-        agentCount: agents.length,
-      });
-
-      controllerStore.sendTo(ws, response);
-      return;
-    }
-
-    // ── subscribe / unsubscribe → handle directly (không xuống Agent) ───
-    if (msg.type === 'subscribe') {
-      if (msg.agent_id && typeof msg.agent_id === 'string') {
-        controllerStore.subscribe(ws, msg.agent_id);
-        logger.info('[controller] Subscribed to agent', { controllerId, agentId: msg.agent_id });
-      } else {
-        logger.warn('[controller] subscribe missing agent_id', { controllerId });
-      }
-      return;
-    }
-
-    if (msg.type === 'unsubscribe') {
-      if (msg.agent_id && typeof msg.agent_id === 'string') {
-        controllerStore.unsubscribe(ws, msg.agent_id);
-        logger.info('[controller] Unsubscribed from agent', { controllerId, agentId: msg.agent_id });
-      } else {
-        logger.warn('[controller] unsubscribe missing agent_id', { controllerId });
-      }
-      return;
-    }
-
-    // ── Whitelist of relay-able types ─────────────────────────────
-    const RELAY_TYPES = new Set([
-      'request',
-      'power',
-      'policy_update',
-      'permission_request',
-      'permission_revoke',
-      'stop_module',
-      'e2ee_init',
-      'e2ee_payload',
-    ]);
-
-    if (!RELAY_TYPES.has(msg.type)) {
-      logger.warn('[controller] Unknown controller message type, dropping', {
-        controllerId,
-        type: msg.type,
-      });
-      return;
-    }
-
-    // ── Relay to agent(s) ────────────────────────────────────────
-    logger.info('[controller→agent] Relay', {
-      controllerId,
-      issuer,
-      type: msg.type,
-      module: msg.module,
-      targetAgents: msg.target_agents,
-    });
-
-    messageRouter.routeToAgents(data.toString(), msg, issuer, ws);
-  });
-
-  // ─── close ───────────────────────────────────────────────────
-  ws.on('close', (code, reason) => {
-    hb.clear();
-    controllerStore.remove(ws);
-
-    logger.info('[controller] Disconnected', {
-      controllerId,
-      code,
-      reason: reason?.toString(),
-      ip,
-    });
-  });
-
-  // ─── error ───────────────────────────────────────────────────
-  ws.on('error', (err) => {
-    logger.error('[controller] WebSocket error', {
-      controllerId,
-      ip,
-      error: err.message,
-    });
-  });
-}
-
-module.exports = handleController;
+  1: // src/socket/controllerHandler.js
+  2: // Handle Controller WebSocket connections (raw-WS, already authenticated at handshake).
+  3: //
+  4: // Protocol:
+  5: //   list_agents → respond directly from agentStore (KHÔNG xuống Agent).
+  6: //   Other messages with target_agents → forward NGUYÊN message tới ws của từng agent.
+  7: //   target_agents rỗng + policy_update → gửi cho TẤT CẢ agents.
+  8: //   Close → remove from controllerStore.
+  9: 
+ 10: const agentStore = require('../store/agentStore');
+ 11: const controllerStore = require('../store/controllerStore');
+ 12: const heartbeat = require('../store/heartbeat');
+ 13: const messageRouter = require('../router/messageRouter');
+ 14: const logger = require('../utils/logger');
+ 15: 
+ 16: /** Simple incrementing ID for logging */
+ 17: let controllerCounter = 0;
+ 18: 
+ 19: /**
+ 20:  * Attach event handlers to an authenticated Controller WebSocket.
+ 21:  * @param {WebSocket} ws - The Controller WebSocket (already upgraded & authenticated)
+ 22:  * @param {import('http').IncomingMessage} req - The original HTTP upgrade request
+ 23:  */
+ 24: function handleController(ws, req) {
+ 25:   const ip =
+ 26:     req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+ 27:   const controllerId = `ctrl-${++controllerCounter}`;
+ 28:   const issuer = ws._gwJwtPayload?.username || controllerId;
+ 29: 
+ 30:   // Add to controller store
+ 31:   controllerStore.add(ws);
+ 32: 
+ 33:   logger.info('[controller] Connected', { controllerId, ip, issuer });
+ 34: 
+ 35:   // Attach heartbeat
+ 36:   const hb = heartbeat.attach(ws, `controller:${controllerId}`);
+ 37: 
+ 38:   // ─── message ─────────────────────────────────────────────────
+ 39:   ws.on('message', (data, isBinary) => {
+ 40:     // Controllers should not send binary — ignore if they do
+ 41:     if (isBinary) {
+ 42:       logger.warn('[controller] Unexpected binary from controller, ignoring', {
+ 43:         controllerId,
+ 44:         bytes: data.length,
+ 45:       });
+ 46:       return;
+ 47:     }
+ 48: 
+ 49:     // ── Parse JSON ───────────────────────────────────────────
+ 50:     let msg;
+ 51:     try {
+ 52:       msg = JSON.parse(data.toString());
+ 53:     } catch (err) {
+ 54:       logger.warn('[controller] Invalid JSON', {
+ 55:         controllerId,
+ 56:         error: err.message,
+ 57:         preview: data.toString().substring(0, 200),
+ 58:       });
+ 59:       return;
+ 60:     }
+ 61: 
+ 62:     // ── list_agents → respond directly (không xuống Agent) ───
+ 63:     if (msg.type === 'list_agents') {
+ 64:       const agents = agentStore.getAll();
+ 65:       const response = JSON.stringify({
+ 66:         type: 'agents_list',
+ 67:         agents,
+ 68:       });
+ 69: 
+ 70:       logger.info('[controller] list_agents request', {
+ 71:         controllerId,
+ 72:         agentCount: agents.length,
+ 73:       });
+ 74: 
+ 75:       controllerStore.sendTo(ws, response);
+ 76:       return;
+ 77:     }
+ 78: 
+ 79:     // ── subscribe / unsubscribe → handle directly (không xuống Agent) ───
+ 80:     if (msg.type === 'subscribe') {
+ 81:       if (msg.agent_id && typeof msg.agent_id === 'string') {
+ 82:         controllerStore.subscribe(ws, msg.agent_id);
+ 83:         logger.info('[controller] Subscribed to agent', { controllerId, agentId: msg.agent_id });
+ 84:       } else {
+ 85:         logger.warn('[controller] subscribe missing agent_id', { controllerId });
+ 86:       }
+ 87:       return;
+ 88:     }
+ 89: 
+ 90:     if (msg.type === 'unsubscribe') {
+ 91:       if (msg.agent_id && typeof msg.agent_id === 'string') {
+ 92:         controllerStore.unsubscribe(ws, msg.agent_id);
+ 93:         logger.info('[controller] Unsubscribed from agent', { controllerId, agentId: msg.agent_id });
+ 94:       } else {
+ 95:         logger.warn('[controller] unsubscribe missing agent_id', { controllerId });
+ 96:       }
+ 97:       return;
+ 98:     }
+ 99: 
+100:     // ── Whitelist of relay-able types ─────────────────────────────
+101:     const RELAY_TYPES = new Set([
+102:       'request',
+103:       'power',
+104:       'policy_update',
+105:       'permission_request',
+106:       'permission_revoke',
+107:       'stop_module',
+108:       'e2ee_init',
+109:       'e2ee_payload',
+110:     ]);
+111: 
+112:     if (!RELAY_TYPES.has(msg.type)) {
+113:       logger.warn('[controller] Unknown controller message type, dropping', {
+114:         controllerId,
+115:         type: msg.type,
+116:       });
+117:       return;
+118:     }
+119: 
+120:     // ── Relay to agent(s) ────────────────────────────────────────
+121:     logger.info('[controller→agent] Relay', {
+122:       controllerId,
+123:       issuer,
+124:       type: msg.type,
+125:       module: msg.module,
+126:       targetAgents: msg.target_agents,
+127:     });
+128: 
+129:     messageRouter.routeToAgents(data.toString(), msg, issuer, ws);
+130:   });
+131: 
+132:   // ─── close ───────────────────────────────────────────────────
+133:   ws.on('close', (code, reason) => {
+134:     hb.clear();
+135:     controllerStore.remove(ws);
+136: 
+137:     logger.info('[controller] Disconnected', {
+138:       controllerId,
+139:       code,
+140:       reason: reason?.toString(),
+141:       ip,
+142:     });
+143:   });
+144: 
+145:   // ─── error ───────────────────────────────────────────────────
+146:   ws.on('error', (err) => {
+147:     logger.error('[controller] WebSocket error', {
+148:       controllerId,
+149:       ip,
+150:       error: err.message,
+151:     });
+152:   });
+153: }
+154: 
+155: module.exports = handleController;
 </file>
 
 <file path="gateway/src/router/messageRouter.js">
-// src/router/messageRouter.js
-// Route Controller messages to Agent(s) based on target_agents field.
-//
-// Protocol (D3 / Security Hardening / Envelope Validation):
-//   - Parse & validate JSON message (reject if invalid JSON — G7 prep).
-//   - Validate minimal TX envelope via Ajv schema (type, module/action, target_agents).
-//   - Whitelist allowed modules based on formatjson specifications.
-//   - If invalid -> ACK error to Controller, DO NOT forward.
-//   - Inject top-level `issuer` field (string username from Controller session).
-//   - Re-serialize JSON string and forward to agent(s).
-
-const Ajv = require('ajv');
-const agentStore = require('../store/agentStore');
-const controllerStore = require('../store/controllerStore');
-const logger = require('../utils/logger');
-const { validateParams } = require('../validation/commandSchemas');
-
-
-const ajv = new Ajv({ allErrors: true });
-
-// ─── Module Whitelist (from ../../docs/protocol/*.json + power/policy specs) ───
-const VALID_MODULES = [
-  'app_list',
-  'app_start',
-  'app_stop',
-  'proc_list',
-  'proc_kill',
-  'screenshot',
-  'screen_stream',
-  'screen_stream_stop',
-  'keylog_start',
-  'keylog_stop',
-  'fs_list',
-  'fs_get',
-  'fs_put',
-  'fs_delete',
-  'webcam_start',
-  'webcam_stop',
-  'sysinfo',
-  // Additional valid commands defined in ../../docs/protocol/ and RELAY_TYPES
-  'power_lock',
-  'power_restart',
-  'power_shutdown',
-  'power_sleep',
-  'policy_update',
-  'permission_request',
-  'permission_revoke',
-  'permissions_reset',
-  'stop_module',
-  'e2ee_init',
-  'e2ee_payload',
-  'input_mouse_move',
-  'input_mouse_click',
-  'input_key',
-  'input_type',
-];
-
-// ─── Minimal Envelope Schema ──────────────────────────────────────────
-// Required: type (string), target_agents (array of string), and at least module OR action.
-const envelopeSchema = {
-  type: 'object',
-  required: ['type', 'target_agents'],
-  anyOf: [
-    { required: ['module'] },
-    { required: ['action'] },
-    { required: ['feature'] },
-    { required: ['params'] },
-  ],
-  properties: {
-    type: { type: 'string' },
-    module: { type: 'string', enum: VALID_MODULES },
-    action: { type: 'string' },
-    target_agents: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-  },
-};
-
-const validateEnvelope = ajv.compile(envelopeSchema);
-
-/**
- * Route a Controller message to the appropriate Agent(s).
- * Validates JSON and envelope schema, stamps top-level `issuer` field, re-serializes and sends.
- *
- * @param {string} rawMessage - The original JSON string from Controller
- * @param {object|null} parsed - The already-parsed message object (to avoid double-parse if valid)
- * @param {string} [issuer="admin"] - The username of the Controller issuing the message
- * @param {WebSocket|null} [controllerWs=null] - Reference to Controller websocket to send ACK errors
- * @returns {boolean} true if message was processed, false if rejected
- */
-function routeToAgents(rawMessage, parsed, issuer = 'admin', controllerWs = null) {
-  // 3. Nếu message không phải JSON hợp lệ → reject, KHÔNG forward (chuẩn bị cho G7 input validation)
-  let msgObj = parsed;
-  if (!msgObj) {
-    try {
-      msgObj = JSON.parse(rawMessage);
-    } catch (err) {
-      logger.warn('[router] Rejected relay: invalid JSON', { error: err.message });
-      if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
-        controllerWs.send(JSON.stringify({ type: 'error_ack', error: 'Invalid JSON', details: err.message }));
-      }
-      return false;
-    }
-  }
-
-  if (typeof msgObj !== 'object' || msgObj === null || Array.isArray(msgObj)) {
-    logger.warn('[router] Rejected relay: JSON payload must be a valid object');
-    if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
-      controllerWs.send(JSON.stringify({ type: 'error_ack', error: 'Payload must be a JSON object' }));
-    }
-    return false;
-  }
-
-  // ── Validate envelope against minimal schema + module whitelist ─────
-  let valid = true;
-  if (msgObj.type !== 'e2ee_init' && msgObj.type !== 'e2ee_payload') {
-    valid = validateEnvelope(msgObj);
-  }
-  
-  if (!valid) {
-    logger.warn('[router] Message failed envelope schema validation', {
-      errors: validateEnvelope.errors,
-      type: msgObj.type,
-      module: msgObj.module,
-    });
-    if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
-      controllerWs.send(
-        JSON.stringify({
-          type: 'error_ack',
-          success: false,
-          error: 'Envelope validation failed: invalid schema or module not whitelisted',
-          details: validateEnvelope.errors,
-          original_type: msgObj.type || 'unknown',
-        })
-      );
-    }
-    return false;
-  }
-
-  // ── Validate specific params deep schema ─────────────────────────────
-  const commandKey = msgObj.action || msgObj.module || msgObj.type;
-  if (commandKey) {
-    const paramsValidResult = validateParams(commandKey, msgObj.params);
-    if (!paramsValidResult.valid) {
-      logger.warn('[router] Message failed deep params schema validation', {
-        errorText: paramsValidResult.errorText,
-        type: msgObj.type,
-        commandKey,
-      });
-      if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
-        controllerWs.send(
-          JSON.stringify({
-            type: 'ERROR',
-            command_id: msgObj.command_id || null,
-            message: `Input validation failed for params: ${paramsValidResult.errorText}`,
-            details: paramsValidResult.errors
-          })
-        );
-      }
-      return false;
-    }
-  }
-
-  // ── Role-based Access Control (RBAC) check ─────────────────────────
-  // admin: allowed to send commands down to Agents
-  // viewer: read-only (can only view agent list and receive streams via subscribe, cannot forward commands)
-  const userRole = controllerWs ? (controllerWs._gwUserRole || controllerWs._gwJwtPayload?.role) : 'admin';
-  if (userRole !== 'admin') {
-    logger.warn('[router] Rejected relay: controller role "viewer" is read-only and cannot execute commands on agents', {
-      issuer,
-      role: userRole,
-      type: msgObj?.type,
-      module: msgObj?.module,
-    });
-    if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
-      controllerWs.send(
-        JSON.stringify({
-          type: 'error_ack',
-          success: false,
-          error: 'Permission denied: role "viewer" is read-only and cannot execute commands on agents',
-          code: 403,
-        })
-      );
-    }
-    return false;
-  }
-
-  // 1. Thêm field top-level `issuer` là string username (đơn giản — không dùng object)
-  msgObj.issuer = String(issuer || 'admin');
-
-  // Register command ID or req_id so responses from Agent can be routed directly back to this Controller
-  const reqId = msgObj.command_id || msgObj.req_id || msgObj.id;
-  if (reqId && typeof reqId === 'string' && controllerWs) {
-    controllerStore.registerCommand(reqId, controllerWs);
-  }
-
-  // 2. Serialize lại trước khi gửi
-  const forwardMessage = JSON.stringify(msgObj);
-
-  const targetAgents = msgObj.target_agents;
-  const msgType = msgObj.type || 'unknown';
-  const msgModule = msgObj.module || '';
-
-  // ── target_agents is a non-empty array → send to specific agents ──
-  if (Array.isArray(targetAgents) && targetAgents.length > 0) {
-    for (const agentId of targetAgents) {
-      const agentWs = agentStore.getSocket(agentId);
-
-      if (!agentWs || agentWs.readyState !== agentWs.OPEN) {
-        logger.warn('[router] Target agent not found or not connected', {
-          agentId,
-          type: msgType,
-          module: msgModule,
-        });
-        continue;
-      }
-
-      try {
-        agentWs.send(forwardMessage);
-        logger.debug('[router] Forwarded to agent', {
-          agentId,
-          issuer: msgObj.issuer,
-          type: msgType,
-          module: msgModule,
-        });
-      } catch (err) {
-        logger.error('[router] Failed to send to agent', {
-          agentId,
-          error: err.message,
-        });
-      }
-    }
-    return true;
-  }
-
-  // ── target_agents empty/missing ──
-  // Broadcast is ONLY allowed for policy_update (fleet-wide push semantics).
-  // Every other command must name explicit targets to avoid accidental
-  // fleet-wide power_shutdown / restart / sleep / keylog_start etc.
-  if (msgType !== 'policy_update')
-  {
-    logger.warn('[router] Rejected relay: target_agents is required for non-broadcast commands', {
-      issuer: msgObj.issuer,                                                                        //
-      type: msgType,                                                                                //
-      module: msgModule,                                                                            //
-    });
-    if (controllerWs && controllerWs.readyState === controllerWs.OPEN)
-    {
-      controllerWs.send(
-        JSON.stringify({
-          type: 'error_ack',
-          success: false,
-          error: 'target_agents is required for non-broadcast commands',
-          original_type: msgType,
-          command_id: msgObj.command_id || null,
-          code: 400,
-        })
-      );
-    }
-    return false;
-  }
-
-  const allAgents = agentStore.getAll();
-
-  if (allAgents.length === 0) {
-    logger.warn('[router] No agents connected, cannot relay', {
-      type: msgType,
-      module: msgModule,
-    });
-    return true;
-  }
-
-  logger.info('[router] Broadcasting to all agents (empty target_agents)', {
-    issuer: msgObj.issuer,
-    type: msgType,
-    module: msgModule,
-    count: allAgents.length,
-  });
-
-  for (const agent of allAgents) {
-    const agentWs = agentStore.getSocket(agent.id);
-    if (agentWs && agentWs.readyState === agentWs.OPEN) {
-      try {
-        agentWs.send(forwardMessage);
-      } catch (err) {
-        logger.error('[router] Failed to broadcast to agent', {
-          agentId: agent.id,
-          error: err.message,
-        });
-      }
-    }
-  }
-
-  return true;
-}
-
-module.exports = { routeToAgents, validateEnvelope, VALID_MODULES };
+  1: // src/router/messageRouter.js
+  2: // Route Controller messages to Agent(s) based on target_agents field.
+  3: //
+  4: // Protocol (D3 / Security Hardening / Envelope Validation):
+  5: //   - Parse & validate JSON message (reject if invalid JSON — G7 prep).
+  6: //   - Validate minimal TX envelope via Ajv schema (type, module/action, target_agents).
+  7: //   - Whitelist allowed modules based on formatjson specifications.
+  8: //   - If invalid -> ACK error to Controller, DO NOT forward.
+  9: //   - Inject top-level `issuer` field (string username from Controller session).
+ 10: //   - Re-serialize JSON string and forward to agent(s).
+ 11: 
+ 12: const Ajv = require('ajv');
+ 13: const agentStore = require('../store/agentStore');
+ 14: const controllerStore = require('../store/controllerStore');
+ 15: const logger = require('../utils/logger');
+ 16: const { validateParams } = require('../validation/commandSchemas');
+ 17: 
+ 18: 
+ 19: const ajv = new Ajv({ allErrors: true });
+ 20: 
+ 21: // ─── Module Whitelist (from ../../docs/protocol/*.json + power/policy specs) ───
+ 22: const VALID_MODULES = [
+ 23:   'app_list',
+ 24:   'app_start',
+ 25:   'app_stop',
+ 26:   'proc_list',
+ 27:   'proc_kill',
+ 28:   'screenshot',
+ 29:   'screen_stream',
+ 30:   'screen_stream_stop',
+ 31:   'keylog_start',
+ 32:   'keylog_stop',
+ 33:   'fs_list',
+ 34:   'fs_get',
+ 35:   'fs_put',
+ 36:   'fs_delete',
+ 37:   'webcam_start',
+ 38:   'webcam_stop',
+ 39:   'sysinfo',
+ 40:   // Additional valid commands defined in ../../docs/protocol/ and RELAY_TYPES
+ 41:   'power_lock',
+ 42:   'power_restart',
+ 43:   'power_shutdown',
+ 44:   'power_sleep',
+ 45:   'policy_update',
+ 46:   'permission_request',
+ 47:   'permission_revoke',
+ 48:   'permissions_reset',
+ 49:   'stop_module',
+ 50:   'e2ee_init',
+ 51:   'e2ee_payload',
+ 52:   'input_mouse_move',
+ 53:   'input_mouse_click',
+ 54:   'input_key',
+ 55:   'input_type',
+ 56: ];
+ 57: 
+ 58: // ─── Minimal Envelope Schema ──────────────────────────────────────────
+ 59: // Required: type (string), target_agents (array of string), and at least module OR action.
+ 60: const envelopeSchema = {
+ 61:   type: 'object',
+ 62:   required: ['type', 'target_agents'],
+ 63:   anyOf: [
+ 64:     { required: ['module'] },
+ 65:     { required: ['action'] },
+ 66:     { required: ['feature'] },
+ 67:     { required: ['params'] },
+ 68:   ],
+ 69:   properties: {
+ 70:     type: { type: 'string' },
+ 71:     module: { type: 'string', enum: VALID_MODULES },
+ 72:     action: { type: 'string' },
+ 73:     target_agents: {
+ 74:       type: 'array',
+ 75:       items: { type: 'string' },
+ 76:     },
+ 77:   },
+ 78: };
+ 79: 
+ 80: const validateEnvelope = ajv.compile(envelopeSchema);
+ 81: 
+ 82: /**
+ 83:  * Route a Controller message to the appropriate Agent(s).
+ 84:  * Validates JSON and envelope schema, stamps top-level `issuer` field, re-serializes and sends.
+ 85:  *
+ 86:  * @param {string} rawMessage - The original JSON string from Controller
+ 87:  * @param {object|null} parsed - The already-parsed message object (to avoid double-parse if valid)
+ 88:  * @param {string} [issuer="admin"] - The username of the Controller issuing the message
+ 89:  * @param {WebSocket|null} [controllerWs=null] - Reference to Controller websocket to send ACK errors
+ 90:  * @returns {boolean} true if message was processed, false if rejected
+ 91:  */
+ 92: function routeToAgents(rawMessage, parsed, issuer = 'admin', controllerWs = null) {
+ 93:   // 3. Nếu message không phải JSON hợp lệ → reject, KHÔNG forward (chuẩn bị cho G7 input validation)
+ 94:   let msgObj = parsed;
+ 95:   if (!msgObj) {
+ 96:     try {
+ 97:       msgObj = JSON.parse(rawMessage);
+ 98:     } catch (err) {
+ 99:       logger.warn('[router] Rejected relay: invalid JSON', { error: err.message });
+100:       if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
+101:         controllerWs.send(JSON.stringify({ type: 'error_ack', error: 'Invalid JSON', details: err.message }));
+102:       }
+103:       return false;
+104:     }
+105:   }
+106: 
+107:   if (typeof msgObj !== 'object' || msgObj === null || Array.isArray(msgObj)) {
+108:     logger.warn('[router] Rejected relay: JSON payload must be a valid object');
+109:     if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
+110:       controllerWs.send(JSON.stringify({ type: 'error_ack', error: 'Payload must be a JSON object' }));
+111:     }
+112:     return false;
+113:   }
+114: 
+115:   // ── Validate envelope against minimal schema + module whitelist ─────
+116:   let valid = true;
+117:   if (msgObj.type !== 'e2ee_init' && msgObj.type !== 'e2ee_payload') {
+118:     valid = validateEnvelope(msgObj);
+119:   }
+120:   
+121:   if (!valid) {
+122:     logger.warn('[router] Message failed envelope schema validation', {
+123:       errors: validateEnvelope.errors,
+124:       type: msgObj.type,
+125:       module: msgObj.module,
+126:     });
+127:     if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
+128:       controllerWs.send(
+129:         JSON.stringify({
+130:           type: 'error_ack',
+131:           success: false,
+132:           error: 'Envelope validation failed: invalid schema or module not whitelisted',
+133:           details: validateEnvelope.errors,
+134:           original_type: msgObj.type || 'unknown',
+135:         })
+136:       );
+137:     }
+138:     return false;
+139:   }
+140: 
+141:   // ── Validate specific params deep schema ─────────────────────────────
+142:   const commandKey = msgObj.action || msgObj.module || msgObj.type;
+143:   if (commandKey) {
+144:     const paramsValidResult = validateParams(commandKey, msgObj.params);
+145:     if (!paramsValidResult.valid) {
+146:       logger.warn('[router] Message failed deep params schema validation', {
+147:         errorText: paramsValidResult.errorText,
+148:         type: msgObj.type,
+149:         commandKey,
+150:       });
+151:       if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
+152:         controllerWs.send(
+153:           JSON.stringify({
+154:             type: 'ERROR',
+155:             command_id: msgObj.command_id || null,
+156:             message: `Input validation failed for params: ${paramsValidResult.errorText}`,
+157:             details: paramsValidResult.errors
+158:           })
+159:         );
+160:       }
+161:       return false;
+162:     }
+163:   }
+164: 
+165:   // ── Role-based Access Control (RBAC) check ─────────────────────────
+166:   // admin: allowed to send commands down to Agents
+167:   // viewer: read-only (can only view agent list and receive streams via subscribe, cannot forward commands)
+168:   const userRole = controllerWs ? (controllerWs._gwUserRole || controllerWs._gwJwtPayload?.role) : 'admin';
+169:   if (userRole !== 'admin') {
+170:     logger.warn('[router] Rejected relay: controller role "viewer" is read-only and cannot execute commands on agents', {
+171:       issuer,
+172:       role: userRole,
+173:       type: msgObj?.type,
+174:       module: msgObj?.module,
+175:     });
+176:     if (controllerWs && controllerWs.readyState === controllerWs.OPEN) {
+177:       controllerWs.send(
+178:         JSON.stringify({
+179:           type: 'error_ack',
+180:           success: false,
+181:           error: 'Permission denied: role "viewer" is read-only and cannot execute commands on agents',
+182:           code: 403,
+183:         })
+184:       );
+185:     }
+186:     return false;
+187:   }
+188: 
+189:   // 1. Thêm field top-level `issuer` là string username (đơn giản — không dùng object)
+190:   msgObj.issuer = String(issuer || 'admin');
+191: 
+192:   // Register command ID or req_id so responses from Agent can be routed directly back to this Controller
+193:   const reqId = msgObj.command_id || msgObj.req_id || msgObj.id;
+194:   if (reqId && typeof reqId === 'string' && controllerWs) {
+195:     controllerStore.registerCommand(reqId, controllerWs);
+196:   }
+197: 
+198:   // 2. Serialize lại trước khi gửi
+199:   const forwardMessage = JSON.stringify(msgObj);
+200: 
+201:   const targetAgents = msgObj.target_agents;
+202:   const msgType = msgObj.type || 'unknown';
+203:   const msgModule = msgObj.module || '';
+204: 
+205:   // ── target_agents is a non-empty array → send to specific agents ──
+206:   if (Array.isArray(targetAgents) && targetAgents.length > 0) {
+207:     for (const agentId of targetAgents) {
+208:       const agentWs = agentStore.getSocket(agentId);
+209: 
+210:       if (!agentWs || agentWs.readyState !== agentWs.OPEN) {
+211:         logger.warn('[router] Target agent not found or not connected', {
+212:           agentId,
+213:           type: msgType,
+214:           module: msgModule,
+215:         });
+216:         continue;
+217:       }
+218: 
+219:       try {
+220:         agentWs.send(forwardMessage);
+221:         logger.debug('[router] Forwarded to agent', {
+222:           agentId,
+223:           issuer: msgObj.issuer,
+224:           type: msgType,
+225:           module: msgModule,
+226:         });
+227:       } catch (err) {
+228:         logger.error('[router] Failed to send to agent', {
+229:           agentId,
+230:           error: err.message,
+231:         });
+232:       }
+233:     }
+234:     return true;
+235:   }
+236: 
+237:   // ── target_agents empty/missing ──
+238:   // Broadcast is ONLY allowed for policy_update (fleet-wide push semantics).
+239:   // Every other command must name explicit targets to avoid accidental
+240:   // fleet-wide power_shutdown / restart / sleep / keylog_start etc.
+241:   if (msgType !== 'policy_update')
+242:   {
+243:     logger.warn('[router] Rejected relay: target_agents is required for non-broadcast commands', {
+244:       issuer: msgObj.issuer,                                                                        //
+245:       type: msgType,                                                                                //
+246:       module: msgModule,                                                                            //
+247:     });
+248:     if (controllerWs && controllerWs.readyState === controllerWs.OPEN)
+249:     {
+250:       controllerWs.send(
+251:         JSON.stringify({
+252:           type: 'error_ack',
+253:           success: false,
+254:           error: 'target_agents is required for non-broadcast commands',
+255:           original_type: msgType,
+256:           command_id: msgObj.command_id || null,
+257:           code: 400,
+258:         })
+259:       );
+260:     }
+261:     return false;
+262:   }
+263: 
+264:   const allAgents = agentStore.getAll();
+265: 
+266:   if (allAgents.length === 0) {
+267:     logger.warn('[router] No agents connected, cannot relay', {
+268:       type: msgType,
+269:       module: msgModule,
+270:     });
+271:     return true;
+272:   }
+273: 
+274:   logger.info('[router] Broadcasting to all agents (empty target_agents)', {
+275:     issuer: msgObj.issuer,
+276:     type: msgType,
+277:     module: msgModule,
+278:     count: allAgents.length,
+279:   });
+280: 
+281:   for (const agent of allAgents) {
+282:     const agentWs = agentStore.getSocket(agent.id);
+283:     if (agentWs && agentWs.readyState === agentWs.OPEN) {
+284:       try {
+285:         agentWs.send(forwardMessage);
+286:       } catch (err) {
+287:         logger.error('[router] Failed to broadcast to agent', {
+288:           agentId: agent.id,
+289:           error: err.message,
+290:         });
+291:       }
+292:     }
+293:   }
+294: 
+295:   return true;
+296: }
+297: 
+298: module.exports = { routeToAgents, validateEnvelope, VALID_MODULES };
 </file>
 
 </files>
