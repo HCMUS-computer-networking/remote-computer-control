@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 using AgentSystem.Core;
+using AgentSystem.Managers;
 
 namespace AgentSystem.Forms
 {
@@ -91,6 +92,28 @@ namespace AgentSystem.Forms
             btnConnect.Width = 100;
             btnConnect.Click += BtnConnect_Click;
             this.Controls.Add(btnConnect);
+
+            Button btnConfig = new Button();
+            btnConfig.Text = "Đổi Gateway";
+            btnConfig.Location = new Point(230, 165);
+            btnConfig.Width = 110;
+            btnConfig.Click += (s, e) => {
+                using (var configForm = new GatewayConfigForm(_agent.GatewayUrl))
+                {
+                    if (configForm.ShowDialog() == DialogResult.OK)
+                    {
+                        string newUrl = configForm.GatewayUrl;
+                        if (!string.IsNullOrWhiteSpace(newUrl))
+                        {
+                            ConfigManager.Current.GatewayUrl = newUrl;
+                            ConfigManager.Save();
+                            txtGateway.Text = newUrl;
+                            _agent.Reconnect();
+                        }
+                    }
+                }
+            };
+            this.Controls.Add(btnConfig);
             
             this.FormClosing += MainForm_FormClosing;
         }

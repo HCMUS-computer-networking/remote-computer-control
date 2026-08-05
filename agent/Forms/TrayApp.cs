@@ -25,6 +25,7 @@ namespace AgentSystem.Forms
             this.agent = agentClient;
             
             mainForm = new MainForm(agent);
+            this.MainForm = mainForm;
             mainForm.Show();
 
             bool isAutoStart = CheckAutoStart();

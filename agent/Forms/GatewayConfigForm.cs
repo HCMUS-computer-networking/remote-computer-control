@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using AgentSystem.Utils;
 
 namespace AgentSystem.Forms
 {
@@ -15,7 +16,6 @@ namespace AgentSystem.Forms
         private TextBox txtUrl;
         private Button btnScan;
         private Label lblStatus;
-        private CancellationTokenSource cts;
 
         public GatewayConfigForm(string defaultUrl)
         {
@@ -27,7 +27,9 @@ namespace AgentSystem.Forms
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
+            this.ShowInTaskbar = true;
             this.TopMost = true;
+            this.Shown += (s, e) => { this.BringToFront(); this.Activate(); };
             this.BackColor = Color.White;
 
             Label lblInstruction = new Label
@@ -103,60 +105,24 @@ namespace AgentSystem.Forms
             lblStatus.Text = "Đang lắng nghe tín hiệu Gateway trên mạng LAN (Port 8888)...";
             lblStatus.ForeColor = Color.Blue;
 
-            cts = new CancellationTokenSource();
-            
             try
             {
-                // Mở cổng UDP 8888 để lắng nghe Broadcast
-                using (UdpClient udpClient = new UdpClient(8888))
+                string discoveredUrl = await NetworkDiscovery.ScanForGatewayAsync(5000);
+                if (!string.IsNullOrEmpty(discoveredUrl))
                 {
-                    // Chờ tối đa 5 giây
-                    var receiveTask = udpClient.ReceiveAsync();
-                    var delayTask = Task.Delay(5000, cts.Token);
-                    
-                    var completedTask = await Task.WhenAny(receiveTask, delayTask);
-
-                    if (completedTask == receiveTask)
-                    {
-                        var result = receiveTask.Result;
-                        string message = Encoding.UTF8.GetString(result.Buffer);
-                        
-                        // Quy ước: Gateway gửi chuỗi "GATEWAY_ANNOUNCE|wss://192.168.X.X:8080"
-                        if (message.StartsWith("GATEWAY_ANNOUNCE|"))
-                        {
-                            string[] parts = message.Split('|');
-                            if (parts.Length == 2)
-                            {
-                                // Kiểm tra an toàn: Đảm bảo Gateway trả về link WSS
-                                string discoveredUrl = parts[1];
-                                
-                                txtUrl.Text = discoveredUrl;
-                                lblStatus.Text = $"Tìm thấy Gateway an toàn tại: {result.RemoteEndPoint.Address}";
-                                lblStatus.ForeColor = Color.Green;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        lblStatus.Text = "Hết thời gian (5s). Không tìm thấy Gateway nào phát tín hiệu.";
-                        lblStatus.ForeColor = Color.Red;
-                    }
+                    txtUrl.Text = discoveredUrl;
+                    lblStatus.Text = $"Tìm thấy Gateway an toàn tại: {discoveredUrl}";
+                    lblStatus.ForeColor = Color.Green;
                 }
-            }
-            catch (SocketException ex)
-            {
-                lblStatus.Text = $"Lỗi cổng UDP: {ex.Message} (Có thể app khác đang dùng port 8888)";
-                lblStatus.ForeColor = Color.Red;
-            }
-            catch (Exception ex)
-            {
-                lblStatus.Text = $"Lỗi: {ex.Message}";
-                lblStatus.ForeColor = Color.Red;
+                else
+                {
+                    lblStatus.Text = "Hết thời gian (5s). Không tìm thấy Gateway nào phát tín hiệu.";
+                    lblStatus.ForeColor = Color.Red;
+                }
             }
             finally
             {
                 btnScan.Enabled = true;
-                cts.Dispose();
             }
         }
     }
