@@ -53,6 +53,7 @@ export const MSG_TYPE =
     // E2EE Handshake & Payload
     E2EE_INIT         : "e2ee_init",          // Controller sends Public Key to Agent
     E2EE_READY        : "e2ee_ready",         // Agent replies with Public Key
+    E2EE_ERROR        : "e2ee_error",         // Agent rejects Handshake
     E2EE_PAYLOAD      : "e2ee_payload",       // Wrapper cho các lệnh và response được mã hóa
 }
 

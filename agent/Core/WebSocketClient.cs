@@ -81,6 +81,7 @@ namespace AgentSystem.Core
                     ip = ip,
                     os = Environment.OSVersion.ToString()
                 }, false);
+                context.NotifyReconnected();
                 StartHeartbeat();
                 _ = ReceiveLoopAsync();
             }
@@ -269,6 +270,7 @@ namespace AgentSystem.Core
 
                     // Gửi lại gói đăng ký AgentId sau khi có kết nối mới
                     context.Crypto.Reset();
+                    // Đảm bảo gửi REGISTER với tham số thứ 2 là false (encrypt = false)
                     context.SendResponse(new { 
                         type = "REGISTER", 
                         agent_id = context.AgentId,

@@ -33,7 +33,7 @@ namespace AgentSystem.Core
             { "keylog_start", "keylog" }, { "keylog_stop", "keylog" },
             { "fs_list", "file" }, { "fs_get", "file" }, { "fs_put", "file" }, { "fs_delete", "file" },
             { "webcam_start", "webcam" }, { "webcam_stop", "webcam" },
-            { "power", "power" },
+            { "power", "power" }, { "power_lock", "power" }, { "power_restart", "power" }, { "power_shutdown", "power" }, { "power_sleep", "power" },
             { "input_mouse_move", "input" }, { "input_mouse_click", "input" }, { "input_key", "input" }, { "input_type", "input" }
         };
 
@@ -203,12 +203,19 @@ namespace AgentSystem.Core
                         return;
                     }
 
+                    // Kiểm tra chữ ký bằng mã PIN. Nếu sai, ném lỗi về thẳng Controller để hiển thị thông báo.
                     if (!Crypto.VerifyHMAC(pubKeyBase64, signature))
                     {
-                        Log.Warning("[E2EE] Invalid Controller Signature. MitM attempt?");
+                        Log.Warning("[E2EE] Invalid Controller Signature. Sai mã PIN hoặc có MitM.");
+                        SendResponse(new {
+                            type = "e2ee_error",
+                            agent_id = AgentId,
+                            message = "Invalid PIN"
+                        }, false); // encrypt = false
                         return;
                     }
                     
+                    // Nếu đúng PIN, tạo Session Key và phản hồi e2ee_ready
                     Crypto.DeriveSessionKey(pubKeyBase64);
                     
                     string myPubKeyBase64 = Crypto.GetPublicKeySPKIBase64();
@@ -219,7 +226,7 @@ namespace AgentSystem.Core
                         agent_id = AgentId,
                         publicKey = myPubKeyBase64,
                         signature = mySignature
-                    }, encrypt: false);
+                    }, false); // encrypt = false
                     
                     Log.Information("[E2EE] Handshake completed successfully. Session Key is ready.");
                 }

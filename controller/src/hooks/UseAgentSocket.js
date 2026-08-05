@@ -180,6 +180,23 @@ export default function useAgentSocket()
     const setPermissionResult = usePermissionStore.getState().setPermissionResult
     const addToast          = useUiStore.getState().addToast
 
+    const isUnlocked        = useE2EEStore((s) => s.isUnlocked)
+
+    // Automatically trigger handshake when user unlocks the Master Password
+    useEffect(() => {
+        if (isUnlocked && _socket) {
+            const currentAgents = useAgentStore.getState().agents;
+            currentAgents.forEach(a => {
+                if (a.online) {
+                    const session = useE2EEStore.getState().sessions[a.id];
+                    if (!session || session.state === 'uninitialized') {
+                        initE2EE(a.id, _socket);
+                    }
+                }
+            });
+        }
+    }, [isUnlocked]);
+
     // ── Lifecycle: create / destroy the shared socket ─────────────────────
     useEffect(function ()
     {
@@ -301,6 +318,7 @@ export default function useAgentSocket()
                         const udpKey = await window.crypto.subtle.importKey('raw', udpKeyBuffer, 'AES-GCM', false, ['decrypt']);
 
                         const decryptedBuffer = await decryptAESGCM(udpKey, dataToDecrypt, iv, new Uint8Array(aad));
+                        
                         // Bắn event trực tiếp thay vì lưu vào React State (Gotcha 1)
                         import('../services/FrameEventBus').then(({ default: frameEventBus }) => {
                             frameEventBus.emit(meta.agent_id, module_key, decryptedBuffer, meta);
@@ -308,13 +326,10 @@ export default function useAgentSocket()
                         // Vẫn lưu meta vào store (không lưu frame) để UI hiển thị thông số độ phân giải nếu cần
                         setModuleData(meta.agent_id, module_key, { meta });
                     } catch (e) {
-                        console.error(`[E2EE] Failed to decrypt UDP stream from ${meta.agent_id}`, e);
+                        console.error(`[E2EE] Bỏ qua UDP packet từ ${meta.agent_id} do lỗi giải mã AES-GCM (sai Key hoặc AAD):`, e);
                     }
                 } else {
-                    import('../services/FrameEventBus').then(({ default: frameEventBus }) => {
-                        frameEventBus.emit(meta.agent_id, module_key, buffer, meta);
-                    });
-                    setModuleData(meta.agent_id, module_key, { meta });
+                    console.warn(`[E2EE] Drop UDP packet from ${meta.agent_id} (Session not ready)`);
                 }
             })
 
@@ -542,8 +557,12 @@ async function sendToSocketE2EE(agent_id, msgObj) {
             console.error('[E2EE] Failed to encrypt message', e);
         }
     } else {
-        console.warn(`[E2EE] Sending UNENCRYPTED message to ${agent_id}.`);
-        _socket.send(jsonStr);
+        const allowedPlaintext = ['e2ee_init', 'permissions_reset', 'policy_update'];
+        if (allowedPlaintext.includes(msgObj.type)) {
+            _socket.send(jsonStr);
+        } else {
+            console.warn(`[E2EE Blocker] Blocked unencrypted message (${msgObj.type}) to ${agent_id}. E2EE state is not ready.`);
+        }
     }
 }
 
@@ -970,6 +989,16 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
             )
             break
 
+        case MSG_TYPE.AGENT_STATUS:
+            setAgentStatus(msg.agent_id, msg.online)
+            if (!msg.online)
+            {
+                _pendingE2EEKeys.delete(msg.agent_id)
+                useE2EEStore.getState().setSessionState(msg.agent_id, 'uninitialized', null)
+                usePermissionStore.getState().revokeAll(msg.agent_id)
+            }
+            break
+
         case MSG_TYPE.PERMISSIONS_RESET:
             usePermissionStore.getState().revokeAll(msg.agent_id)
             useModuleStore.getState().clearLiveFlagsForAgent(msg.agent_id)
@@ -979,6 +1008,11 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
             break
 
         // ── E2EE ─────────────────────────────────────────────────────────
+        case MSG_TYPE.E2EE_ERROR:
+            useE2EEStore.getState().setSessionState(msg.agent_id, 'uninitialized', null)
+            useUiStore.getState().addToast(`E2EE Handshake bị từ chối bởi ${msg.agent_id}: ${msg.message || 'Sai mã PIN'}`, 'error')
+            break
+
         case MSG_TYPE.E2EE_READY:
         {
             const e2eeStore = useE2EEStore.getState()

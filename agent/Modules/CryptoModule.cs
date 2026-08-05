@@ -240,8 +240,16 @@ namespace agent.Modules
         /// </summary>
         public void Reset()
         {
-            _sessionKey = null;
-            _udpSessionKey = null;
+            if (_sessionKey != null)
+            {
+                Array.Clear(_sessionKey, 0, _sessionKey.Length);
+                _sessionKey = null;
+            }
+            if (_udpSessionKey != null)
+            {
+                Array.Clear(_udpSessionKey, 0, _udpSessionKey.Length);
+                _udpSessionKey = null;
+            }
             _udpFramesSent = 0;
             _ecdh?.Dispose();
             _ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
