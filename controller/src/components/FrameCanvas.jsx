@@ -19,6 +19,7 @@
 // The "cancelled" flag prevents a stale decode callback from drawing
 // onto a canvas that already shows a newer frame or has been unmounted.
 
+import { useEffect, useRef } from 'react'
 import frameEventBus from '../services/FrameEventBus'
 
 // Props:
@@ -40,15 +41,40 @@ function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'scre
         let animation_frame_id = null
         let current_bitmap_ref = null
         let last_rendered_seq = -1
+        let waiting_for_keyframe = true // Khởi tạo: luồng mới BẮT BUỘC phải chờ Keyframe đầu tiên
 
         const processFrame = (buffer, meta) => {
             if (!buffer || !canvas_ref.current) return
 
-            if (meta && meta.seq <= last_rendered_seq) return;
+            if (meta) {
+                if (last_rendered_seq !== -1) {
+                    if (meta.seq < last_rendered_seq && (last_rendered_seq - meta.seq) > 100) {
+                        last_rendered_seq = -1; // Reset on stream restart
+                        waiting_for_keyframe = true;
+                    } else if (meta.seq > last_rendered_seq + 1) {
+                        waiting_for_keyframe = true; // We missed a UDP packet!
+                    }
+                } else if (meta.is_keyframe === false) {
+                    // Chưa từng có frame nào (hoặc vừa restart) mà lại nhận được Delta frame
+                    waiting_for_keyframe = true;
+                }
+                
+                if (meta.seq <= last_rendered_seq) return;
+                
+                if (waiting_for_keyframe && meta.is_keyframe === false) {
+                    last_rendered_seq = meta.seq; // keep tracking
+                    return; // Drop delta frames until keyframe arrives
+                }
+                
+                if (meta.is_keyframe === true) {
+                    waiting_for_keyframe = false;
+                }
+            }
 
             if (is_drawing) {
                 if (frame_queue.length >= 4) {
                     frame_queue.shift();
+                    waiting_for_keyframe = true; // We dropped a frame locally!
                 }
                 frame_queue.push({ buffer, meta })
                 return
@@ -111,7 +137,27 @@ function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'scre
         const processNext = () => {
             while (frame_queue.length > 0) {
                 const next = frame_queue.shift()
-                if (next.meta && next.meta.seq <= last_rendered_seq) continue;
+                if (next.meta) {
+                    if (last_rendered_seq !== -1) {
+                        if (next.meta.seq < last_rendered_seq && (last_rendered_seq - next.meta.seq) > 100) {
+                            last_rendered_seq = -1;
+                            waiting_for_keyframe = true;
+                        } else if (next.meta.seq > last_rendered_seq + 1) {
+                            waiting_for_keyframe = true;
+                        }
+                    } else if (next.meta.is_keyframe === false) {
+                        waiting_for_keyframe = true;
+                    }
+                    if (next.meta.seq <= last_rendered_seq) continue;
+                    
+                    if (waiting_for_keyframe && next.meta.is_keyframe === false) {
+                        last_rendered_seq = next.meta.seq;
+                        continue;
+                    }
+                    if (next.meta.is_keyframe === true) {
+                        waiting_for_keyframe = false;
+                    }
+                }
                 processFrame(next.buffer, next.meta)
                 break;
             }

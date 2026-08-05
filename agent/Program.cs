@@ -20,6 +20,7 @@ namespace AgentSystem
         [STAThread]
         static void Main(string[] args)
         {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             // === THÊM ĐOẠN NÀY ĐỂ KHỞI TẠO LOG ===
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug() // Ghi lại từ mức Debug trở lên

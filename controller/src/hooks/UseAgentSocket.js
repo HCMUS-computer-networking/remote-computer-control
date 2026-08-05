@@ -101,6 +101,7 @@ const _pendingE2EEKeys = new Map()   // agent_id -> privateKey (temporary during
 async function initE2EE(agent_id, socket) {
     const e2eeStore = useE2EEStore.getState()
     if (!e2eeStore.isUnlocked) return
+    if (e2eeStore.sessions[agent_id]?.state === 'handshaking') return
     let pin = await e2eeStore.getAgentPin(agent_id)
     if (!pin) {
         console.info(`[E2EE] No custom PIN saved for agent ${agent_id}. Using default-pin-12345.`)

@@ -432,8 +432,8 @@ namespace AgentSystem.Core
 
         private bool ValidatePacket(CommandPacket packet)
         {
-            // command_id không được rỗng (trừ một số lệnh đặc biệt nếu có)
-            if (string.IsNullOrWhiteSpace(packet.CommandId)) 
+            // Bỏ qua kiểm tra CommandId đối với các gói tin đặc biệt như e2ee_init
+            if (packet.Type != "e2ee_init" && string.IsNullOrWhiteSpace(packet.CommandId)) 
                 return false;
             
             // target_agents phải chứa AgentId này (hoặc rỗng/null = broadcast)

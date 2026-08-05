@@ -77,7 +77,7 @@ namespace AgentSystem.Modules
                 return;
             }
 
-            capture = new VideoCapture(0); 
+            capture = new VideoCapture(0, VideoCaptureAPIs.DSHOW);
             if (!capture.IsOpened())
             {
                 context.SendResponse(new 

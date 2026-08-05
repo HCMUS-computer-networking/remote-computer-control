@@ -96,8 +96,8 @@ namespace agent.Modules
             {
                 controllerKey.ImportSubjectPublicKeyInfo(controllerSpki, out _);
 
-                // Derive the raw shared secret
-                byte[] sharedSecret = _ecdh.DeriveKeyMaterial(controllerKey.PublicKey);
+                // Derive the raw shared secret (unhashed) to match Web Crypto API's deriveBits
+                byte[] sharedSecret = _ecdh.DeriveRawSecretAgreement(controllerKey.PublicKey);
 
                 // Use HKDF to derive the final session key, matching Web Crypto API
                 _sessionKey = HKDF.DeriveKey(
