@@ -75,7 +75,8 @@ namespace AgentSystem.Modules
                     command_id = commandId,
                     action = safeAction,
                     confirmed = success,
-                    message = message
+                    message = message,
+                    agent_id = context.AgentId
                 });
             }
             catch (Exception ex)

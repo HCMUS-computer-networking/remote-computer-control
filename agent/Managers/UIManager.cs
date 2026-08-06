@@ -104,7 +104,7 @@ namespace AgentSystem.Managers
             {
                 using (var form = new CountdownForm(seconds, title, formatMessage))
                 {
-                    form.ShowDialog();
+                    Application.Run(form);
                 }
             });
 

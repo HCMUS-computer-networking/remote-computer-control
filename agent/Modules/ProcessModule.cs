@@ -157,10 +157,12 @@ namespace AgentSystem.Modules
                     return;
                 }
 
-                // 2. Chặn can thiệp tiến trình của hệ thống (Case-insensitive)
+                // 2. Chặn can thiệp tiến trình của hệ thống (Case-insensitive).
+                // Fail-closed: owner "Unknown" nghĩa là không mở được token — hầu như luôn là
+                // tiến trình đặc quyền/được bảo vệ, nên từ chối thay vì cho qua.
                 string owner = GetProcessOwner(process);
                 string ownerLower = owner.ToLower();
-                if (ownerLower.Contains("nt authority\\system") || ownerLower.Contains("local service") || ownerLower.Contains("network service"))
+                if (ownerLower == "unknown" || ownerLower.Contains("nt authority\\system") || ownerLower.Contains("local service") || ownerLower.Contains("network service"))
                 {
                     context.SendResponse(new {
                         type = "proc_kill_result",
