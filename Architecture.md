@@ -166,7 +166,7 @@ agent/
 ├── config.json                Runtime, GITIGNORE. agent_id, gateway_url, auth_key, e2ee_shared_secret (PIN), app_whitelist, sandbox_root_path, log_retention_days, consent_timeout_ms, tray_password.
 │
 ├── Core/
-│   ├── AgentClient.cs             Chủ ClientWebSocket + SemaphoreSlim send lock. Giữ CryptoModule; xử lý e2ee_init (verify HMAC PIN → derive khoá → trả e2ee_ready); chặn mọi lệnh khi E2EE chưa sẵn sàng (trừ policy_update/permissions_reset/e2ee_init); bọc response gửi đi thành e2ee_payload. Route command theo _moduleRegistry.
+│   ├── AgentClient.cs             Chủ ClientWebSocket + SemaphoreSlim send lock. Giữ CryptoModule; xử lý e2ee_init (verify HMAC PIN → derive khoá → trả e2ee_ready); chặn mọi lệnh khi E2EE chưa sẵn sàng (trừ policy_update/permissions_reset/e2ee_init); bọc response gửi đi thành e2ee_payload. Route command theo _moduleRegistry. Quản lý tập quyền `_grantedFeatures` (gate lệnh theo feature), reset khi mất kết nối; phát `OnPermissionsChangedEvent` mỗi lần tập quyền đổi. Expose API cho MainForm: `AllFeatures` (8 feature), `IsFeatureGranted`/`GetGrantedFeatures`, `DisconnectManually` (ngắt WS chủ động + dọn quyền/module), `RevokeFeatureLocally(feature)` (agent chủ động thoát điều khiển 1 module: gỡ quyền, dừng module nền nếu có, báo Controller bằng `permission_result{granted:false}` + `*_stopped`).
 │   ├── IAgentContext.cs           Interface expose AgentId + SendResponse + Crypto cho module.
 │   ├── MessageDispatcher.cs       Deserialise JSON → CommandPacket; giải mã e2ee_payload (kiểm sequence window chống replay) → RouteCommand.
 │   └── WebSocketClient.cs         Low-level wrap ClientWebSocket, reconnect + heartbeat.
@@ -192,9 +192,9 @@ agent/
 │   └── InputModule.cs             input_mouse_move (fire-and-forget) / input_mouse_click / input_key / input_type qua SendInput. Overlay blue "K".
 │
 ├── Forms/
-│   ├── TrayApp.cs                 NotifyIcon + context menu (Reconfigure / Reset / Exit — có tray_password).
-│   ├── MainForm.cs               Cửa sổ trạng thái/log agent.
-│   ├── GatewayConfigForm.cs       Dialog nhập gateway_url + auth_key khi config trống / discovery thất bại.
+│   ├── TrayApp.cs                 NotifyIcon + context menu: mở Dashboard, bật/tắt "Khởi động cùng Windows" (Registry Run key), mở thư mục Log, Thoát. Double-click icon = mở Dashboard. Autostart/Log/Exit yêu cầu tray_password nếu đã đặt.
+│   ├── MainForm.cs               Dashboard: Agent ID, Gateway URL, pill trạng thái kết nối (Connected/Disconnected); nút chủ động Ngắt kết nối / Kết nối lại; nút Đổi Gateway; bảng 8 module (application/process/screen/keylog/file/webcam/power/input) hiển thị "Đang bị điều khiển"/"Rảnh" + nút Thoát để agent chủ động thu hồi quyền và dừng module đó (gọi AgentClient.RevokeFeatureLocally). Cập nhật realtime qua OnConnected/OnDisconnected/OnPermissionsChanged. Bấm X = ẩn xuống tray.
+│   ├── GatewayConfigForm.cs       Dialog nhập gateway_url + nút "Tự động quét" (lắng nghe UDP :8888) khi config trống / discovery thất bại.
 │   └── PasswordPromptForm.cs      Prompt tray_password trước action nhạy cảm ở tray.
 │
 ├── Models/
@@ -371,7 +371,7 @@ AgentSocket.onBinary(bytes)
 ### 6.1. Common (MỌI subsystem — agent + gateway + controller + docs)
 
 - **Braces Allman**: `{` mở trên **dòng riêng**, thẳng cột với statement mở khối.
-- **Comment tiếng Anh**, từ đơn giản, giải thích **WHY** (invariant, workaround, ràng buộc), không WHAT. Trailing `//` liền kề **căn thẳng 1 cột**.
+- **Comment** giải thích **WHY** (invariant, workaround, ràng buộc), không WHAT; từ đơn giản; trailing `//` liền kề **căn thẳng 1 cột**. Ngôn ngữ comment theo subsystem (xem 6.2–6.4): Controller tiếng Anh; Gateway và Agent chủ yếu tiếng Việt.
 - **Constant thực sự**: `UPPER_SNAKE_CASE` mọi ngôn ngữ.
 - **Import / using** theo cụm: stdlib → third-party → local, cách nhau 1 dòng trống.
 - **KHÔNG hardcode** màu / font-size / spacing / port / path / key / timeout — luôn qua CSS var / config / env / const.
@@ -403,6 +403,8 @@ AgentSocket.onBinary(bytes)
 - **P/Invoke** khu trú ở `InputModule`, `KeyloggerModule`, `Utils/*`; signature khớp Win32, comment WHY.
 - **DI**: Managers Singleton, Modules Transient (`Program.cs`).
 - **Logging** Serilog rolling; không log secret / khoá.
+- **Comment tiếng Việt**; string UI trên Form (Dashboard, consent popup, dialog) tiếng Việt cho người dùng máy Agent.
+- **WinForms**: cập nhật control từ luồng nền phải marshal qua `InvokeRequired`/`BeginInvoke`; huỷ đăng ký event khi Form dispose.
 
 ### 6.5. E2EE / Crypto (cross-cutting)
 

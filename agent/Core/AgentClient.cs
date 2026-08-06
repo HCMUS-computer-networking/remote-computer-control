@@ -40,7 +40,18 @@ namespace AgentSystem.Core
         public bool IsConnected { get; private set; }
         public event Action OnConnectedEvent;
         public event Action OnDisconnectedEvent;
-        
+
+        // Bắn ra mỗi khi tập quyền (_grantedFeatures) thay đổi: cấp, thu hồi,
+        // reset khi mất kết nối, hoặc Agent user chủ động thoát điều khiển.
+        // MainForm lắng nghe sự kiện này để cập nhật bảng trạng thái 8 module.
+        public event Action OnPermissionsChangedEvent;
+
+        // 8 module/feature có thể bị điều khiển — dùng để UI dựng bảng trạng thái.
+        public static readonly string[] AllFeatures =
+        {
+            "application", "process", "screen", "keylog", "file", "webcam", "power", "input"
+        };
+
         public string GatewayUrl => gatewayUrl;
 
         public AgentClient(string agentId, string gatewayUrl, SecurityManager security, UIManager ui)
@@ -88,7 +99,8 @@ namespace AgentSystem.Core
             {
                 _grantedFeatures.Clear();
             }
-            
+            OnPermissionsChangedEvent?.Invoke();
+
             foreach (var module in _moduleRegistry.Values)
             {
                 try
@@ -120,6 +132,99 @@ namespace AgentSystem.Core
 
         public void Start() { /* Nội dung giữ nguyên */ wsClient.Connect(); }
         public void Stop() { /* Nội dung giữ nguyên */ wsClient.Disconnect(); }
+
+        // ===== API cho MainForm (UI của Agent) =====
+
+        // Feature này có đang bị điều khiển (đã được cấp quyền) hay không.
+        public bool IsFeatureGranted(string feature)
+        {
+            if (string.IsNullOrEmpty(feature)) return false;
+            lock (_grantedFeatures)
+            {
+                return _grantedFeatures.Contains(feature);
+            }
+        }
+
+        // Ảnh chụp danh sách các feature đang bị điều khiển.
+        public List<string> GetGrantedFeatures()
+        {
+            lock (_grantedFeatures)
+            {
+                return _grantedFeatures.ToList();
+            }
+        }
+
+        /// <summary>
+        /// Agent user CHỦ ĐỘNG ngắt kết nối (nút "Ngắt kết nối" trên Dashboard).
+        /// Vì WebSocketClient.Disconnect() chỉ hủy socket mà không bắn
+        /// OnDisconnectedEvent, ở đây gọi tay HandleAgentDisconnected() để
+        /// dọn quyền + module và cập nhật UI đồng nhất với đường mất kết nối.
+        /// </summary>
+        public void DisconnectManually()
+        {
+            wsClient.Disconnect();
+            HandleAgentDisconnected();
+        }
+
+        /// <summary>
+        /// Agent user CHỦ ĐỘNG thoát chế độ bị điều khiển cho MỘT module.
+        /// Gỡ quyền trong RAM (lệnh sau sẽ bị chặn), dừng module đang chạy nền
+        /// nếu có (screen/keylog/webcam/input) và báo Controller để nó cập nhật
+        /// badge — tất cả dùng lại đúng các message đã có trong giao thức.
+        /// </summary>
+        public void RevokeFeatureLocally(string feature)
+        {
+            if (string.IsNullOrEmpty(feature)) return;
+
+            bool wasGranted;
+            lock (_grantedFeatures)
+            {
+                wasGranted = _grantedFeatures.Remove(feature);
+            }
+            AuditLogger.LogCommand("local_revoke", "permission_revoke", feature, false);
+
+            // Dừng module có trạng thái chạy nền + phát tín hiệu *_stopped về Controller.
+            if (feature == "input")
+            {
+                ResolveInputModule()?.OnInputRevoked();
+            }
+            else
+            {
+                string commandToStop = feature switch
+                {
+                    "screen" => "screen_stream_stop",
+                    "keylog" => "keylog_stop",
+                    "webcam" => "webcam_stop",
+                    _        => null
+                };
+
+                if (commandToStop != null && _moduleRegistry.TryGetValue(commandToStop, out BaseModule mod))
+                {
+                    // Các lệnh stop này không đọc params — truyền một JsonElement rỗng an toàn.
+                    JsonElement emptyParams;
+                    using (var doc = JsonDocument.Parse("{}"))
+                    {
+                        emptyParams = doc.RootElement.Clone();
+                    }
+                    _ = Task.Run(async () => await mod.ExecuteAsync(commandToStop, emptyParams, "local_revoke"));
+                }
+            }
+
+            // Báo Controller rằng quyền đã bị thu hồi để nó hạ badge quyền của module.
+            if (IsConnected)
+            {
+                SendResponse(new
+                {
+                    type     = "permission_result",
+                    agent_id = AgentId,
+                    feature  = feature,
+                    granted  = false
+                });
+            }
+
+            OnPermissionsChangedEvent?.Invoke();
+            Log.Information("[AgentClient] Agent user chủ động thoát điều khiển module '{Feature}' (wasGranted={Was}).", feature, wasGranted);
+        }
         public void Reconnect() 
         { 
             wsClient.Disconnect(); 
@@ -302,6 +407,7 @@ namespace AgentSystem.Core
                         {
                             _grantedFeatures.Add(packet.Feature);
                         }
+                        OnPermissionsChangedEvent?.Invoke();
                     }
                     AuditLogger.LogCommand(packet.CommandId, "permission_request", packet.Feature, granted);
                     SendResponse(new
@@ -350,6 +456,7 @@ namespace AgentSystem.Core
                 {
                     _grantedFeatures.Remove(packet.Feature);
                 }
+                OnPermissionsChangedEvent?.Invoke();
                 AuditLogger.LogCommand(packet.CommandId, "permission_revoke", packet.Feature, false);
 
                 if (packet.Feature == "input")

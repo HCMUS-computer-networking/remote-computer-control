@@ -35,6 +35,7 @@ Three-tier **star topology** — Agents never talk to the Controller directly; a
 - **Power** — lock / restart / shutdown / sleep with a Controller-side countdown.
 - **Webcam** — MJPEG stream with an on-screen red-dot indicator.
 - **Consent flow** — every sensitive module confirmed on the Agent (30 s timeout, single-popup guard).
+- **Agent dashboard** — the Agent user sees the live connection state and which of the 8 modules are currently being controlled, and can disconnect or exit control of any module on demand.
 - **Zero-config LAN discovery** — Gateway broadcasts on UDP `:8888`; the Agent auto-discovers it.
 - **WSS/TLS by default** — set `-NoTls` (or `TLS_ENABLED=false`) for plain HTTP/WS in dev.
 
