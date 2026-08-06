@@ -25,8 +25,10 @@ import useConnectionStore from '../store/ConnectionStore'
 // scheme: ws:// -> http://  and  wss:// -> https://.
 function gatewayHttpUrl()
 {
-    const ws_url = import.meta.env.VITE_GATEWAY_URL ?? 'wss://localhost:8080'
-    return ws_url.replace(/^ws(s?):\/\//i, 'http$1://')
+    if (import.meta.env.VITE_GATEWAY_URL) {
+        return import.meta.env.VITE_GATEWAY_URL.replace(/^ws(s?):\/\//i, 'http$1://')
+    }
+    return window.location.origin
 }
 
 // One shared promise for the current /api/refresh call — new callers reuse it
