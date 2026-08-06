@@ -33,6 +33,7 @@ const VALID_MODULES = [
   'fs_list',
   'fs_get',
   'fs_put',
+  'fs_delete',
   'webcam_start',
   'webcam_stop',
   'sysinfo',
@@ -44,7 +45,10 @@ const VALID_MODULES = [
   'policy_update',
   'permission_request',
   'permission_revoke',
+  'permissions_reset',
   'stop_module',
+  'e2ee_init',
+  'e2ee_payload',
   'input_mouse_move',
   'input_mouse_click',
   'input_key',
@@ -59,6 +63,8 @@ const envelopeSchema = {
   anyOf: [
     { required: ['module'] },
     { required: ['action'] },
+    { required: ['feature'] },
+    { required: ['params'] },
   ],
   properties: {
     type: { type: 'string' },
@@ -107,7 +113,11 @@ function routeToAgents(rawMessage, parsed, issuer = 'admin', controllerWs = null
   }
 
   // ── Validate envelope against minimal schema + module whitelist ─────
-  const valid = validateEnvelope(msgObj);
+  let valid = true;
+  if (msgObj.type !== 'e2ee_init' && msgObj.type !== 'e2ee_payload') {
+    valid = validateEnvelope(msgObj);
+  }
+  
   if (!valid) {
     logger.warn('[router] Message failed envelope schema validation', {
       errors: validateEnvelope.errors,

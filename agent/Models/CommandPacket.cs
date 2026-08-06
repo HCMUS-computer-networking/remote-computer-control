@@ -11,6 +11,9 @@ namespace AgentSystem.Models
         [JsonPropertyName("command_id")]
         public string CommandId { get; set; }
 
+        [JsonPropertyName("issuer")]
+        public string Issuer { get; set; }
+
         [JsonPropertyName("module")]
         public string Module { get; set; }
 

@@ -96,8 +96,8 @@ namespace agent.Modules
             {
                 controllerKey.ImportSubjectPublicKeyInfo(controllerSpki, out _);
 
-                // Derive the raw shared secret
-                byte[] sharedSecret = _ecdh.DeriveKeyMaterial(controllerKey.PublicKey);
+                // Derive the raw shared secret (unhashed) to match Web Crypto API's deriveBits
+                byte[] sharedSecret = _ecdh.DeriveRawSecretAgreement(controllerKey.PublicKey);
 
                 // Use HKDF to derive the final session key, matching Web Crypto API
                 _sessionKey = HKDF.DeriveKey(
@@ -115,6 +115,13 @@ namespace agent.Modules
                     salt: Array.Empty<byte>(),
                     info: Encoding.UTF8.GetBytes("RemoteControl_UDP_v1")
                 );
+
+                // Reset sequence numbers for the new session (important when Controller refreshes without Agent reconnecting)
+                lock (_seqLock)
+                {
+                    _sendSeq = 0;
+                    _recvSeq = unchecked((uint)-1);
+                }
             }
         }
 
@@ -173,14 +180,11 @@ namespace agent.Modules
             if (!IsE2EEReady)
                 throw new InvalidOperationException("E2EE is not ready. Session key is missing.");
 
-            uint currentEpoch = UdpEpoch;
+            // Stable per-session UDP key (no auto-ratchet). Ratchet-by-frame-count desynced
+            // whenever screen+webcam streamed together (shared counter, separate frameIds) or a
+            // stream restarted (frameId reset, counter not), causing permanent GCM decrypt failure.
+            // Confidentiality still holds: AES-256-GCM with a fresh random IV + AAD per frame.
             _udpFramesSent++;
-            uint nextEpoch = UdpEpoch;
-
-            if (nextEpoch > currentEpoch)
-            {
-                RatchetUdpKey();
-            }
 
             byte[] iv = GenerateIV();
             byte[] ciphertext = new byte[plaintext.Length];
@@ -233,11 +237,26 @@ namespace agent.Modules
         /// </summary>
         public void Reset()
         {
-            _sessionKey = null;
-            _udpSessionKey = null;
+            if (_sessionKey != null)
+            {
+                Array.Clear(_sessionKey, 0, _sessionKey.Length);
+                _sessionKey = null;
+            }
+            if (_udpSessionKey != null)
+            {
+                Array.Clear(_udpSessionKey, 0, _udpSessionKey.Length);
+                _udpSessionKey = null;
+            }
             _udpFramesSent = 0;
             _ecdh?.Dispose();
             _ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+            
+            // Reset lại Sequence Number để khớp với Controller sau khi Reconnect
+            lock (_seqLock)
+            {
+                _sendSeq = 0;
+                _recvSeq = unchecked((uint)-1);
+            }
         }
 
         public void Dispose()

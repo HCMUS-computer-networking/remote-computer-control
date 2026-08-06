@@ -37,6 +37,7 @@ export const MSG_TYPE =
     FS_GET_RESULT     : "fs_get_result",      // reply to fs_get (may be chunked)
     FS_PUT_RESULT     : "fs_put_result",      // agent acknowledges one upload chunk
     FS_PUT_COMPLETE   : "fs_put_complete",    // agent confirms the full file is saved
+    FS_ACTION_RESULT  : "fs_action_result",   // reply to fs_delete etc
     FS_ERROR          : "fs_error",           // file operation error (e.g. path outside sandbox)
     POWER_RESULT      : "power_result",       // agent confirms or denies the power action
     POLICY_UPDATE_RESULT : "policy_update_result", // agent confirms it applied the pushed policy
@@ -52,6 +53,7 @@ export const MSG_TYPE =
     // E2EE Handshake & Payload
     E2EE_INIT         : "e2ee_init",          // Controller sends Public Key to Agent
     E2EE_READY        : "e2ee_ready",         // Agent replies with Public Key
+    E2EE_ERROR        : "e2ee_error",         // Agent rejects Handshake
     E2EE_PAYLOAD      : "e2ee_payload",       // Wrapper cho các lệnh và response được mã hóa
 }
 
@@ -95,9 +97,10 @@ export const MODULE =
     KEYLOG_STOP  : "keylog_stop",    // stop keystroke capture
 
     // File — sandbox only (docs/protocol/file.json)
-    FS_LIST : "fs_list",   // list folder contents
-    FS_GET  : "fs_get",    // download a file (base64 chunks)
-    FS_PUT  : "fs_put",    // upload a file (base64 chunks)
+    FS_LIST   : "fs_list",     // list directory
+    FS_GET    : "fs_get",      // download file
+    FS_PUT    : "fs_put",      // upload file
+    FS_DELETE : "fs_delete",   // delete file/folder
 
     // Webcam (docs/protocol/webcam.json)
     WEBCAM_START : "webcam_start",   // start webcam stream (requires Agent consent)
@@ -455,6 +458,15 @@ const NORMALIZERS =
             success     : pickField(m, ['success', 'ok'], true),
             sha256      : pickField(m, ['sha256', 'checksum'], null),
             message     : pickField(m, ['message', 'msg', 'detail'], ''),
+        }, m),
+
+    [MSG_TYPE.FS_ACTION_RESULT]: (m) =>
+        withAgentId({
+            type    : MSG_TYPE.FS_ACTION_RESULT,
+            path    : pickField(m, ['path', 'filepath']),
+            success : pickField(m, ['success', 'ok'], false),
+            action  : pickField(m, ['action', 'op']),
+            message : pickField(m, ['message', 'msg'], ''),
         }, m),
 
     [MSG_TYPE.POWER_RESULT]: (m) =>

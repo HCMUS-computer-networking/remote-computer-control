@@ -105,6 +105,8 @@ function handleController(ws, req) {
       'permission_request',
       'permission_revoke',
       'stop_module',
+      'e2ee_init',
+      'e2ee_payload',
     ]);
 
     if (!RELAY_TYPES.has(msg.type)) {

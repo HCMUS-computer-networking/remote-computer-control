@@ -30,7 +30,7 @@ import AgentSocket                       from '../services'   // mock or real, c
 import { buildListAgents, buildPolicyUpdate, buildPermissionRequest, buildPermissionRevoke, buildStopModule, normalizeIncoming, MSG_TYPE, MODULE, FEATURE } from '../services/Protocol'
 import { refreshAccessToken, logout }    from '../services/AuthService'
 import useE2EEStore                      from '../store/E2EEStore'
-import { generateECDHKeyPair, exportPublicKeyToSPKI, signHMAC, importPublicKeyFromSPKI, verifyHMAC, deriveSessionKey, stepRatchetKey, encryptAESGCM, decryptAESGCM, generateIV, arrayBufferToBase64, base64ToArrayBuffer } from '../utils/crypto'
+import { generateECDHKeyPair, exportPublicKeyToSPKI, signHMAC, importPublicKeyFromSPKI, verifyHMAC, deriveSessionKey, encryptAESGCM, decryptAESGCM, generateIV, arrayBufferToBase64, base64ToArrayBuffer } from '../utils/crypto'
 
 // Modules that only make sense against ONE agent at a time (the operator is
 // watching a single feed). sendCommand routes these to focused_agent_id even
@@ -101,10 +101,11 @@ const _pendingE2EEKeys = new Map()   // agent_id -> privateKey (temporary during
 async function initE2EE(agent_id, socket) {
     const e2eeStore = useE2EEStore.getState()
     if (!e2eeStore.isUnlocked) return
-    const pin = await e2eeStore.getAgentPin(agent_id)
+    if (e2eeStore.sessions[agent_id]?.state === 'handshaking') return
+    let pin = await e2eeStore.getAgentPin(agent_id)
     if (!pin) {
-        console.warn(`[E2EE] No PIN saved for agent ${agent_id}. Cannot init handshake.`)
-        return
+        console.info(`[E2EE] No custom PIN saved for agent ${agent_id}. Using default-pin-12345.`)
+        pin = "default-pin-12345"
     }
 
     try {
@@ -179,6 +180,23 @@ export default function useAgentSocket()
     const setPolicyResult   = usePolicyStore.getState().setPolicyResult
     const setPermissionResult = usePermissionStore.getState().setPermissionResult
     const addToast          = useUiStore.getState().addToast
+
+    const isUnlocked        = useE2EEStore((s) => s.isUnlocked)
+
+    // Automatically trigger handshake when user unlocks the Master Password
+    useEffect(() => {
+        if (isUnlocked && _socket) {
+            const currentAgents = useAgentStore.getState().agents;
+            currentAgents.forEach(a => {
+                if (a.online) {
+                    const session = useE2EEStore.getState().sessions[a.id];
+                    if (!session || session.state === 'uninitialized') {
+                        initE2EE(a.id, _socket);
+                    }
+                }
+            });
+        }
+    }, [isUnlocked]);
 
     // ── Lifecycle: create / destroy the shared socket ─────────────────────
     useEffect(function ()
@@ -283,24 +301,14 @@ export default function useAgentSocket()
                         view.setUint16(0, meta.seq, true);
                         view.setBigUint64(2, BigInt(meta.timestamp_ms), true);
                         
-                        // SYMMETRIC RATCHET LOGIC
-                        let absoluteSeq = useE2EEStore.getState().updateUdpSeq(meta.agent_id, meta.seq);
-                        let pktEpoch = Math.floor(absoluteSeq / 100);
-                        let currentUdpEpoch = session.udpEpoch;
-                        let udpKeyBuffer = session.udpKeyBuffer;
-                        
-                        if (pktEpoch > currentUdpEpoch) {
-                            while (currentUdpEpoch < pktEpoch) {
-                                udpKeyBuffer = await stepRatchetKey(udpKeyBuffer);
-                                currentUdpEpoch++;
-                            }
-                            useE2EEStore.getState().updateUdpRatchet(meta.agent_id, udpKeyBuffer, currentUdpEpoch);
-                        }
-                        
-                        // Import udpKeyBuffer to CryptoKey
+                        // Stable per-session UDP key (no ratchet). The agent stopped ratcheting
+                        // because the frame-count epoch desynced across concurrent screen+webcam
+                        // streams and stream restarts; both sides use the handshake UDP key.
+                        const udpKeyBuffer = session.udpKeyBuffer;
                         const udpKey = await window.crypto.subtle.importKey('raw', udpKeyBuffer, 'AES-GCM', false, ['decrypt']);
 
                         const decryptedBuffer = await decryptAESGCM(udpKey, dataToDecrypt, iv, new Uint8Array(aad));
+                        
                         // Bắn event trực tiếp thay vì lưu vào React State (Gotcha 1)
                         import('../services/FrameEventBus').then(({ default: frameEventBus }) => {
                             frameEventBus.emit(meta.agent_id, module_key, decryptedBuffer, meta);
@@ -308,13 +316,10 @@ export default function useAgentSocket()
                         // Vẫn lưu meta vào store (không lưu frame) để UI hiển thị thông số độ phân giải nếu cần
                         setModuleData(meta.agent_id, module_key, { meta });
                     } catch (e) {
-                        console.error(`[E2EE] Failed to decrypt UDP stream from ${meta.agent_id}`, e);
+                        console.error(`[E2EE] Bỏ qua UDP packet từ ${meta.agent_id} do lỗi giải mã AES-GCM (sai Key hoặc AAD):`, e);
                     }
                 } else {
-                    import('../services/FrameEventBus').then(({ default: frameEventBus }) => {
-                        frameEventBus.emit(meta.agent_id, module_key, buffer, meta);
-                    });
-                    setModuleData(meta.agent_id, module_key, { meta });
+                    console.warn(`[E2EE] Drop UDP packet from ${meta.agent_id} (Session not ready)`);
                 }
             })
 
@@ -407,7 +412,7 @@ export default function useAgentSocket()
             return
         }
 
-        fanoutSend(msg, targets)
+        fanoutSend(msg, targets, {})
     }
 
     // Loop-emit a module command to [focused_agent_id] (one agent).
@@ -533,6 +538,7 @@ async function sendToSocketE2EE(agent_id, msgObj) {
             
             _socket.send(JSON.stringify({
                 type: MSG_TYPE.E2EE_PAYLOAD,
+                target_agents: [agent_id],
                 agent_id: agent_id,
                 seq: seq,
                 data: arrayBufferToBase64(combined.buffer)
@@ -541,13 +547,24 @@ async function sendToSocketE2EE(agent_id, msgObj) {
             console.error('[E2EE] Failed to encrypt message', e);
         }
     } else {
-        console.warn(`[E2EE] Sending UNENCRYPTED message to ${agent_id}.`);
-        _socket.send(jsonStr);
+        const allowedPlaintext = ['e2ee_init', 'permissions_reset', 'policy_update'];
+        if (allowedPlaintext.includes(msgObj.type)) {
+            _socket.send(jsonStr);
+        } else {
+            console.warn(`[E2EE Blocker] Blocked unencrypted message (${msgObj.type}) to ${agent_id}. E2EE state is not ready.`);
+        }
     }
 }
 
-// Parse the JSON string, set target_agents to the given array, re-stringify, send.
-// Used by the permission helpers to emit ONE permission message per agent.
+// Parse the JSON string and loop-emit one message per agent in target_ids.
+// Each iteration looks up the E2EE session key for that specific agent and
+// wraps the payload accordingly. This is intentionally called with a
+// single-element array [id] by requestPermission / revokePermission /
+// stopModule to maintain per-agent E2EE key isolation.
+//
+// WARNING: Passing a multi-element array works correctly (each element is
+// processed independently), but all call sites should prefer single-element
+// arrays for explicit E2EE key isolation.
 function sendWithTargets(json_string, target_ids)
 {
     if (!_socket)
@@ -556,11 +573,22 @@ function sendWithTargets(json_string, target_ids)
         return
     }
 
+    if (import.meta.env.DEV && target_ids.length > 1)
+    {
+        console.warn(
+            '[useAgentSocket] sendWithTargets called with %d targets — prefer ' +
+            'single-element arrays for explicit E2EE key isolation',
+            target_ids.length
+        )
+    }
+
     try
     {
-        const msg           = JSON.parse(json_string)
-        msg.target_agents   = target_ids
-        sendToSocketE2EE(target_ids[0], msg)
+        const msg = JSON.parse(json_string)
+        for (const target_id of target_ids) {
+            const one_msg = { ...msg, target_agents: [target_id] }
+            sendToSocketE2EE(target_id, one_msg)
+        }
     }
     catch (err)
     {
@@ -697,7 +725,10 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
             setAgents(msg.agents)
             // Init E2EE for all online agents
             msg.agents.forEach(a => {
-                if (a.online) initE2EE(a.id, _socket)
+                if (a.online) {
+                    _socket.send(JSON.stringify({ type: 'subscribe', agent_id: a.id }))
+                    initE2EE(a.id, _socket)
+                }
             })
             break
 
@@ -719,9 +750,11 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
                 {
                     useModuleStore.getState().clearLiveFlagsForAgent(msg.agent_id)
                     useE2EEStore.getState().resetSession(msg.agent_id)
+                    usePermissionStore.getState().revokeAll(msg.agent_id)
                 }
                 else if (msg.online === true)
                 {
+                    _socket.send(JSON.stringify({ type: 'subscribe', agent_id: msg.agent_id }))
                     initE2EE(msg.agent_id, _socket)
                 }
             }
@@ -946,6 +979,16 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
             )
             break
 
+        case MSG_TYPE.AGENT_STATUS:
+            setAgentStatus(msg.agent_id, msg.online)
+            if (!msg.online)
+            {
+                _pendingE2EEKeys.delete(msg.agent_id)
+                useE2EEStore.getState().setSessionState(msg.agent_id, 'uninitialized', null)
+                usePermissionStore.getState().revokeAll(msg.agent_id)
+            }
+            break
+
         case MSG_TYPE.PERMISSIONS_RESET:
             usePermissionStore.getState().revokeAll(msg.agent_id)
             useModuleStore.getState().clearLiveFlagsForAgent(msg.agent_id)
@@ -955,11 +998,16 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
             break
 
         // ── E2EE ─────────────────────────────────────────────────────────
+        case MSG_TYPE.E2EE_ERROR:
+            useE2EEStore.getState().setSessionState(msg.agent_id, 'uninitialized', null)
+            useUiStore.getState().addToast(`E2EE Handshake bị từ chối bởi ${msg.agent_id}: ${msg.message || 'Sai mã PIN'}`, 'error')
+            break
+
         case MSG_TYPE.E2EE_READY:
         {
             const e2eeStore = useE2EEStore.getState()
-            e2eeStore.getAgentPin(msg.agent_id).then(async (pin) => {
-                if (!pin) return;
+            e2eeStore.getAgentPin(msg.agent_id).then(async (savedPin) => {
+                const pin = savedPin || "default-pin-12345"
                 try {
                     const isValid = await verifyHMAC(msg.publicKey, msg.signature, pin)
                     if (!isValid) {

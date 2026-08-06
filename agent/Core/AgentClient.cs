@@ -31,11 +31,17 @@ namespace AgentSystem.Core
             { "proc_list", "process" }, { "proc_kill", "process" },
             { "screenshot", "screen" }, { "screen_stream", "screen" }, { "screen_stream_stop", "screen" },
             { "keylog_start", "keylog" }, { "keylog_stop", "keylog" },
-            { "fs_list", "file" }, { "fs_get", "file" }, { "fs_put", "file" },
+            { "fs_list", "file" }, { "fs_get", "file" }, { "fs_put", "file" }, { "fs_delete", "file" },
             { "webcam_start", "webcam" }, { "webcam_stop", "webcam" },
-            { "power", "power" },
+            { "power", "power" }, { "power_lock", "power" }, { "power_restart", "power" }, { "power_shutdown", "power" }, { "power_sleep", "power" },
             { "input_mouse_move", "input" }, { "input_mouse_click", "input" }, { "input_key", "input" }, { "input_type", "input" }
         };
+
+        public bool IsConnected { get; private set; }
+        public event Action OnConnectedEvent;
+        public event Action OnDisconnectedEvent;
+        
+        public string GatewayUrl => gatewayUrl;
 
         public AgentClient(string agentId, string gatewayUrl, SecurityManager security, UIManager ui)
         {
@@ -49,6 +55,7 @@ namespace AgentSystem.Core
             Dispatcher = new MessageDispatcher(this);
             wsClient = new WebSocketClient(this, gatewayUrl);
 
+            wsClient.OnConnectedEvent += HandleAgentConnected;
             wsClient.OnDisconnectedEvent += HandleAgentDisconnected;
             _moduleRegistry = new Dictionary<string, BaseModule>();
         }
@@ -64,8 +71,16 @@ namespace AgentSystem.Core
             }
         }
 
+        private void HandleAgentConnected()
+        {
+            IsConnected = true;
+            OnConnectedEvent?.Invoke();
+        }
+
         private void HandleAgentDisconnected()
         {
+            IsConnected = false;
+            OnDisconnectedEvent?.Invoke();
             Log.Information("[AgentClient] Mất kết nối! Đang yêu cầu các module dọn dẹp tài nguyên...");
             
             // B3: Reset quyền khi mất kết nối — Controller sẽ phải xin lại
@@ -99,12 +114,18 @@ namespace AgentSystem.Core
                 type = "permissions_reset", 
                 agent_id = AgentId,
                 message = "Agent reconnected. Please re-grant permissions." 
-            });
+            }, false);
             Log.Information("[AgentClient] Đã gửi permissions_reset tới Gateway.");
         }
 
         public void Start() { /* Nội dung giữ nguyên */ wsClient.Connect(); }
         public void Stop() { /* Nội dung giữ nguyên */ wsClient.Disconnect(); }
+        public void Reconnect() 
+        { 
+            wsClient.Disconnect(); 
+            wsClient.Connect(); 
+        }
+        
         public void SendResponse(object responseData) { SendResponse(responseData, true); }
         
         public void SendResponse(object responseData, bool encrypt)
@@ -182,12 +203,19 @@ namespace AgentSystem.Core
                         return;
                     }
 
+                    // Kiểm tra chữ ký bằng mã PIN. Nếu sai, ném lỗi về thẳng Controller để hiển thị thông báo.
                     if (!Crypto.VerifyHMAC(pubKeyBase64, signature))
                     {
-                        Log.Warning("[E2EE] Invalid Controller Signature. MitM attempt?");
+                        Log.Warning("[E2EE] Invalid Controller Signature. Sai mã PIN hoặc có MitM.");
+                        SendResponse(new {
+                            type = "e2ee_error",
+                            agent_id = AgentId,
+                            message = "Invalid PIN"
+                        }, false); // encrypt = false
                         return;
                     }
                     
+                    // Nếu đúng PIN, tạo Session Key và phản hồi e2ee_ready
                     Crypto.DeriveSessionKey(pubKeyBase64);
                     
                     string myPubKeyBase64 = Crypto.GetPublicKeySPKIBase64();
@@ -198,7 +226,7 @@ namespace AgentSystem.Core
                         agent_id = AgentId,
                         publicKey = myPubKeyBase64,
                         signature = mySignature
-                    }, encrypt: false);
+                    }, false); // encrypt = false
                     
                     Log.Information("[E2EE] Handshake completed successfully. Session Key is ready.");
                 }
@@ -404,8 +432,8 @@ namespace AgentSystem.Core
 
         private bool ValidatePacket(CommandPacket packet)
         {
-            // command_id không được rỗng (trừ một số lệnh đặc biệt nếu có)
-            if (string.IsNullOrWhiteSpace(packet.CommandId)) 
+            // Bỏ qua kiểm tra CommandId đối với các gói tin đặc biệt như e2ee_init
+            if (packet.Type != "e2ee_init" && string.IsNullOrWhiteSpace(packet.CommandId)) 
                 return false;
             
             // target_agents phải chứa AgentId này (hoặc rỗng/null = broadcast)
