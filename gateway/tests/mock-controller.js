@@ -63,7 +63,13 @@ async function run() {
       }
       targetAgentId = msg.agents[0].id;
       console.log(`\n🎯 Selected target agent: ${targetAgentId}`);
-      
+
+      // Subscribe so the Gateway relays this agent's responses (permission_result,
+      // proc_list_result) back to us. Responses without a command_id are only sent
+      // to subscribed controllers (see controllerStore.broadcastToSubscribers).
+      ws.send(JSON.stringify({ type: 'subscribe', agent_id: targetAgentId }));
+      console.log('📤 Sent subscribe');
+
       // 2. Gửi permission_request
       console.log('\n📤 Sending permission_request (proc_list)...');
       ws.send(JSON.stringify({

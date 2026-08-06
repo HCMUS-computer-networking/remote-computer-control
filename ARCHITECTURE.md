@@ -281,12 +281,12 @@ Hai kênh binary trên cùng một WS:
 
 | Store | State | Actions |
 |---|---|---|
-| **AgentStore** | `agents[]`, `focused_agent_id`, `selected_agent_ids[]`, `search_query` | `setAgents`, `setAgentStatus(id, patch)`, `setFocused(id)`, `setSelectedIds(ids)`, `clearSelection`, `setSearchQuery`, getters `getFilteredAgents`, `getFocusedAgent` |
+| **AgentStore** | `agents[]`, `focused_agent_id`, `selected_agent_ids[]`, `search_query` | `setAgents`, `setAgentStatus(id, patch)`, `setFocused(id)`, `toggleSelect(id)`, `setSelectedIds(ids)`, `clearSelection`, `setSearchQuery`, getters `getFilteredAgents`, `getFocusedAgent` |
 | **ConnectionStore** | `status: 'idle'\|'open'\|'closed'`, `gateway_url`, `auth_token` | `connect(url)`, `disconnect`, `setStatus`, `setGatewayUrl`, `setAuthToken`, `clearAuthToken` |
-| **ModuleStore** | `data[agent_id] = { app_list, proc_list, keylog[], keylog_active, sysinfo[], screen_stream_active, webcam_active, input_active, file tree, file_downloads[transfer_id], file_put_ack }` (frame ảnh KHÔNG lưu ở store — đi qua FrameEventBus) | `setModuleData`, `appendKeylog`, `appendSysInfo`, `setScreenStreamActive`, `setWebcamActive`, `setKeylogActive`, `setInputActive`, `setFsEntries`, `appendFileDownloadChunk`, `setFilePutAck`, `clearLiveFlagsForAgent`, `clearAllLiveFlags`, … |
+| **ModuleStore** | `data[agent_id] = { app_list, proc_list, keylog[], keylog_active, sysinfo[], screen_stream_active, webcam_active, input_active, file tree, file_downloads[transfer_id], file_put_ack }` (frame ảnh KHÔNG lưu ở store — đi qua FrameEventBus) | `setModuleData`, `appendKeylog`, `appendSysInfo`, `setScreenStreamActive`, `setWebcamActive`, `setKeylogActive`, `setInputActive`, `setFsEntries`, `appendFileDownloadChunk`, `removeFileDownload`, `setFilePutAck`, `clearFilePutAck`, `clearModule`, `clearAgent`, `clearLiveFlagsForAgent`, `clearAllLiveFlags` |
 | **PermissionStore** | `permissions[agent_id][feature] = 'idle'\|'requesting'\|'granted'\|'denied'` | `requestPermission(id, feature)`, `setPermissionResult(id, feature, granted)`, `revoke(id, feature)`, `revokeAll(id)`, getter `getStatus(id, feature)` |
-| **PolicyStore** | `app_whitelist[]`, `sandbox_path`, `last_result[agent_id]` | `setWhitelist`, `setSandboxPath`, `setPolicyResult(id, result)` |
-| **UiStore** | `theme`, `layout_mode: 'grid'\|'focus'`, `active_tab`, `toasts[]` | `setTheme`, `setLayoutMode`, `setActiveTab`, `addToast(msg, variant)` |
+| **PolicyStore** | `app_whitelist[]`, `sandbox_path`, `results[agent_id] = { success, message }` | `setWhitelist`, `setSandboxPath`, `setPolicyResult(id, result)` |
+| **UiStore** | `theme`, `layout_mode: 'grid'\|'focus'`, `active_tab`, `sidebar_open`, `toasts[]` | `setTheme`, `toggleTheme`, `setLayoutMode`, `setActiveTab`, `toggleSidebar`, `addToast(msg, variant)`, `dismissToast(id)` |
 | **E2EEStore** | `isUnlocked`, `masterKey`, `sessions[agent_id] = { state, sessionKey, udpKeyBuffer, udpFrameIdOffset, udpLastSeq, sendSeq, recvSeq }` | `unlock/lock`, `saveAgentPin/getAgentPin` (IndexedDB), `setSessionState`, `resetSession`, `getSessionKey`, `getSendSeqAndIncrement`, `checkAndUpdateRecvSeq`, `updateUdpSeq` |
 
 Mọi component subscribe **selector cụ thể** (`useStore(s => s.x)`).
