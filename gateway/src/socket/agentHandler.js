@@ -147,6 +147,18 @@ function handleAgent(ws, req) {
       return;
     }
 
+    // 1.5. E2EE payload — opaque envelope, command_id is encrypted inside.
+    //      Cannot do command-initiator routing; broadcast to subscribers.
+    //      The Controller decrypts and dispatches internally.
+    if (msg.type === 'e2ee_payload') {
+      logger.debug('[agent→controller] e2ee_payload relay to subscribers', {
+        agentId,
+        seq: msg.seq,
+      });
+      controllerStore.broadcastToSubscribers(agentId, outStr);
+      return;
+    }
+
     // 2. Response cho lệnh (có command_id khớp req_id Controller đã gửi) → gửi đúng Controller, KHÔNG broadcast
     const cmdId = msg.command_id || msg.req_id || msg.id;
     if (cmdId && typeof cmdId === 'string' && controllerStore.hasCommand(cmdId)) {
@@ -160,6 +172,12 @@ function handleAgent(ws, req) {
     }
 
     // 3. Các message khác (không khớp command_id và không phải stream/keylog) → forward tới subscribers
+    if (msg.type === 'e2ee_ready') {
+      logger.info('[agent→controller] e2ee_ready relay to all controllers', { agentId });
+      controllerStore.broadcast(outStr);
+      return;
+    }
+
     logger.info('[agent→controller] General relay to subscribers', {
       agentId,
       type: msg.type,
