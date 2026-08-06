@@ -54,3 +54,12 @@ desktop.ini
 # ─── Repomix (AI packing artifacts) ───────────────────────────────
 repomix-output.xml
 repomix.config.json
+
+# --- build/runtime artifacts (history cleanup) ---
+repomix-*.xml
+test_hook.cs
+controller/test-results/
+gateway/src/store/*.sqlite-shm
+gateway/src/store/*.sqlite-wal
+gateway/certs/*.key
+gateway/certs/*.cert
