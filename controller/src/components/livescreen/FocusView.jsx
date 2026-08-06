@@ -96,22 +96,31 @@ function FocusView()
       </nav>
 
       {/* active module panel — sysinfo skips PermissionGate (read-only metrics) */}
-      <div className="focus-view__panel" style={{ position: 'relative' }} role="tabpanel">
-        {e2eeState !== 'ready' && (
-           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-card)', zIndex: 10 }}>
+      <div className="focus-view__panel" role="tabpanel">
+        {e2eeState === 'handshaking' ? (
+           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--bg-card)' }}>
                <Loader2 size={32} className="spin" style={{ marginBottom: '1rem', color: 'var(--brand)' }} />
                <h3 style={{ margin: '0 0 0.5rem 0' }}>Đang thiết lập E2EE...</h3>
                <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem', margin: 0 }}>Trao đổi khóa công khai và xác thực.</p>
            </div>
+        ) : e2eeState === 'uninitialized' ? (
+           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--bg-card)' }}>
+               <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-error)' }}>Lỗi Handshake E2EE</h3>
+               <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem', margin: '0 0 1rem 0' }}>Không thể thiết lập kết nối mã hóa. Sai mã PIN hoặc Agent từ chối.</p>
+               <button 
+                   className="btn btn-primary" 
+                   onClick={() => window.location.reload()}
+               >
+                   Tải lại trang (Thử lại)
+               </button>
+           </div>
+        ) : NO_PERMISSION_TABS.has(active_tab) ? (
+          <ActivePanel key={focused_agent.id} agent={focused_agent} />
+        ) : (
+          <PermissionGate feature={active_tab} agent_id={focused_agent.id}>
+            <ActivePanel key={focused_agent.id} agent={focused_agent} />
+          </PermissionGate>
         )}
-        {NO_PERMISSION_TABS.has(active_tab)
-          ? <ActivePanel key={focused_agent.id} agent={focused_agent} />
-          : (
-              <PermissionGate feature={active_tab} agent_id={focused_agent.id}>
-                <ActivePanel key={focused_agent.id} agent={focused_agent} />
-              </PermissionGate>
-            )
-        }
       </div>
     </div>
   )

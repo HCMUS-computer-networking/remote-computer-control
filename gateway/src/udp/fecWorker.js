@@ -37,8 +37,14 @@ parentPort.on('message', (task) => {
       recovered = recovered.subarray(0, lastChunkSize);
     }
 
-    // Trả kết quả về Main Thread dưới dạng Transferable Objects (Zero-copy)
-    parentPort.postMessage({ taskId, success: true, missingIndex, recovered: recovered.buffer }, [recovered.buffer]);
+    // Copy sang ArrayBuffer đúng kích thước rồi mới transfer. `recovered` có thể là     //
+    // view (subarray / Buffer từ pool) nằm trên ArrayBuffer lớn hơn với byteOffset ≠ 0, //
+    // nên KHÔNG được gửi thẳng `recovered.buffer` — nó sẽ kèm padding/rác của pool.      //
+    const out = new Uint8Array(recovered.length);
+    out.set(recovered);
+
+    // Trả kết quả về Main Thread; transfer ArrayBuffer riêng (zero-copy an toàn)
+    parentPort.postMessage({ taskId, success: true, missingIndex, recovered: out.buffer }, [out.buffer]);
   } catch (err) {
     parentPort.postMessage({ taskId, success: false, error: err.message });
   }

@@ -22,7 +22,7 @@ namespace AgentSystem.Utils
             try
             {
                 _udpClient = new UdpClient();
-                // Extract IP from GatewayUrl (e.g., ws://localhost:8080)
+                // Extract IP from GatewayUrl (e.g., wss://localhost:8080)
                 Uri uri = new Uri(ConfigManager.Current.GatewayUrl);
                 _gatewayIp = uri.Host;
                 _isInitialized = true;

@@ -11,6 +11,10 @@ const PORT = 9000;
 // Frame buffer map
 // Key: `${agentId}_${moduleType}_${frameId}`
 // Value: { chunks: Array, receivedCount: number, timestamp: number, total: number, meta: object, recovering: boolean }
+// Cấu trúc: Map<streamKey, { expectedSeq: number, pending: Array<{seq, frame, fullBuffer}> }>
+const streamBuffers = new Map();
+
+// frameBuffer is used to assemble chunks of a single frame
 const frameBuffer = new Map();
 
 // Worker Pool State
@@ -18,6 +22,7 @@ const numWorkers = Math.max(1, Math.min(os.cpus().length - 1, 4));
 const workers = [];
 let nextWorkerIndex = 0;
 const pendingTasks = new Map();
+let taskCounter = 0;   // monotonic id so 2 frames sharing a frameKey (frameId wrap) never collide
 
 function initWorkerPool() {
   for (let i = 0; i < numWorkers; i++) {
@@ -41,16 +46,20 @@ function initWorkerPool() {
 
 function recoverChunkAsync(frameKey, total, totalPayloadLength, chunks, parityData) {
   return new Promise((resolve, reject) => {
+    // Unique task id: frameId is a 16-bit value that wraps, so the same frameKey can
+    // recur while an earlier recovery is still pending — a plain frameKey would clobber it.
+    const taskId = `${frameKey}#${++taskCounter}`;
+
     // Timeout chống kẹt 40ms để drop frame cũ kịp thời
     const timeoutId = setTimeout(() => {
-      pendingTasks.delete(frameKey);
+      pendingTasks.delete(taskId);
       reject(new Error('FEC calculation timed out (40ms)'));
     }, 40);
 
-    pendingTasks.set(frameKey, { resolve, reject, timeoutId });
+    pendingTasks.set(taskId, { resolve, reject, timeoutId });
 
     const worker = workers[nextWorkerIndex++ % workers.length];
-    worker.postMessage({ taskId: frameKey, total, totalPayloadLength, chunks, parityData });
+    worker.postMessage({ taskId, total, totalPayloadLength, chunks, parityData });
   });
 }
 
@@ -59,20 +68,33 @@ function finalizeFrame(frameKey, frame) {
     const fullBuffer = Buffer.concat(frame.chunks);
     frame.meta.len = fullBuffer.length;
     
-    const metaString = JSON.stringify(frame.meta);
-
-    // Send Metadata (Text) then Payload (Binary)
-    if (controllerStore.hasCommand(frame.meta.command_id)) {
-      controllerStore.sendToCommandInitiator(frame.meta.command_id, metaString);
-      controllerStore.sendToCommandInitiator(frame.meta.command_id, fullBuffer);
-    } else {
-      const subs = controllerStore.getAll();
-      for (const ws of subs) {
-        if (controllerStore.isSubscribed(ws, frame.meta.agent_id) && ws.readyState === ws.OPEN) {
-          ws.send(metaString, { binary: false });
-          ws.send(fullBuffer, { binary: true });
+    const streamKey = `${frame.meta.agent_id}_${frame.meta.module}`;
+    let streamState = streamBuffers.get(streamKey);
+    if (!streamState) {
+        streamState = { expectedSeq: frame.meta.seq, pending: [] };
+        streamBuffers.set(streamKey, streamState);
+    }
+    
+    streamState.pending.push({ seq: frame.meta.seq, frame, fullBuffer });
+    streamState.pending.sort((a, b) => a.seq - b.seq);
+    
+    while (streamState.pending.length > 0) {
+        if (streamState.pending[0].seq <= streamState.expectedSeq || streamState.pending.length >= 8) {
+            const next = streamState.pending.shift();
+            streamState.expectedSeq = next.seq + 1;
+            
+            const metaString = JSON.stringify(next.frame.meta);
+            
+            if (controllerStore.hasCommand(next.frame.meta.command_id)) {
+              controllerStore.sendToCommandInitiator(next.frame.meta.command_id, metaString);
+              controllerStore.sendToCommandInitiator(next.frame.meta.command_id, next.fullBuffer);
+            } else {
+              controllerStore.broadcastToSubscribers(next.frame.meta.agent_id, metaString);
+              controllerStore.broadcastToSubscribers(next.frame.meta.agent_id, next.fullBuffer, { binary: true });
+            }
+        } else {
+            break;
         }
-      }
     }
   } catch (err) {
     logger.error(`[UDP] Error finalizing frame ${frameKey}: ${err.message}`);

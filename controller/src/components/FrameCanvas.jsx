@@ -19,6 +19,7 @@
 // The "cancelled" flag prevents a stale decode callback from drawing
 // onto a canvas that already shows a newer frame or has been unmounted.
 
+import { useEffect, useRef } from 'react'
 import frameEventBus from '../services/FrameEventBus'
 
 // Props:
@@ -28,25 +29,54 @@ import frameEventBus from '../services/FrameEventBus'
 //   label        — caption ngắn gọn
 //   width        — chiều rộng CSS
 //   height       — chiều cao CSS
-function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'screen', label, width = '100%', height = '100%' })
+function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'screen', label, width = '100%', height = '100%', onFrameRendered })
 {
     const canvas_ref = useRef(null)
 
     useEffect(function ()
     {
         let is_drawing = false
-        let pending_frame = null
+        // Khai báo mảng queue cục bộ cho từng instance của FrameCanvas
+        let frame_queue = [] 
         let animation_frame_id = null
         let current_bitmap_ref = null
+        let last_rendered_seq = -1
+        let waiting_for_keyframe = true // Khởi tạo: luồng mới BẮT BUỘC phải chờ Keyframe đầu tiên
 
         const processFrame = (buffer, meta) => {
             if (!buffer || !canvas_ref.current) return
 
-            // Gotcha 3: Chống tích tụ hàng đợi Promise. 
-            // Nếu đang vẽ một frame cũ mà frame mới ập tới, ta chỉ cần lưu frame mới nhất vào pending_frame
-            // và chủ động VỨT BỎ (drop) tất cả các frame ở giữa.
+            if (meta) {
+                if (last_rendered_seq !== -1) {
+                    if (meta.seq < last_rendered_seq && (last_rendered_seq - meta.seq) > 100) {
+                        last_rendered_seq = -1; // Reset on stream restart
+                        waiting_for_keyframe = true;
+                    } else if (meta.seq > last_rendered_seq + 1) {
+                        waiting_for_keyframe = true; // We missed a UDP packet!
+                    }
+                } else if (meta.is_keyframe === false) {
+                    // Chưa từng có frame nào (hoặc vừa restart) mà lại nhận được Delta frame
+                    waiting_for_keyframe = true;
+                }
+                
+                if (meta.seq <= last_rendered_seq) return;
+                
+                if (waiting_for_keyframe && meta.is_keyframe === false) {
+                    last_rendered_seq = meta.seq; // keep tracking
+                    return; // Drop delta frames until keyframe arrives
+                }
+                
+                if (meta.is_keyframe === true) {
+                    waiting_for_keyframe = false;
+                }
+            }
+
             if (is_drawing) {
-                pending_frame = { buffer, meta }
+                if (frame_queue.length >= 4) {
+                    frame_queue.shift();
+                    waiting_for_keyframe = true; // We dropped a frame locally!
+                }
+                frame_queue.push({ buffer, meta })
                 return
             }
 
@@ -73,9 +103,20 @@ function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'scre
                     } else {
                         const full_w = has_meta ? (meta.w | 0) || bitmap.width  : bitmap.width
                         const full_h = has_meta ? (meta.h | 0) || bitmap.height : bitmap.height
-                        cvs.width  = full_w
-                        cvs.height = full_h
+                        
+                        // Chỉ cập nhật cvs.width / cvs.height khi thực sự thay đổi kích thước stream
+                        if (cvs.width !== full_w || cvs.height !== full_h) {
+                            cvs.width  = full_w
+                            cvs.height = full_h
+                        }
                         ctx.drawImage(bitmap, 0, 0)
+                    }
+
+                    if (meta) {
+                        last_rendered_seq = Math.max(last_rendered_seq, meta.seq);
+                    }
+                    if (onFrameRendered) {
+                        onFrameRendered(meta)
                     }
 
                     // Giải phóng bộ nhớ GPU ngay lập tức
@@ -94,10 +135,31 @@ function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'scre
         }
 
         const processNext = () => {
-            if (pending_frame) {
-                const next = pending_frame
-                pending_frame = null
+            while (frame_queue.length > 0) {
+                const next = frame_queue.shift()
+                if (next.meta) {
+                    if (last_rendered_seq !== -1) {
+                        if (next.meta.seq < last_rendered_seq && (last_rendered_seq - next.meta.seq) > 100) {
+                            last_rendered_seq = -1;
+                            waiting_for_keyframe = true;
+                        } else if (next.meta.seq > last_rendered_seq + 1) {
+                            waiting_for_keyframe = true;
+                        }
+                    } else if (next.meta.is_keyframe === false) {
+                        waiting_for_keyframe = true;
+                    }
+                    if (next.meta.seq <= last_rendered_seq) continue;
+                    
+                    if (waiting_for_keyframe && next.meta.is_keyframe === false) {
+                        last_rendered_seq = next.meta.seq;
+                        continue;
+                    }
+                    if (next.meta.is_keyframe === true) {
+                        waiting_for_keyframe = false;
+                    }
+                }
                 processFrame(next.buffer, next.meta)
+                break;
             }
         }
 

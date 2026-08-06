@@ -17,6 +17,26 @@ namespace AgentSystem.Modules
 {
     public class StreamModule : BaseModule
     {
+        [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+        static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern IntPtr GetDC(IntPtr hWnd);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        private Size GetPhysicalScreenSize()
+        {
+            IntPtr hdc = GetDC(IntPtr.Zero);
+            if (hdc != IntPtr.Zero)
+            {
+                int width = GetDeviceCaps(hdc, 118); // DESKTOPHORZRES
+                int height = GetDeviceCaps(hdc, 117); // DESKTOPVERTRES
+                ReleaseDC(IntPtr.Zero, hdc);
+                if (width > 0 && height > 0) return new Size(width, height);
+            }
+            return Screen.PrimaryScreen.Bounds.Size;
+        }
+
         private Bitmap captureBitmap;
         private Graphics captureGraphics;
         private Bitmap scaledBitmap;
@@ -167,7 +187,24 @@ namespace AgentSystem.Modules
 
         private async Task TakeSingleScreenshotAsync(int quality, string commandId)
         {
-
+             if (isStreaming)
+             {
+                 await captureSemaphore.WaitAsync();
+                 try
+                 {
+                     if (scaledBitmap != null)
+                     {
+                         byte[] imageBytes = ImageUtils.CompressImageToJpeg(scaledBitmap, quality);
+                         long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                         await UdpStreamSender.SendFrameAsync(context.AgentId, commandId, 0, 0, imageBytes, timestamp, true, new Rectangle(0, 0, TargetSize.Width, TargetSize.Height), context.Crypto);
+                         return;
+                     }
+                 }
+                 finally
+                 {
+                     captureSemaphore.Release();
+                 }
+             }
              
              await CaptureAndSendAsync(commandId, quality, false);
         }
@@ -188,8 +225,8 @@ namespace AgentSystem.Modules
             int width = current.Width;
             int height = current.Height;
 
-            BitmapData dataCur = current.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            BitmapData dataPrev = previous.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            BitmapData dataCur = current.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+            BitmapData dataPrev = previous.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
 
             int minX = width, minY = height, maxX = 0, maxY = 0;
             bool hasChanges = false;
@@ -262,7 +299,7 @@ namespace AgentSystem.Modules
 
             try
             {
-                Rectangle bounds = Screen.PrimaryScreen.Bounds;
+                Rectangle bounds = new Rectangle(Point.Empty, GetPhysicalScreenSize());
                 
                 if (captureBitmap == null || lastScreenSize != bounds.Size)
                 {
@@ -271,12 +308,13 @@ namespace AgentSystem.Modules
                     scaledGraphics?.Dispose();
                     scaledBitmap?.Dispose();
                     
-                    captureBitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
+                    captureBitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppRgb);
                     captureGraphics = Graphics.FromImage(captureBitmap);
                     
-                    scaledBitmap = new Bitmap(TargetSize.Width, TargetSize.Height, PixelFormat.Format32bppArgb);
+                    scaledBitmap = new Bitmap(TargetSize.Width, TargetSize.Height, PixelFormat.Format32bppRgb);
                     scaledGraphics = Graphics.FromImage(scaledBitmap);
                     scaledGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                    scaledGraphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
                     
                     lastScreenSize = bounds.Size;
                 }
@@ -308,11 +346,34 @@ namespace AgentSystem.Modules
                 }
                 else
                 {
-                    using (Bitmap diffBitmap = new Bitmap(diffRect.Width, diffRect.Height, PixelFormat.Format32bppArgb))
+                    using (Bitmap diffBitmap = new Bitmap(diffRect.Width, diffRect.Height, PixelFormat.Format32bppRgb))
                     using (Graphics g = Graphics.FromImage(diffBitmap))
                     {
+                        g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
                         g.DrawImage(scaledBitmap, new Rectangle(0, 0, diffRect.Width, diffRect.Height), diffRect, GraphicsUnit.Pixel);
                         imageBytes = ImageUtils.CompressImageToJpeg(diffBitmap, quality);
+                    }
+                }
+
+                // Đảm bảo không vượt quá giới hạn 255 phân mảnh (max = 331,500 bytes) của giao thức UDP.
+                // Nếu vượt quá, giảm quality dần dần cho đến khi vừa. Đặc biệt quan trọng với Keyframes.
+                int tempQuality = quality;
+                while (imageBytes.Length > 255 * 1300 && tempQuality > 10)
+                {
+                    tempQuality -= 15;
+                    if (diffRect.Width == TargetSize.Width && diffRect.Height == TargetSize.Height)
+                    {
+                        imageBytes = ImageUtils.CompressImageToJpeg(scaledBitmap, tempQuality);
+                    }
+                    else
+                    {
+                        using (Bitmap diffBitmap = new Bitmap(diffRect.Width, diffRect.Height, PixelFormat.Format32bppRgb))
+                        using (Graphics g = Graphics.FromImage(diffBitmap))
+                        {
+                            g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                            g.DrawImage(scaledBitmap, new Rectangle(0, 0, diffRect.Width, diffRect.Height), diffRect, GraphicsUnit.Pixel);
+                            imageBytes = ImageUtils.CompressImageToJpeg(diffBitmap, tempQuality);
+                        }
                     }
                 }
 
@@ -321,16 +382,17 @@ namespace AgentSystem.Modules
                     if (previousBitmap == null || previousBitmap.Size != TargetSize)
                     {
                         previousBitmap?.Dispose();
-                        previousBitmap = new Bitmap(TargetSize.Width, TargetSize.Height, PixelFormat.Format32bppArgb);
+                        previousBitmap = new Bitmap(TargetSize.Width, TargetSize.Height, PixelFormat.Format32bppRgb);
                     }
                     using (Graphics gPrev = Graphics.FromImage(previousBitmap))
                     {
+                        gPrev.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
                         gPrev.DrawImage(scaledBitmap, Point.Empty);
                     }
                 }
                 
                 long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                ushort seq = (ushort)(isFromStream ? currentSequence++ : 0);
+                ushort seq = (ushort)(currentSequence++);
                 await UdpStreamSender.SendFrameAsync(context.AgentId, commandId, 0, seq, imageBytes, timestamp, isKeyframe, diffRect, context.Crypto);
             }
             catch (Exception ex)
