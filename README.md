@@ -1,6 +1,12 @@
-# Remote Computer Control — HCMUS Computer Networks course project
+# Remote Computer Control
 
-A consent-based **remote administration** system: a web **Controller** monitors and controls multiple Windows **Agents** through a Node.js **Gateway**, with end-to-end encryption so the Gateway only relays ciphertext. Every sensitive action requires the end user to confirm on the Agent machine first.
+[![CI](https://github.com/HCMUS-computer-networking/remote-computer-control/actions/workflows/ci.yml/badge.svg)](https://github.com/HCMUS-computer-networking/remote-computer-control/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Agent](https://img.shields.io/badge/Agent-C%23%20.NET%208-512BD4)
+![Gateway](https://img.shields.io/badge/Gateway-Node.js%20%E2%89%A520-339933)
+![Controller](https://img.shields.io/badge/Controller-React%20%2B%20Vite-61DAFB)
+
+A consent-based, end-to-end encrypted **remote administration** system: a web **Controller** monitors and controls many Windows **Agents** through a Node.js **Gateway** that relays *ciphertext only*. Every sensitive action is confirmed on the Agent machine first — HCMUS Computer Networks course project.
 
 ## Architecture
 
@@ -14,108 +20,81 @@ A consent-based **remote administration** system: a web **Controller** monitors 
         │                                          │ 8888/UDP  ── beacon discovery ──────►
 ```
 
-Three-tier **star topology** — Agents never talk to the Controller directly; all traffic passes through the Gateway. Full design: see [`Architecture.md`](Architecture.md).
+Three-tier **star topology** — Agents never talk to the Controller directly; all traffic passes through the Gateway. Full design in [`Architecture.md`](Architecture.md).
 
 ## Features
 
-- **End-to-end encryption (Zero-Trust)** — ECDH P-256 + HKDF + AES-256-GCM, PIN-authenticated handshake; Gateway relays ciphertext only.
+- **End-to-end encryption (Zero-Trust)** — ECDH P-256 + HKDF + AES-256-GCM, PIN-authenticated handshake; the Gateway relays ciphertext only.
 - **Screen live stream** — bounding-box delta encoding + keyframes over UDP with FEC parity recovery.
 - **Remote input** — mouse + keyboard injection via Win32 `SendInput`, with an on-screen indicator.
 - **Keylogger** — consent + visible indicator, lock-free capture.
 - **File transfer** — chunked + SHA-256, locked to a sandbox root.
-- **Process / Application control** — list/kill process (critical system processes protected); start/stop whitelisted apps.
+- **Process / Application control** — list/kill process (critical processes protected); start/stop whitelisted apps.
 - **SysInfo dashboard** — CPU / RAM / disk / uptime / OS / IP in near real time.
 - **Power** — lock / restart / shutdown / sleep with a Controller-side countdown.
 - **Webcam** — MJPEG stream with an on-screen red-dot indicator.
 - **Consent flow** — every sensitive module confirmed on the Agent (30 s timeout, single-popup guard).
-- **Dynamic policy** — push app whitelist + sandbox path into Agent RAM without a restart.
 - **Zero-config LAN discovery** — Gateway broadcasts on UDP `:8888`; the Agent auto-discovers it.
 - **WSS/TLS by default** — set `TLS_ENABLED=false` for plain HTTP/WS in dev.
 
 ## Requirements
 
-| Component  | Requirement                                                             |
-|------------|-------------------------------------------------------------------------|
-| Gateway    | Node.js **≥ 20**, npm, `openssl` (to generate the TLS cert)             |
-| Controller | Node.js **≥ 20**, npm, a modern browser (Chrome / Edge / Firefox)       |
-| Agent      | Windows **10/11**, **.NET 8 SDK**                                       |
+| Component  | Requirement                                                        |
+|------------|--------------------------------------------------------------------|
+| Gateway    | Node.js **≥ 20**, npm, openssl *(bundled with Git for Windows)*     |
+| Controller | Node.js **≥ 20**, npm, a modern browser (Chrome / Edge / Firefox)  |
+| Agent      | Windows **10/11**, **.NET 8 SDK**                                   |
 
-## How to run
+**Firewall** — Gateway host: `8080/TCP`, `9000/UDP`; Agent host: `8888/UDP`.
 
-TLS/WSS is **on by default**. Start in this order: **Gateway → Controller → Agent**.
+## Run
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/HCMUS-computer-networking/remote-computer-control.git
 cd remote-computer-control
 ```
 
-There are 4 shared secrets to set: `CONTROLLER_KEY` (same value in `gateway/.env` and `controller/.env`), `AGENT_KEY` (same value in `gateway/.env` and the Agent's `config.json` `auth_key`), `JWT_SECRET` (Gateway only), and the **E2EE PIN** (Agent `config.json` `e2ee_shared_secret`, entered on the Controller to unlock). Generate a strong value with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+Run the bootstrap script. It needs **PowerShell** — bundled on Windows; on macOS/Linux install [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell):
 
-### 1. Gateway
+| Shell | Command |
+|---|---|
+| Windows PowerShell 5.1 · Git Bash | `powershell -ExecutionPolicy Bypass -File ./scripts/setup.ps1` |
+| PowerShell 7 (`pwsh`, any OS) | `pwsh ./scripts/setup.ps1` |
 
-```bash
-cd gateway
-mkdir -p certs
-openssl req -x509 -newkey rsa:2048 -nodes \
-  -keyout certs/server.key -out certs/server.cert -days 365 -subj "/CN=localhost"
-cp .env.example .env        # set CONTROLLER_KEY (required), AGENT_KEY, JWT_SECRET; keep TLS_ENABLED=true
-npm ci
-node scripts/hash-password.js "admin123"                                   # copy the printed hash
-node -e "require('./src/db').queries.upsertUser('admin', '<hash>', 'admin')"   # seed the admin user
-npm start
-```
+`setup.ps1` generates all secrets + TLS cert, installs deps, seeds admin, builds the Agent, and prints the secrets. Add `-GatewayIp <ip>` for a multi-machine run, `-NoTls` for plain HTTP.
 
-Open `https://<gateway-ip>:8080/health` once and accept the self-signed cert, otherwise the Controller's WSS connection fails silently.
-
-### 2. Controller
-
-Create `controller/.env`:
-
-```ini
-VITE_GATEWAY_URL=wss://<gateway-ip>:8080
-VITE_CONTROLLER_KEY=<same as CONTROLLER_KEY>
-VITE_USE_MOCK=false          # true = front-end mock (no Gateway/Agent needed)
-```
+Then start each tier **in this order — Gateway → Controller → Agent** (each in its own terminal):
 
 ```bash
-cd controller && npm ci && npm run dev -- --host      # → http://localhost:5173
+cd gateway && npm start                    # 1. https://localhost:8080  (open /health once, accept the self-signed cert)
+cd controller && npm run dev -- --host     # 2. https://localhost:5173
+# 3. run agent/bin/Release/net8.0-windows/agent.exe  (copy config.local.json → config.json beside it)
 ```
 
-### 3. Agent (Windows)
+> On **Windows PowerShell 5.1** replace `&&` with `;` (it lacks `&&`). The Agent runs on Windows only; macOS/Linux can host the Gateway + Controller.
 
-```bash
-cd agent && dotnet build agent.sln -c Release
-```
-
-Run `agent\bin\Release\net8.0-windows\agent.exe`. On first run it creates `config.json` next to the exe — set `gateway_url`, `auth_key` (= `AGENT_KEY`), and `e2ee_shared_secret` (the E2EE PIN). The Agent auto-discovers the Gateway over the LAN (UDP `:8888`), or you can enter the endpoint manually.
-
-**Firewall** (Gateway host): `8080/TCP`, `9000/UDP`; on the Agent host open `8888/UDP` for the discovery beacon.
-
-**Mock vs real:** set `VITE_USE_MOCK=true` in `controller/.env` to run the Controller against an in-browser mock (no Gateway/Agent needed); `false` connects to the real Gateway.
+Log in on the Controller, then enter the **E2EE PIN** to unlock an agent. Prefer configuring by hand? See [`docs/guide.md`](docs/guide.md). A fresh clone carries **no live secrets** — all `.env`, certs, DB, and Agent config are gitignored and generated locally (details in [`Architecture.md` §8](Architecture.md#8-mô-hình-bảo-mật--secret)).
 
 ## Default test account
 
-- **username:** `admin`
-- **password:** `admin123`
+- **username:** `admin` — **password:** `admin123` (seeded as a bcrypt hash; change it with `gateway/scripts/hash-password.js`).
 
-Stored as a bcrypt hash in `gateway/src/store/data.sqlite`; rotate with `gateway/scripts/hash-password.js`.
-
-## Directory layout
+## Repository layout
 
 | Directory | Description |
 |-----------|-------------|
-| [`agent/`](agent/) | Agent C# .NET 8 (Core, Modules, Managers, Forms, Utils, `agent.sln`) |
-| [`controller/`](controller/) | Controller React + Vite (src/, `vite.config.js`) |
-| [`gateway/`](gateway/) | Gateway Node.js (src/, tests/, scripts/, `.env.example`) |
+| [`agent/`](agent/) | Agent — C# .NET 8 (Core, Modules, Managers, Forms, Utils) |
+| [`controller/`](controller/) | Controller — React + Vite + Zustand |
+| [`gateway/`](gateway/) | Gateway — Node.js WebSocket relay + Auth |
 | [`AgentSystem.Tests/`](AgentSystem.Tests/) | .NET unit tests (xUnit) for the Agent |
 | [`docs/`](docs/) | Protocol schemas, design docs, reports |
-| [`scripts/`](scripts/) | Helper scripts (`dev-up.ps1`) |
+| [`scripts/`](scripts/) | `setup.ps1`, `gen-cert.ps1`, `dev-up.ps1` |
 
 ## Documentation
 
-- [`Architecture.md`](Architecture.md) — current state of the monorepo (directory tree, Zustand stores, data flow, protocol, conventions).
+- [`Architecture.md`](Architecture.md) — current state of the monorepo: directory tree, Zustand stores, data flow, message list, protocol, conventions, security model.
 - [`docs/protocol/`](docs/protocol/) — canonical JSON message schemas (single source of truth).
-- [`docs/design/agent/`](docs/design/agent/), [`docs/design/gateway/`](docs/design/gateway/), [`docs/design/controller/`](docs/design/controller/) — per-subsystem design docs.
+- Per-subsystem design: [`docs/design/agent/`](docs/design/agent/) · [`docs/design/gateway/`](docs/design/gateway/) · [`docs/design/controller/`](docs/design/controller/).
 
 ## Credits
 
@@ -126,3 +105,5 @@ Team project — Computer Networks, HCMUS.
 | _<member 1>_ | Agent (C# .NET 8 Windows client) |
 | _<member 2>_ | Gateway (Node.js WebSocket relay + Auth) |
 | _<member 3>_ | Controller (React + Vite + Zustand) |
+
+Licensed under the [MIT License](LICENSE).

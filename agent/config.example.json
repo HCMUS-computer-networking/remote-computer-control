@@ -1,0 +1,11 @@
+{
+  "agent_id": "AUTO",
+  "gateway_url": "wss://GATEWAY_IP:8080",
+  "auth_key": "PASTE_AGENT_KEY_HERE",
+  "e2ee_shared_secret": "PASTE_E2EE_PIN_HERE",
+  "app_whitelist": ["notepad", "calc", "chrome", "winword"],
+  "sandbox_root_path": "C:\\AgentSandbox\\",
+  "log_retention_days": 7,
+  "consent_timeout_ms": 30000,
+  "tray_password": ""
+}

@@ -34,6 +34,12 @@ repomix.config.json
 ## ==========================================
 *.env
 *.pfx
+
+# Runtime Agent config holds live secrets (auth_key, e2ee PIN) - never commit.
+# The committed template is config.example.json.
+config.json
+config.local.json
+
 .DS_Store
 Thumbs.db
 desktop.ini

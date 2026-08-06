@@ -48,7 +48,8 @@ remote-computer-control/
 │   ├── design/                Thiết kế chi tiết từng subsystem
 │   ├── reports/               Báo cáo đánh giá
 │   └── guide.md               Hướng dẫn tổng hợp
-├── scripts/                   dev-up.ps1 (khởi động cả 3 subsystem)
+├── scripts/                   setup.ps1 (bootstrap 1 lệnh: sinh secret + cert + deps + seed),
+│                              gen-cert.ps1 (tạo TLS cert, tự dò openssl), dev-up.ps1
 ├── controller/                React SPA — xem 2.2
 ├── gateway/                   Node.js relay — xem 2.3
 └── agent/                     C# tray app — xem 2.4
@@ -118,7 +119,7 @@ gateway/
 └── src/
     ├── index.js               Boot: init DB, start server.
     ├── server.js              1 HTTP(S) server + WebSocketServer(noServer:true). Tự chọn HTTPS/WSS khi tlsEnabled. CORS whitelist + rate-limit /api/login (10/60s). Route upgrade theo pathname (/agent, /controller). Khởi động UDP :9000 + beacon :8888.
-    ├── config.js              Read .env: port, allowedOrigins, JWT secret, AGENT_KEY, tlsEnabled/tlsCertPath/tlsKeyPath.
+    ├── config.js              Read .env: port, CONTROLLER_KEY (bắt buộc — thiếu thì thoát), AGENT_KEY, JWT secret, allowedOrigins, tlsEnabled/tlsCertPath/tlsKeyPath, rate-limit. Validate lúc load.
     ├── db.js                  better-sqlite3 handle + prepared statements (getUserByUsername, getUserById, refresh_tokens CRUD, agent CRUD).
     │
     ├── auth/
@@ -153,7 +154,8 @@ agent/
 ├── agent.csproj / agent.sln   .NET 8 Windows Forms
 ├── app.manifest               Cấu hình UIPI (uiAccess) cho tương tác input đặc quyền.
 ├── Program.cs                 [STAThread] Main: ConfigManager → nếu gateway_url rỗng thử NetworkDiscovery.ScanForGatewayAsync (UDP :8888), fallback GatewayConfigForm → DI container → đăng ký module → Application.Run(TrayApp).
-├── config.json                agent_id, gateway_url, auth_key, e2ee_shared_secret (PIN), app_whitelist, sandbox_root_path, log_retention_days, consent_timeout_ms, tray_password.
+├── config.example.json        Template config (committed). Copy → config.json và điền secret.
+├── config.json                Runtime, GITIGNORE. agent_id, gateway_url, auth_key, e2ee_shared_secret (PIN), app_whitelist, sandbox_root_path, log_retention_days, consent_timeout_ms, tray_password.
 │
 ├── Core/
 │   ├── AgentClient.cs             Chủ ClientWebSocket + SemaphoreSlim send lock. Giữ CryptoModule; xử lý e2ee_init (verify HMAC PIN → derive khoá → trả e2ee_ready); chặn mọi lệnh khi E2EE chưa sẵn sàng (trừ policy_update/permissions_reset/e2ee_init); bọc response gửi đi thành e2ee_payload. Route command theo _moduleRegistry.
@@ -282,8 +284,8 @@ Hai kênh binary trên cùng một WS:
 | Store | State | Actions |
 |---|---|---|
 | **AgentStore** | `agents[]`, `focused_agent_id`, `selected_agent_ids[]`, `search_query` | `setAgents`, `setAgentStatus(id, patch)`, `setFocused(id)`, `toggleSelect(id)`, `setSelectedIds(ids)`, `clearSelection`, `setSearchQuery`, getters `getFilteredAgents`, `getFocusedAgent` |
-| **ConnectionStore** | `status: 'idle'\|'open'\|'closed'`, `gateway_url`, `auth_token` | `connect(url)`, `disconnect`, `setStatus`, `setGatewayUrl`, `setAuthToken`, `clearAuthToken` |
-| **ModuleStore** | `data[agent_id] = { app_list, proc_list, keylog[], keylog_active, sysinfo[], screen_stream_active, webcam_active, input_active, file tree, file_downloads[transfer_id], file_put_ack }` (frame ảnh KHÔNG lưu ở store — đi qua FrameEventBus) | `setModuleData`, `appendKeylog`, `appendSysInfo`, `setScreenStreamActive`, `setWebcamActive`, `setKeylogActive`, `setInputActive`, `setFsEntries`, `appendFileDownloadChunk`, `removeFileDownload`, `setFilePutAck`, `clearFilePutAck`, `clearModule`, `clearAgent`, `clearLiveFlagsForAgent`, `clearAllLiveFlags` |
+| **ConnectionStore** | `status: 'idle'\|'connecting'\|'open'\|'closed'`, `gateway_url`, `auth_token` | `connect(url)`, `disconnect`, `setStatus`, `setGatewayUrl`, `setAuthToken`, `clearAuthToken` |
+| **ModuleStore** | `data[agent_id][module]`; mỗi agent: `app[]`, `process[]`, `keylog[]`, `keylog_active`, `screen{frame,meta}`, `webcam{frame,meta}`, `webcam_active`, `screen_stream_active`, `input_active`, `file{tree,path}`, `file_downloads[transfer_id]`, `file_put_ack`, `sysinfo`, `sysinfo_history[]`. Chỉ `frame_meta` được ghi vào slot screen/webcam; **buffer frame ảnh đi qua FrameEventBus, không vào store**. | `setModuleData`, `appendKeylog`, `appendSysInfo`, `setScreenStreamActive`, `setWebcamActive`, `setKeylogActive`, `setInputActive`, `setFsEntries`, `appendFileDownloadChunk`, `removeFileDownload`, `setFilePutAck`, `clearFilePutAck`, `clearModule`, `clearAgent`, `clearLiveFlagsForAgent`, `clearAllLiveFlags` |
 | **PermissionStore** | `permissions[agent_id][feature] = 'idle'\|'requesting'\|'granted'\|'denied'` | `requestPermission(id, feature)`, `setPermissionResult(id, feature, granted)`, `revoke(id, feature)`, `revokeAll(id)`, getter `getStatus(id, feature)` |
 | **PolicyStore** | `app_whitelist[]`, `sandbox_path`, `results[agent_id] = { success, message }` | `setWhitelist`, `setSandboxPath`, `setPolicyResult(id, result)` |
 | **UiStore** | `theme`, `layout_mode: 'grid'\|'focus'`, `active_tab`, `sidebar_open`, `toasts[]` | `setTheme`, `toggleTheme`, `setLayoutMode`, `setActiveTab`, `toggleSidebar`, `addToast(msg, variant)`, `dismissToast(id)` |
@@ -410,7 +412,7 @@ AgentSocket.onBinary(bytes)
 | Thành phần | Nơi lưu | Nội dung |
 |---|---|---|
 | Gateway — SQLite | `gateway/src/store/data.sqlite` | `users` (username, password_hash bcrypt, role), `agents` (agent_id, secret_hash, display_name), `refresh_tokens`. |
-| Gateway — seed | `store/users.json`, `store/agents.json` | Chỉ cho migration; runtime không đọc. |
+| Gateway — seed | `store/users.json`, `store/agents.json` | Rỗng `[]`; chỉ cho migrate_from_json.js. Runtime không đọc, không ship credential. Admin seed qua `scripts/setup.ps1` (bcrypt vào SQLite). |
 | Gateway — in-RAM | `Map<agent_id, ws>` + `Set<controller_ws>` | Session, xoá khi restart. |
 | Gateway — logs | `logs/gateway.log`, `logs/error.log` | Winston rolling. |
 | Gateway — certs | `gateway/certs/server.key|.cert` | Self-signed TLS, gitignore. |
@@ -421,7 +423,39 @@ AgentSocket.onBinary(bytes)
 
 ---
 
-## 8. Nơi tra cứu
+## 8. Mô hình bảo mật & secret
+
+### 8.1. Bốn secret dùng chung
+
+| Secret | Nằm ở | Vai trò |
+|---|---|---|
+| `CONTROLLER_KEY` | `gateway/.env` + `controller/.env` | Xác thực Controller ↔ Gateway |
+| `AGENT_KEY` | `gateway/.env` + Agent `config.json` (`auth_key`) | Enroll agent (trust-on-first-use) |
+| `JWT_SECRET` | **chỉ** `gateway/.env` | Ký JWT đăng nhập Controller |
+| E2EE PIN | Agent `config.json` (`e2ee_shared_secret`) + gõ trên Controller | Mở khoá kênh end-to-end |
+
+`scripts/setup.ps1` sinh cả 4 **một lần** và ghi khớp vào 3 nơi nên không bao giờ lệch. Auth agent là **theo từng agent**: mỗi agent có `secret_hash` bcrypt riêng trong SQLite; agent_id lạ mà `auth_key == AGENT_KEY` sẽ tự enroll lần đầu rồi ghim vào secret đó. Muốn chặt hơn: `node gateway/scripts/add_agent.js <id>` để cấp secret riêng.
+
+### 8.2. Clone monorepo có mất an toàn không?
+
+**Không — clone mới không mang theo secret sống nào.** Mọi secret đều gitignore và sinh cục bộ, **không commit**:
+
+- `gateway/.env`, `controller/.env` (cả 4 secret)
+- `gateway/certs/server.key|.cert` (khoá riêng TLS)
+- `gateway/src/store/data.sqlite` (hash mật khẩu + hash secret agent)
+- Agent `config.json` / `config.local.json` (auth_key, PIN)
+
+Người vai trò Agent đọc được toàn bộ source (bình thường — code của nhóm) nhưng **không có credential** để giả mạo Gateway, forge login, hay giải mã E2EE của agent khác. Hai lưu ý: (1) **git history** từng chứa `server.key`/`data.sqlite` cũ — rủi ro thấp (cert self-signed localhost vứt đi, DB cũ chưa có credential thật) và setup tái tạo bản mới làm bản cũ vô dụng; xoá hẳn bằng `git filter-repo --invert-paths` nếu cần (đổi mọi commit hash). (2) **Least privilege**: máy agent chỉ cần `AGENT_KEY` + PIN + gateway URL — `setup.ps1 -Component agent` chỉ ghi đúng phần đó.
+
+### 8.3. Bảo vệ at-rest
+
+- Agent mã hoá PIN bằng **DPAPI** (`ConfigManager`) trước khi lưu `config.json`.
+- Controller cất PIN từng agent trong **IndexedDB** mã hoá AES-GCM dưới Master Password (PBKDF2); khoá phiên E2EE hoàn toàn in-memory.
+- Mật khẩu login lưu **bcrypt**; JWT access 30m + refresh 7d (cookie HttpOnly).
+
+---
+
+## 9. Nơi tra cứu
 
 - Schema JSON: [`docs/protocol/`](docs/protocol/) — nguồn duy nhất cho tên field.
 - Thiết kế Controller: [`docs/design/controller/architecture.md`](docs/design/controller/architecture.md).
