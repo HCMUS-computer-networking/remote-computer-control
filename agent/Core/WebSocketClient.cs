@@ -45,21 +45,26 @@ namespace AgentSystem.Core
             _ = ConnectAsync();
         }
 
+        private ClientWebSocket CreateConfiguredWebSocket()
+        {
+            var ws = new ClientWebSocket();
+            try
+            {
+                ws.Options.RemoteCertificateValidationCallback = (sender, cert, chain, sslErrors) => true;
+            }
+            catch (Exception certEx)
+            {
+                Log.Debug(certEx, "[WebSocket] Ignore cert validation config error for non-SSL connection");
+            }
+            return ws;
+        }
+
         private async Task ConnectAsync()
         {
             try
             {
                 cts = new CancellationTokenSource();
-                webSocket = new ClientWebSocket();
-
-                try
-                {
-                    webSocket.Options.RemoteCertificateValidationCallback = (sender, cert, chain, sslErrors) => true;
-                }
-                catch (Exception certEx)
-                {
-                    Log.Debug(certEx, "[WebSocket] Ignore cert validation config error for non-SSL connection");
-                }
+                webSocket = CreateConfiguredWebSocket();
 
                 string finalUrl = $"{url.TrimEnd('/')}/agent?key={ConfigManager.Current.AuthKey}";
                 Log.Information("[WebSocket] Đang kết nối tới {finalUrl}...", finalUrl);
@@ -257,7 +262,7 @@ namespace AgentSystem.Core
 
                 try
                 {
-                    webSocket = new ClientWebSocket();
+                    webSocket = CreateConfiguredWebSocket();
                     string finalUrl = $"{url.TrimEnd('/')}/agent?key={ConfigManager.Current.AuthKey}";
                     await webSocket.ConnectAsync(new Uri(finalUrl), cts.Token);
                     

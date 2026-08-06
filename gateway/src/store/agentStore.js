@@ -60,18 +60,16 @@ async function verifySecret(agentId, secret) {
  * @returns {boolean} true if registered, false if rejected (already online)
  */
 function register(agentId, ws, meta) {
-  // If an agent with the same id is already connected → REJECT the NEW socket
+  // If an agent with the same id is already connected → close old socket & accept new connection
   if (agents.has(agentId)) {
     const existing = agents.get(agentId);
-    if (existing.ws.readyState === existing.ws.OPEN) {
-      logger.warn('[agentStore] Agent already online — rejecting NEW connection', {
-        agentId,
-      });
-      return false; // Caller must close the NEW socket
+    try {
+      existing.ws.close(4000, 'replaced_by_new_connection');
+    } catch (e) {
+      /* ignore */
     }
-    // Existing socket is not OPEN (stale entry) — clean it up and allow
     agents.delete(agentId);
-    logger.info('[agentStore] Cleaned stale entry for agent', { agentId });
+    logger.info('[agentStore] Replaced previous connection for agent', { agentId });
   }
 
   agents.set(agentId, {

@@ -202,12 +202,52 @@ namespace AgentSystem.Modules
             int totalChunks = (int)Math.Ceiling((double)totalSize / CHUNK_SIZE);
             if (totalChunks == 0) totalChunks = 1;
 
+            if (totalSize == 0)
+            {
+                context.SendResponse(new
+                {
+                    type = "fs_get_result",
+                    agent_id = context.AgentId,
+                    command_id = commandId,
+                    transfer_id = transferId,
+                    success = true,
+                    path = relativePath,
+                    total_size = 0,
+                    chunk_index = 0,
+                    total_chunks = 1,
+                    sha256 = fileHash,
+                    data_base64 = ""
+                });
+                return;
+            }
+
             byte[] buffer = new byte[CHUNK_SIZE];
             int chunkIndex = 0;
-            int bytesRead;
 
-            while ((bytesRead = await stream.ReadAsync(buffer, 0, CHUNK_SIZE)) > 0)
+            while (true)
             {
+                int bytesRead = 0;
+                while (bytesRead < CHUNK_SIZE)
+                {
+                    int read = await stream.ReadAsync(buffer, bytesRead, CHUNK_SIZE - bytesRead);
+                    if (read == 0) break;
+                    bytesRead += read;
+                }
+
+                if (bytesRead == 0) break;
+
+                string base64Chunk;
+                if (bytesRead == CHUNK_SIZE)
+                {
+                    base64Chunk = Convert.ToBase64String(buffer);
+                }
+                else
+                {
+                    byte[] chunkData = new byte[bytesRead];
+                    Buffer.BlockCopy(buffer, 0, chunkData, 0, bytesRead);
+                    base64Chunk = Convert.ToBase64String(chunkData);
+                }
+
                 context.SendResponse(new
                 {
                     type = "fs_get_result",
@@ -219,19 +259,9 @@ namespace AgentSystem.Modules
                     total_size = totalSize,
                     chunk_index = chunkIndex,
                     total_chunks = totalChunks,
-                    sha256 = (chunkIndex == totalChunks - 1) ? fileHash : null
+                    sha256 = (chunkIndex == totalChunks - 1) ? fileHash : null,
+                    data_base64 = base64Chunk
                 });
-
-                if (bytesRead == CHUNK_SIZE)
-                {
-                    context.SendBinaryFrame(buffer);
-                }
-                else
-                {
-                    byte[] chunkData = new byte[bytesRead];
-                    Buffer.BlockCopy(buffer, 0, chunkData, 0, bytesRead);
-                    context.SendBinaryFrame(chunkData);
-                }
 
                 chunkIndex++;
             }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -53,8 +53,15 @@ namespace AgentSystem.Managers
 
         public bool IsPathInSandbox(string targetPath)
         {
-            string normalizedPath = NormalizeAndValidatePath(targetPath);
-            return normalizedPath.StartsWith(sandboxRootPath, StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                NormalizeAndValidatePath(targetPath);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public string NormalizeAndValidatePath(string relativePath)
@@ -65,19 +72,16 @@ namespace AgentSystem.Managers
             }
 
             string absoluteSandboxRoot = Path.GetFullPath(sandboxRootPath);
+            string rootWithSeparator = absoluteSandboxRoot.EndsWith(Path.DirectorySeparatorChar.ToString())
+                ? absoluteSandboxRoot
+                : absoluteSandboxRoot + Path.DirectorySeparatorChar;
 
-            // FIX: Đảm bảo đường dẫn gốc luôn kết thúc bằng dấu \
-            // Nếu không có, thêm vào để tránh trường hợp C:\AgentSandbox khớp với C:\AgentSandbox_Hacked
-            if (!absoluteSandboxRoot.EndsWith(Path.DirectorySeparatorChar.ToString()))
-            {
-                absoluteSandboxRoot += Path.DirectorySeparatorChar;
-            }
+            string fullPath = Path.GetFullPath(Path.Combine(rootWithSeparator, relativePath));
 
-            // Sử dụng đường dẫn gốc đã chuẩn hóa để tạo fullPath
-            string fullPath = Path.GetFullPath(Path.Combine(absoluteSandboxRoot, relativePath));
+            bool isRoot = fullPath.Equals(absoluteSandboxRoot, StringComparison.OrdinalIgnoreCase);
+            bool isSub = fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
 
-            // Kiểm tra Path Traversal với đường dẫn gốc đã có dấu \
-            if (!fullPath.StartsWith(absoluteSandboxRoot, StringComparison.OrdinalIgnoreCase))
+            if (!isRoot && !isSub)
             {
                 throw new UnauthorizedAccessException("Attempted Path Traversal detected!");
             }

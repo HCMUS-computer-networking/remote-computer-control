@@ -71,6 +71,8 @@ namespace AgentSystem.Modules
             var processes = Process.GetProcesses();
             var currentTime = DateTime.UtcNow;
 
+            var currentPids = processes.Select(p => p.Id).ToHashSet();
+
             Parallel.ForEach(processes, p =>
             {
                 try
@@ -116,7 +118,7 @@ namespace AgentSystem.Modules
                 }
             });
 
-            var currentPids = processes.Select(p => p.Id).ToHashSet();
+
             var pidsToRemove = cpuHistory.Keys.Where(pid => !currentPids.Contains(pid)).ToList();
             
             foreach (var pid in pidsToRemove) 
