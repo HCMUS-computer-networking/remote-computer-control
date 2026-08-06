@@ -110,7 +110,7 @@ function ApplicationTab({ agent })
                 <button
                     className="action-btn action-btn--stop"
                     disabled={!is_whitelisted || is_pending}
-                    title={is_pending ? 'Đang xin quyền...' : is_whitelisted ? 'Stop this application' : disabled_tip}
+                    title={is_pending ? 'Requesting consent…' : is_whitelisted ? 'Stop this application' : disabled_tip}
                     onClick={() => guardedSend(() => sendToFocused(buildAppStop(row.name)))}
                 >
                     Stop
@@ -122,7 +122,7 @@ function ApplicationTab({ agent })
             <button
                 className="action-btn action-btn--start"
                 disabled={!is_whitelisted || is_pending}
-                title={is_pending ? 'Đang xin quyền...' : is_whitelisted ? 'Start this application' : disabled_tip}
+                title={is_pending ? 'Requesting consent…' : is_whitelisted ? 'Start this application' : disabled_tip}
                 onClick={() => guardedSend(() => sendToFocused(buildAppStart(row.name)))}
             >
                 Start

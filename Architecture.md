@@ -67,24 +67,32 @@ controller/
     ├── components/
     │   ├── FrameCanvas.jsx        Vẽ 1 frame (ArrayBuffer) lên <canvas>. Subscribe FrameEventBus theo (agent_id, module) — nhận frame trực tiếp KHÔNG qua React state. Hỗ trợ delta encoding: keyframe resize canvas + vẽ (0,0); non-keyframe vẽ diff-rect tại (meta.x, meta.y) không reset canvas.
     │   ├── E2EEUnlockModal.jsx    Modal nhập Master Password để mở khoá kho PIN; nhập/lưu PIN cho từng agent (dùng E2EEStore).
-    │   ├── LoginScreen.jsx        Form đăng nhập, gọi AuthService, lưu JWT vào sessionStorage + ConnectionStore.
+    │   ├── LoginScreen.jsx        Form đăng nhập, gọi AuthService, lưu JWT vào ConnectionStore (in-memory, KHÔNG sessionStorage).
     │   ├── ModuleTable.jsx        Bảng chung (sort/filter) dùng chung cho App/Process.
-    │   ├── PermissionGate.jsx     HOC bọc mỗi module tab. Expose useGuardedSend + usePendingConsent qua React context — click nút gọi guardedSend(fn), nếu chưa cấp thì queue + xin quyền.
+    │   ├── PermissionGate.jsx     HOC bọc mỗi module tab (view Focus). Expose useGuardedSend + usePendingConsent qua React context — click nút gọi guardedSend(fn), nếu chưa cấp thì queue + xin quyền.
+    │   ├── MainArea.jsx           Router panel chính: theo active_tab + số agent đang chọn (online) → render module Grid (đa agent) hoặc FocusView (1 agent); đồng bộ focused_agent_id khi chọn đúng 1 agent.
+    │   ├── ModuleTabs.jsx         Thanh 8 tab module, luôn hiển thị trên cả Grid lẫn Focus; click chỉ set active_tab (không tự đổi view).
     │   ├── agents/
-    │   │   ├── AgentCard.jsx      Ô hiển thị 1 agent (tên, status, checkbox multi-select).
+    │   │   ├── AgentCard.jsx      Ô hiển thị 1 agent (tên, status, checkbox multi-select). Click thân card = chọn riêng agent này (→ view Focus); checkbox = multi-select cho lệnh/grid.
     │   │   ├── AgentList.jsx      Danh sách agent trong Sidebar, filter theo search query.
-    │   │   └── MultiSelect.jsx    Toggle chọn nhiều agent để bắn lệnh bulk.
+    │   │   └── MultiSelect.jsx    Thanh chọn tất cả / bỏ chọn agent online (nguồn selected_agent_ids).
     │   ├── layout/
     │   │   ├── Sidebar.jsx        Panel trái: logo, search, AgentList, gateway status.
-    │   │   ├── TopBar.jsx         Header: tên focused agent, theme toggle, logout, trạng thái E2EE.
+    │   │   ├── TopBar.jsx         Header: breadcrumb (module + tên agent hoặc "— All Agents"), badge SENSITIVE, connection, theme toggle, logout. View grid/focus suy ra từ selection (services/viewMode).
     │   │   └── ThemeToggle.jsx    Nút đổi light/dark theme.
     │   ├── livescreen/
-    │   │   ├── GridView.jsx       Lưới thumbnail nhiều agent, dùng FrameCanvas nhỏ.
-    │   │   └── FocusView.jsx      1 agent focus + tab bar 8 module + PermissionGate wrap.
-    │   └── modules/               Mỗi module 1 folder, chỉ có index.jsx
+    │   │   └── FocusView.jsx      Panel 1 agent: chọn module component theo active_tab, bọc PermissionGate (trừ sysinfo), gate theo trạng thái E2EE của agent focus.
+    │   ├── modulegrid/            Lưới đa agent — tile cho MỌI agent online; toolbar thao tác hàng loạt chỉ nhắm agent đang chọn.
+    │   │   ├── ModuleGridShell.jsx  Khung chung: header + toolbar + lưới tile; tile highlight khi được chọn; click tile = toggle select.
+    │   │   ├── SysInfoGrid.jsx      Tile CPU/RAM/Disk từng agent; poll sysinfo mọi agent online (không consent).
+    │   │   ├── ScreenGrid.jsx       Tile stream 2 fps; chỉ agent đã cấp quyền screen mới auto-stream; toolbar View/Stop (agent đang chọn).
+    │   │   ├── WebcamGrid.jsx       Tile webcam feed (fps thấp); toolbar Start/Stop (agent đang chọn).
+    │   │   ├── KeylogGrid.jsx       Tile trạng thái + preview phím; toolbar Start/Stop (agent đang chọn).
+    │   │   └── PowerGrid.jsx        Tile trạng thái quyền; toolbar Lock/Restart/Shutdown/Sleep (agent đang chọn) + countdown chung.
+    │   └── modules/               Mỗi module 1 folder, chỉ có index.jsx — dùng cho view Focus (1 agent)
     │       ├── ApplicationTab/    List/start/stop app (whitelist). Poll 3 s (silent).
     │       ├── ProcessTab/        List/kill process. Poll 3 s (silent).
-    │       ├── ScreenTab/         Screenshot + start/stop stream + toggle "Điều khiển" (Remote Input).
+    │       ├── ScreenTab/         Screenshot + start/stop stream + toggle "Control" (Remote Input).
     │       ├── KeylogTab/         Terminal log, gộp ký tự liên tiếp thành 1 dòng, Enter ngắt dòng; export .txt.
     │       ├── FileTab/           Sandbox browser, upload/download chunked binary.
     │       ├── WebcamTab/         MJPEG stream, dùng FrameCanvas với label="WEBCAM".
@@ -92,14 +100,16 @@ controller/
     │       └── PowerTab/          lock / restart / shutdown / sleep + countdown UI.
     │
     ├── hooks/
-    │   └── UseAgentSocket.js      Singleton socket (refcount, ONE global connection). Public API: sendCommand, sendToFocused, sendToSelected, requestPermission, revokePermission, stopModule. Điều phối E2EE: bọc mọi lệnh gửi đi thành e2ee_payload, giải mã e2ee_payload nhận về, chạy handshake khi agent online, giải mã frame UDP bằng khoá phiên ổn định rồi emit sang FrameEventBus.
+    │   ├── UseAgentSocket.js      Singleton socket (refcount, ONE global connection). Public API: sendCommand, sendToFocused, sendToSelected, requestPermission, revokePermission, stopModule. Điều phối E2EE: bọc mọi lệnh gửi đi thành e2ee_payload, giải mã e2ee_payload nhận về, chạy handshake khi agent online, giải mã frame UDP bằng khoá phiên ổn định rồi emit sang FrameEventBus.
+    │   └── useBatchGuardedSend.js Consent-trước-lệnh cho MỘT TẬP agent (grid đa agent): mỗi agent đã cấp → gửi ngay; chưa cấp → xin quyền + hàng đợi, agent nào cấp thì drain gửi; timeout 30 s. Tái dùng API của UseAgentSocket.
     │
     ├── services/
     │   ├── index.js               ONE place chọn mock vs real: `USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'`.
     │   ├── Socket.js              Wrap trình duyệt WebSocket, callback onOpen/onMessage/onBinary/onClose/onError, gắn token vào query string.
-    │   ├── MockSocket.js          Sim Gateway+Agent trong browser: nhận JSON, delay, echo lại đúng schema. Sinh frame placeholder cho screen/webcam.
+    │   ├── MockSocket.js          Sim Gateway+Agent trong browser, đóng vai Agent của giao thức E2EE THẬT: handshake ECDH/HMAC bằng utils/crypto (khoá khớp tuyệt đối controller), giải mã e2ee_payload để đọc lệnh, trả permission_result (agent-06 từ chối consent), mã hoá frame screen/webcam bằng khoá UDP phiên. Kết quả module trả plaintext.
     │   ├── FrameEventBus.js       EventTarget nhẹ; kênh phát frame ảnh theo tên "frame_{agentId}_{module}" để FrameCanvas nhận trực tiếp, tránh re-render toàn cây React.
     │   ├── Protocol.js            Builders (buildXxx), validators, MSG_TYPE, MODULE, FEATURE, POWER_ACTION, normalizeIncoming (chuẩn hoá snake_case tên field).
+    │   ├── viewMode.js            GRID_MODULES + deriveViewMode(active_tab, số agent online đang chọn) → 'grid' | 'focus'; nguồn quy tắc dùng chung cho MainArea + TopBar.
     │   └── AuthService.js         POST /api/login, /api/refresh, /api/logout; xử lý refresh cookie.
     │
     ├── utils/
@@ -286,7 +296,7 @@ Hai kênh binary trên cùng một WS:
 | **ModuleStore** | `data[agent_id][module]`; mỗi agent: `app[]`, `process[]`, `keylog[]`, `keylog_active`, `screen{frame,meta}`, `webcam{frame,meta}`, `webcam_active`, `screen_stream_active`, `input_active`, `file{tree,path}`, `file_downloads[transfer_id]`, `file_put_ack`, `sysinfo`, `sysinfo_history[]`. Chỉ `frame_meta` được ghi vào slot screen/webcam; **buffer frame ảnh đi qua FrameEventBus, không vào store**. | `setModuleData`, `appendKeylog`, `appendSysInfo`, `setScreenStreamActive`, `setWebcamActive`, `setKeylogActive`, `setInputActive`, `setFsEntries`, `appendFileDownloadChunk`, `removeFileDownload`, `setFilePutAck`, `clearFilePutAck`, `clearModule`, `clearAgent`, `clearLiveFlagsForAgent`, `clearAllLiveFlags` |
 | **PermissionStore** | `permissions[agent_id][feature] = 'idle'\|'requesting'\|'granted'\|'denied'` | `requestPermission(id, feature)`, `setPermissionResult(id, feature, granted)`, `revoke(id, feature)`, `revokeAll(id)`, getter `getStatus(id, feature)` |
 | **PolicyStore** | `app_whitelist[]`, `sandbox_path`, `results[agent_id] = { success, message }` | `setWhitelist`, `setSandboxPath`, `setPolicyResult(id, result)` |
-| **UiStore** | `theme`, `layout_mode: 'grid'\|'focus'`, `active_tab`, `sidebar_open`, `toasts[]` | `setTheme`, `toggleTheme`, `setLayoutMode`, `setActiveTab`, `toggleSidebar`, `addToast(msg, variant)`, `dismissToast(id)` |
+| **UiStore** | `theme`, `active_tab` (mặc định `sysinfo`), `layout_mode` (legacy — view grid/focus thực tế suy ra từ selection qua `services/viewMode`), `sidebar_open`, `toasts[]` | `setTheme`, `toggleTheme`, `setLayoutMode`, `setActiveTab`, `toggleSidebar`, `addToast(msg, variant)`, `dismissToast(id)` |
 | **E2EEStore** | `isUnlocked`, `masterKey`, `sessions[agent_id] = { state, sessionKey, udpKeyBuffer, udpFrameIdOffset, udpLastSeq, sendSeq, recvSeq }` | `unlock/lock`, `saveAgentPin/getAgentPin` (IndexedDB), `setSessionState`, `resetSession`, `getSessionKey`, `getSendSeqAndIncrement`, `checkAndUpdateRecvSeq`, `updateUdpSeq` |
 
 Mọi component subscribe **selector cụ thể** (`useStore(s => s.x)`).
@@ -321,10 +331,21 @@ AgentSocket.onBinary(bytes)
 ### 4.3. Pattern Mock ↔ Real socket
 
 - `services/index.js` là **nơi DUY NHẤT** đọc `VITE_USE_MOCK`. `Socket.js` (real) và `MockSocket.js` cùng API shape (`connect/close/send`, `onOpen/onMessage/onBinary/onClose/onError`). Toàn app import `AgentSocket from '../services'`. Đổi backend chỉ cần set `VITE_USE_MOCK=false`.
+- `MockSocket.js` chạy đúng luồng E2EE thật của controller (handshake + giải mã lệnh + mã hoá frame). Vì vậy khi dùng mock vẫn phải **nhập Master Password** trong `E2EEUnlockModal` để kích hoạt handshake (dùng PIN mặc định `default-pin-12345`); trước khi handshake, mọi lệnh module bị chặn — đúng như với Agent thật.
 
-### 4.4. Consent flow (PermissionGate)
+### 4.4. Consent flow
 
-1. Component gọi `guardedSend(fn)`. 2. Nếu feature đã `granted` → chạy ngay. 3. Ngược lại: queue `fn`, `requestPermission`, hiện spinner. 4. Agent trả `permission_result` → drain queue khi granted, toast lỗi khi denied. 5. Timeout 30 s → toast + clear queue. 6. Rời tab / đổi agent → auto `revokePermission` + `stopModule`.
+**Focus (1 agent) — PermissionGate:** 1. Component gọi `guardedSend(fn)`. 2. Nếu feature đã `granted` → chạy ngay. 3. Ngược lại: queue `fn`, `requestPermission`, hiện spinner. 4. Agent trả `permission_result` → drain queue khi granted, toast lỗi khi denied. 5. Timeout 30 s → toast + clear queue. 6. Rời tab / đổi agent → auto `revokePermission` + `stopModule`.
+
+**Grid (đa agent) — useBatchGuardedSend:** với TỪNG agent đang chọn: đã `granted` → gửi lệnh ngay; chưa → xin quyền + hàng đợi, `permission_result` granted thì drain gửi, denied/timeout thì bỏ. Mỗi agent tự bung popup riêng (N agent = N popup).
+
+### 4.5. View routing & Grid đa agent
+
+- `components/MainArea.jsx` chọn view qua `services/viewMode.deriveViewMode(active_tab, số_agent_online_đang_chọn)`:
+  - Module **grid-capable** (`sysinfo`, `keylog`, `webcam`, `power`, `screen`): chọn đúng **1** agent → **Focus** agent đó; chọn **0 hoặc ≥2** → **Grid** (hiện MỌI agent online).
+  - Module còn lại (`file`, `application`, `process`): **luôn Focus**.
+- `ModuleTabs.jsx` (thanh tab) luôn hiển thị ở cả hai view; đổi tab chỉ set `active_tab`.
+- **Grid** (`components/modulegrid/`): tile cho từng agent online, tile "Not authorized" nếu agent chưa cấp feature tương ứng; **toolbar thao tác hàng loạt chỉ nhắm `selected_agent_ids`** (chưa chọn agent nào → nút disabled). Consent hàng loạt qua `hooks/useBatchGuardedSend.js`.
 
 ---
 
@@ -336,7 +357,7 @@ AgentSocket.onBinary(bytes)
 | **Process** | `process` | `proc_list`, `proc_kill` | ✓ | List/kill PID (chặn tiến trình lõi + đặc quyền), poll 3 s silent. |
 | **SysInfo** | (none) | `sysinfo` | — | CPU/RAM/Disk/uptime/hostname/IP/OS, poll 3 s, recharts sparkline. |
 | **Screen** | `screen` | `screenshot`, `screen_stream`, `screen_stream_stop` | ✓ | 1-shot + live stream (delta encoding, keyframe định kỳ, FEC, E2EE UDP), countdown trước khi bật. |
-| **Remote Input** | `input` | `input_mouse_move/click`, `input_key`, `input_type` | ✓ (riêng) | Nút "Điều khiển" trên ScreenTab, overlay blue "K", remap toạ độ, throttle mouse_move. |
+| **Remote Input** | `input` | `input_mouse_move/click`, `input_key`, `input_type` | ✓ (riêng) | Nút "Control" trên ScreenTab, overlay blue "K", remap toạ độ, throttle mouse_move. |
 | **Keylog** | `keylog` | `keylog_start`, `keylog_stop` | ✓ | Hook lock-free, terminal log gộp dòng, export .txt. |
 | **Webcam** | `webcam` | `webcam_start`, `webcam_stop` | ✓ | MJPEG stream (FEC, E2EE UDP) + red-dot overlay Agent. |
 | **File** | `file` | `fs_list`, `fs_get`, `fs_put`, `fs_delete` | ✓ | Sandbox browser, chunk + sha256, download song song, upload binary. |
@@ -363,7 +384,7 @@ AgentSocket.onBinary(bytes)
 - **State**: chỉ **Zustand**; subscribe đúng slice; setter luôn spread giữ immutability.
 - **Component** không gọi socket/fetch trực tiếp — chỉ qua `services/*` + `hooks/UseAgentSocket.js`. Frame ảnh đi qua **FrameEventBus**, không nhồi vào store.
 - **Cleanup mọi `useEffect`**: interval, listener, WS handler, unsubscribe FrameEventBus, `URL.revokeObjectURL`, `ImageBitmap.close()`.
-- **UI copy** cho operator: tiếng **Việt**; comment code tiếng Anh.
+- **UI copy** cho operator: tiếng **Anh** — mọi chuỗi hiển thị (label, nút, toast, `title`, placeholder, breadcrumb) đều English; comment code cũng tiếng Anh.
 - **Lint** `oxlint`: giữ pass.
 
 ### 6.3. Gateway — JavaScript (Node.js)
@@ -392,7 +413,8 @@ AgentSocket.onBinary(bytes)
 
 ### 6.6. Auth & transport
 
-- JWT lưu `sessionStorage` (Controller) + refresh_token cookie HttpOnly. Gateway verify JWT ở WS `?token=`.
+- JWT access lưu **in-memory** (Zustand `ConnectionStore`, KHÔNG `sessionStorage`/`localStorage`) — reload trang = đăng xuất; refresh_token cookie HttpOnly re-hydrate token qua `AuthService.refreshAccessToken`. Gateway verify JWT ở WS `?token=`.
+- **RBAC**: JWT mang `role`; `messageRouter` chỉ forward lệnh khi `role === 'admin'`. `role === 'viewer'` là read-only (xem danh sách agent + nhận stream qua subscribe, KHÔNG ra lệnh xuống agent).
 - Agent xác thực qua **REGISTER message** `{ agent_id, secret }` sau khi mở WS `/agent`.
 - **WSS/TLS mặc định**; cert local để trong `gateway/certs/` và **không commit**.
 
@@ -417,7 +439,7 @@ AgentSocket.onBinary(bytes)
 | Agent — config | `agent/config.json` | agent_id, gateway_url, auth_key, e2ee_shared_secret, app_whitelist, sandbox_root_path, … |
 | Agent — audit log | `agent/Logs/agent-YYYYMMDD.log` | Serilog rolling daily, auto-clean. |
 | Controller — PIN vault | IndexedDB `RemoteControl_E2EE` | PIN từng agent, mã hoá AES-GCM dưới Master Password (PBKDF2). |
-| Controller — session | `sessionStorage` (JWT) + refresh cookie HttpOnly | Zustand + khoá phiên E2EE hoàn toàn in-memory. |
+| Controller — session | JWT in-memory (Zustand `ConnectionStore`) + refresh cookie HttpOnly | Reload = đăng xuất (refresh cookie re-hydrate). Zustand + khoá phiên E2EE hoàn toàn in-memory. |
 
 ---
 

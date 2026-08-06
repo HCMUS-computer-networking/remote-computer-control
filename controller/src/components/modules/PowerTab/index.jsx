@@ -121,7 +121,7 @@ function CountdownModal({ action, label, agent, onConfirm, onCancel })
                         autoFocus   // focus Cancel by default — safer to abort than to confirm
                     >
                         <X size={14} strokeWidth={2} />
-                        Hủy
+                        Cancel
                     </button>
                 </div>
             </div>
@@ -176,7 +176,7 @@ function PowerTab({ agent })
         const status = usePermissionStore.getState().permissions[agent.id]?.[FEATURE.POWER] ?? 'idle'
         if (status !== 'granted')
         {
-            addToast('Quyền Power đã bị thu hồi — hủy lệnh.', 'error')
+            addToast('Power consent was revoked — command cancelled.', 'error')
             setPending(null)
             return
         }
@@ -222,7 +222,7 @@ function PowerTab({ agent })
                     title="Lock the Agent screen immediately"
                 >
                     <Lock size={16} strokeWidth={2} />
-                    Lock (ngay lập tức)
+                    Lock (immediate)
                 </button>
 
                 <button

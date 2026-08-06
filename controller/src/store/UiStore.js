@@ -10,8 +10,8 @@ const useUiStore = create(function (set)
 {
     return {
         theme        : 'light',         // 'light' | 'dark'
-        layout_mode  : 'grid',          // 'grid'  | 'focus'
-        active_tab   : 'application',   // one of MODULE_TABS
+        layout_mode  : 'grid',          // 'grid'  | 'focus' — legacy field; view is now derived from selection (services/viewMode)
+        active_tab   : 'sysinfo',       // one of MODULE_TABS — SysInfo grid is the landing (read-only, no consent)
         sidebar_open : true,            // controls mobile sidebar visibility
         toasts       : [],              // array of { id, message, variant, timestamp }
 
@@ -32,12 +32,13 @@ const useUiStore = create(function (set)
             set({ layout_mode: mode });
         },
 
-        // Switching to a tab implies entering focus view for that agent.
+        // Switch the active module tab. Grid-vs-focus is derived from the current
+        // selection (services/viewMode) — switching tabs no longer forces a mode.
         setActiveTab: (tab) =>
         {
             if (MODULE_TABS.includes(tab))
             {
-                set({ active_tab: tab, layout_mode: 'focus' })
+                set({ active_tab: tab })
             }
         },
 

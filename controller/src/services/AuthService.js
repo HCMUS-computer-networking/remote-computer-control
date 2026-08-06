@@ -62,7 +62,7 @@ export async function login(username, password)
     catch (err)
     {
         console.error('[AuthService] login network error:', err)
-        return { ok: false, message: 'Không kết nối được Gateway. Kiểm tra máy chủ và thử lại.' }
+        return { ok: false, message: 'Could not reach the Gateway. Check the server and try again.' }
     }
 
     let body = {}
@@ -71,13 +71,13 @@ export async function login(username, password)
 
     if (!response.ok || !body.ok || !body.token)
     {
-        return { ok: false, message: body.message ?? 'Sai tài khoản hoặc mật khẩu.' }
+        return { ok: false, message: body.message ?? 'Incorrect username or password.' }
     }
 
     // Access token lives in memory only — no sessionStorage / localStorage.
     useConnectionStore.getState().setAuthToken(body.token)
 
-    return { ok: true, token: body.token, message: body.message ?? 'Đăng nhập thành công.' }
+    return { ok: true, token: body.token, message: body.message ?? 'Signed in successfully.' }
 }
 
 // ─── Public: refresh access token ─────────────────────────────────────────────
@@ -107,7 +107,7 @@ export function refreshAccessToken()
         catch (err)
         {
             console.error('[AuthService] refresh network error:', err)
-            return { ok: false, message: 'Không kết nối được Gateway để làm mới phiên.' }
+            return { ok: false, message: 'Could not reach the Gateway to refresh the session.' }
         }
 
         let body = {}
@@ -116,14 +116,14 @@ export function refreshAccessToken()
 
         if (!response.ok || !body.ok || !body.token)
         {
-            return { ok: false, message: body.message ?? 'Phiên đã hết hạn, cần đăng nhập lại.' }
+            return { ok: false, message: body.message ?? 'Session expired, please sign in again.' }
         }
 
         // Race guard: if the operator logged out while this fetch was in
         // flight, silently drop the new token instead of un-logging them out.
         if (started_epoch !== _session_epoch)
         {
-            return { ok: false, message: 'Đã đăng xuất trong lúc làm mới phiên.' }
+            return { ok: false, message: 'Signed out while refreshing the session.' }
         }
 
         useConnectionStore.getState().setAuthToken(body.token)

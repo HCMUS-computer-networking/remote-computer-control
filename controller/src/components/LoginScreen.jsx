@@ -48,7 +48,7 @@ function LoginScreen()
                 </div>
 
                 <p className="login-card__hint">
-                    Đăng nhập để mở console điều khiển. Xác thực do Gateway xử lý.
+                    Sign in to open the control console. Authentication is handled by the Gateway.
                 </p>
 
                 <label className="login-card__field">
@@ -93,7 +93,7 @@ function LoginScreen()
                     {submitting
                         ? <Loader2 size={16} strokeWidth={2} className="spin" />
                         : <LogIn size={16} strokeWidth={2} />}
-                    {submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}
+                    {submitting ? 'Signing in…' : 'Sign in'}
                 </button>
 
             </form>

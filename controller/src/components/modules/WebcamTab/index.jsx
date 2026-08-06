@@ -9,11 +9,11 @@
 // FrameCanvas and every consumer benefits — no duplicate logic to keep in sync.
 //
 // STREAM LIFECYCLE:
-//   - "Bật webcam"  → buildWebcamStart → Agent shows consent popup.
+//   - "Start webcam"  → buildWebcamStart → Agent shows consent popup.
 //                     On accept, Agent replies webcam_started + streams frames.
 //                     On reject, Agent replies webcam_denied (toast is raised
 //                     by UseAgentSocket; the button flips back to idle).
-//   - "Tắt webcam"  → buildWebcamStop → Agent stops the camera stream.
+//   - "Stop webcam"  → buildWebcamStop → Agent stops the camera stream.
 //   - On UNMOUNT (user switches tab or leaves focus), the cleanup effect
 //     stops the stream automatically so the camera does not stay on for an
 //     agent nobody is watching. This is important for privacy — an orphaned
@@ -151,7 +151,7 @@ function WebcamTab({ agent })
                                 title="Stop the webcam stream"
                             >
                                 <VideoOff size={14} strokeWidth={2} />
-                                Tắt webcam
+                                Stop webcam
                             </button>
                         )
                         : (
@@ -160,13 +160,13 @@ function WebcamTab({ agent })
                                 onClick={handleStart}
                                 disabled={!agent.online || !form_valid || is_pending}
                                 title={is_pending
-                                    ? 'Đang xin quyền...'
+                                    ? 'Requesting consent…'
                                     : form_valid
                                         ? 'Ask the Agent for webcam consent and start streaming'
                                         : 'Fix the settings error first'}
                             >
                                 <Video size={14} strokeWidth={2} />
-                                Bật webcam
+                                Start webcam
                             </button>
                         )
                     }
@@ -261,7 +261,7 @@ function WebcamTab({ agent })
                     : (
                         <div className="screen-tab__placeholder">
                             <Video size={40} strokeWidth={1.25} />
-                            <span>Press "Bật webcam" — the Agent will show a consent popup before streaming</span>
+                            <span>Press "Start webcam" — the Agent will show a consent popup before streaming</span>
                         </div>
                     )
                 }

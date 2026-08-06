@@ -650,7 +650,7 @@ function fanoutSend(msg, target_ids, options)
 
     if (skipped > 0 && !silent)
     {
-        useUiStore.getState().addToast(`Đã bỏ qua ${skipped} agent chưa cấp quyền`, 'error')
+        useUiStore.getState().addToast(`Skipped ${skipped} agent(s) without consent`, 'error')
     }
 }
 
@@ -991,7 +991,7 @@ function dispatchMessage(msg, { setStatus: _setStatus, setAgents, setAgentStatus
         // ── E2EE ─────────────────────────────────────────────────────────
         case MSG_TYPE.E2EE_ERROR:
             useE2EEStore.getState().setSessionState(msg.agent_id, 'uninitialized', null)
-            useUiStore.getState().addToast(`E2EE Handshake bị từ chối bởi ${msg.agent_id}: ${msg.message || 'Sai mã PIN'}`, 'error')
+            useUiStore.getState().addToast(`E2EE handshake rejected by ${msg.agent_id}: ${msg.message || 'Wrong PIN'}`, 'error')
             break
 
         case MSG_TYPE.E2EE_READY:
@@ -1056,7 +1056,7 @@ function dispatchMessage(msg, { setStatus: _setStatus, setAgents, setAgentStatus
                 }
                 else
                 {
-                    addToast('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'error')
+                    addToast('Your session has expired. Please sign in again.', 'error')
                     logout()
                 }
             })

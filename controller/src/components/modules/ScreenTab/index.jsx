@@ -1,9 +1,9 @@
 // ScreenTab/index.jsx — screenshot + live stream panel for one focused agent.
 //
 // STREAM LIFECYCLE:
-//   - "Chụp 1 lần" sends a single screenshot request (module:"screenshot").
+//   - "Capture once" sends a single screenshot request (module:"screenshot").
 //     The Agent replies with one frame_meta + binary pair.
-//   - "Bắt đầu stream" starts a 24 fps continuous stream for the focused agent.
+//   - "Start stream" starts a 24 fps continuous stream for the focused agent.
 //     Frames arrive as repeating frame_meta + binary pairs and are rendered
 //     by FrameCanvas in real time.
 //   - "Dừng stream" stops the stream explicitly.
@@ -347,10 +347,10 @@ function ScreenTab({ agent })
                         className="screen-tab__btn screen-tab__btn--secondary"
                         onClick={handleScreenshot}
                         disabled={streaming || !agent.online || is_pending}
-                        title={is_pending ? 'Đang xin quyền...' : 'Capture a single screenshot'}
+                        title={is_pending ? 'Requesting consent…' : 'Capture a single screenshot'}
                     >
                         <Camera size={14} strokeWidth={2} />
-                        Chụp 1 lần
+                        Capture once
                     </button>
 
                     {/* stream toggle */}
@@ -362,7 +362,7 @@ function ScreenTab({ agent })
                                 title="Stop the live stream"
                             >
                                 <Square size={14} strokeWidth={2} />
-                                Dừng stream
+                                Stop stream
                             </button>
                         )
                         : (
@@ -371,13 +371,13 @@ function ScreenTab({ agent })
                                 onClick={handleStartStream}
                                 disabled={!agent.online || !form_valid || is_pending}
                                 title={is_pending
-                                    ? 'Đang xin quyền...'
+                                    ? 'Requesting consent…'
                                     : form_valid
                                         ? `Start ${fps_parsed.value} fps live stream`
                                         : 'Fix the settings error first'}
                             >
                                 <Play size={14} strokeWidth={2} />
-                                Bắt đầu stream
+                                Start stream
                             </button>
                         )
                     }
@@ -390,15 +390,15 @@ function ScreenTab({ agent })
                         onClick={handleToggleInput}
                         disabled={!agent.online || !streaming || input_status === 'requesting'}
                         title={!streaming
-                            ? 'Bắt đầu stream trước khi điều khiển'
+                            ? 'Start the stream before controlling'
                             : input_status === 'requesting'
-                                ? 'Đang xin quyền điều khiển...'
+                                ? 'Requesting control consent…'
                                 : input_ready
-                                    ? 'Ngừng điều khiển từ xa'
-                                    : 'Xin quyền điều khiển chuột/bàn phím'}
+                                    ? 'Stop remote control'
+                                    : 'Request mouse/keyboard control'}
                     >
                         <MousePointer2 size={14} strokeWidth={2} />
-                        {input_ready ? 'Đang điều khiển' : 'Điều khiển'}
+                        {input_ready ? 'Controlling' : 'Control'}
                     </button>
                 </div>
             </div>
@@ -485,7 +485,7 @@ function ScreenTab({ agent })
                         : (
                             <div className="screen-tab__placeholder">
                                 <Camera size={40} strokeWidth={1.25} />
-                                <span>Press "Chụp 1 lần" or "Bắt đầu stream" to see the Agent screen</span>
+                                <span>Press "Capture once" or "Start stream" to see the Agent screen</span>
                             </div>
                         )
                 }

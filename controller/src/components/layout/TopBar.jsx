@@ -1,5 +1,5 @@
 /* TopBar.jsx — header bar: breadcrumb title, session badge, connection, theme, admin */
-import { Wifi, WifiOff, Loader2, LogOut, LayoutGrid, Maximize2 } from 'lucide-react'
+import { Wifi, WifiOff, Loader2, LogOut } from 'lucide-react'
 import { useShallow }      from 'zustand/react/shallow'
 import useUiStore         from '../../store/UiStore'
 import useAgentStore      from '../../store/AgentStore'
@@ -7,6 +7,7 @@ import useConnectionStore from '../../store/ConnectionStore'
 import useModuleStore     from '../../store/ModuleStore'
 import ThemeToggle        from './ThemeToggle'
 import { logout }         from '../../services/AuthService'
+import { deriveViewMode } from '../../services/viewMode'
 
 /* map connection status to its icon + colour */
 function ConnectionIndicator({ status })
@@ -40,12 +41,15 @@ function ConnectionIndicator({ status })
 
 function TopBar()
 {
-  const layout_mode      = useUiStore((s) => s.layout_mode)
   const active_tab       = useUiStore((s) => s.active_tab)
-  const setLayoutMode    = useUiStore((s) => s.setLayoutMode)
   const focused_agent_id = useAgentStore((s) => s.focused_agent_id)
   const agents           = useAgentStore((s) => s.agents)
+  const selected_ids     = useAgentStore((s) => s.selected_agent_ids)
   const status           = useConnectionStore((s) => s.status)
+
+  // Derive grid/focus the SAME way MainArea does, from the selection.
+  const selected_online = selected_ids.filter((id) => agents.some((a) => a.id === id && a.online))
+  const layout_mode     = deriveViewMode(active_tab, selected_online.length)
 
   // Global transparency badge — list agent ids that currently have any
   // sensitive module running. If non-empty we show a red "SENSITIVE" badge
@@ -73,10 +77,10 @@ function TopBar()
   const focused_agent = agents.find((a) => a.id === focused_agent_id) ?? null
 
   /* build the breadcrumb title shown in the header */
-  let title = 'Grid View — All Agents'
+  const tab_label = active_tab.charAt(0).toUpperCase() + active_tab.slice(1)
+  let title = `${tab_label} — All Agents`
   if (layout_mode === 'focus' && focused_agent)
   {
-    const tab_label = active_tab.charAt(0).toUpperCase() + active_tab.slice(1)
     title = `${focused_agent.name}  ›  ${tab_label}`
   }
   else if (layout_mode === 'focus')
@@ -93,7 +97,7 @@ function TopBar()
 
       {/* "ĐANG ĐIỀU KHIỂN" badge — only visible while a session is active */}
       {in_session && (
-        <span className="session-badge session-badge--topbar">● ĐANG ĐIỀU KHIỂN</span>
+        <span className="session-badge session-badge--topbar">● IN CONTROL</span>
       )}
 
       {/* Global transparency badge — any agent with a sensitive module active.
@@ -109,25 +113,8 @@ function TopBar()
         </span>
       )}
 
-      {/* view-mode toggle buttons */}
-      <button
-        className="topbar__btn"
-        onClick={() => setLayoutMode('grid')}
-        title="Grid view — all agents"
-        aria-pressed={layout_mode === 'grid'}
-      >
-        <LayoutGrid size={14} strokeWidth={1.75} />
-      </button>
-
-      <button
-        className="topbar__btn"
-        onClick={() => setLayoutMode('focus')}
-        title="Focus view — single agent"
-        aria-pressed={layout_mode === 'focus'}
-      >
-        <Maximize2 size={14} strokeWidth={1.75} />
-      </button>
-
+      {/* View mode (grid vs focus) is driven by the sidebar selection:
+          select exactly one agent → Focus; none or many → Grid. */}
       <ConnectionIndicator status={status} />
 
       <ThemeToggle />
@@ -137,7 +124,7 @@ function TopBar()
       <button
         className="topbar__btn"
         onClick={logout}
-        title="Đăng xuất"
+        title="Logout"
         style={{ display: 'flex', alignItems: 'center', gap: 4 }}
       >
         <LogOut size={14} strokeWidth={1.75} />

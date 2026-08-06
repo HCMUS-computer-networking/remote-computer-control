@@ -220,7 +220,7 @@ function FileTab({ agent })
                 if (job.received_chunks >= job.total_chunks) continue   // completing next tick
                 if (job._seq > cutoff)                       continue   // still fresh
 
-                addToast(`Tải ${job.path.split('/').pop()} bị treo — huỷ.`, 'error')
+                addToast(`Download of ${job.path.split('/').pop()} stalled — cancelled.`, 'error')
                 removeFileDownload(agent.id, transfer_id)
                 if (downloading_path === job.path) setDownloadingPath(null)
             }
@@ -543,7 +543,7 @@ function FileTab({ agent })
                         className="action-btn action-btn--neutral file-tab__dl-btn"
                         onClick={() => handleDownload(full_path)}
                         disabled={is_downloading || is_pending}
-                        title={is_pending ? 'Đang xin quyền...' : `Download ${entry.name} from sandbox`}
+                        title={is_pending ? 'Requesting consent…' : `Download ${entry.name} from sandbox`}
                     >
                         {is_downloading
                             ? <Loader2 size={12} className="file-tab__spin" />
@@ -578,7 +578,7 @@ function FileTab({ agent })
                     className="action-btn action-btn--neutral"
                     onClick={handleRefresh}
                     disabled={!agent.online || is_pending}
-                    title={is_pending ? 'Đang xin quyền...' : agent.online ? 'Refresh root listing' : 'Agent is offline'}
+                    title={is_pending ? 'Requesting consent…' : agent.online ? 'Refresh root listing' : 'Agent is offline'}
                 >
                     <RefreshCw size={12} /> Refresh
                 </button>

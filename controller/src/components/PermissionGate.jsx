@@ -29,10 +29,10 @@ const CONSENT_TIMEOUT_MS = 30_000
 // Short human-readable label for the current consent status.
 function statusLabel(status)
 {
-    if (status === 'requesting') return 'Chờ cấp quyền...'   // waiting for Agent reply
-    if (status === 'granted')    return 'Đã cấp quyền'        // consent granted
-    if (status === 'denied')     return 'Bị từ chối'          // consent denied
-    return 'Chưa kết nối'                                     // idle — no request yet
+    if (status === 'requesting') return 'Waiting for consent…'   // waiting for Agent reply
+    if (status === 'granted')    return 'Authorized'             // consent granted
+    if (status === 'denied')     return 'Denied'                 // consent denied
+    return 'Not connected'                                       // idle — no request yet
 }
 
 // Context shared with every action button inside the gate.
@@ -106,7 +106,7 @@ function PermissionGate({ feature, agent_id, children })
         }
         else if (status === 'denied' || status === 'idle')
         {
-            if (status === 'denied') addToast(`Agent từ chối cấp quyền ${feature}`, 'error')
+            if (status === 'denied') addToast(`Agent denied ${feature} consent`, 'error')
             resetPending()
         }
     }, [status, is_pending_consent, feature, addToast, resetPending])
@@ -149,7 +149,7 @@ function PermissionGate({ feature, agent_id, children })
             
             timeout_ref.current = setTimeout(function ()
             {
-                addToast(`Hết thời gian chờ cấp quyền ${feature}`, 'error')
+                addToast(`Consent request for ${feature} timed out`, 'error')
                 resetPending()
                 usePermissionStore.getState().setPermissionResult(agent_id, feature, false)
             }, CONSENT_TIMEOUT_MS)
@@ -166,7 +166,7 @@ function PermissionGate({ feature, agent_id, children })
 
     const is_granted    = status === 'granted'
     const shown_status  = is_pending_consent ? 'requesting' : status
-    const shown_label   = is_pending_consent ? 'Đang xin quyền...' : statusLabel(status)
+    const shown_label   = is_pending_consent ? 'Requesting consent…' : statusLabel(status)
     // Memoize the context value so consumers (7 module tabs) only re-render
     // when guardedSend or is_pending_consent actually change identity.
     const ctx_value = useMemo(
@@ -196,7 +196,7 @@ function PermissionGate({ feature, agent_id, children })
                             <button
                                 className="action-btn action-btn--stop"
                                 onClick={handleDisconnect}
-                                title="Thu hồi quyền và dừng tính năng"
+                                title="Revoke consent and stop the feature"
                             >
                                 <PlugZap size={12} /> Disconnect
                             </button>

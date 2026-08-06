@@ -257,7 +257,7 @@ class Socket
                         else
                         {
                             useUiStore.getState().addToast(
-                                'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+                                'Your session has expired. Please sign in again.',
                                 'error'
                             );
                             logout();               // clears auth_token → LoginScreen

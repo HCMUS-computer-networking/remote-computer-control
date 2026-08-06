@@ -2253,3 +2253,255 @@ input
   width        : 100%;
   flex-basis   : 100%;
 }
+
+/* ── Multi-agent module grid ─────────────────────────────────────────── */
+
+.module-grid
+{
+  display        : flex;
+  flex-direction : column;
+  gap            : var(--space-3);
+  flex           : 1;
+  min-height     : 0;
+  overflow-y     : auto;
+  padding        : var(--space-4);
+}
+
+.module-grid__bar
+{
+  display        : flex;
+  align-items    : center;
+  gap            : var(--space-3);
+  flex-wrap      : wrap;
+}
+
+.module-grid__title
+{
+  font-weight    : 600;
+  font-size      : 0.95rem;
+  color          : var(--text);
+}
+
+.module-grid__toolbar
+{
+  display        : flex;
+  gap            : var(--space-2);
+  flex-wrap      : wrap;
+  margin-left    : auto;
+}
+
+.module-grid__hint
+{
+  font-size      : 0.75rem;
+  color          : var(--text-muted);
+}
+
+.module-grid__empty
+{
+  display        : flex;
+  flex-direction : column;
+  align-items    : center;
+  justify-content: center;
+  gap            : var(--space-2);
+  padding        : var(--space-4);
+  color          : var(--text-muted);
+}
+
+.module-grid__tiles
+{
+  display               : grid;
+  grid-template-columns : repeat(auto-fill, minmax(240px, 1fr));
+  gap                   : var(--space-3);
+}
+
+.mg-tile
+{
+  display        : flex;
+  flex-direction : column;
+  border         : 1px solid var(--border);
+  border-radius  : var(--radius-md);
+  background     : var(--bg-elevated);
+  overflow       : hidden;
+  cursor         : pointer;
+  transition     : border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.mg-tile:hover
+{
+  border-color   : var(--accent-border);
+}
+
+.mg-tile--selected
+{
+  border-color   : var(--accent);
+  box-shadow     : 0 0 0 1px var(--accent);
+}
+
+.mg-tile__header
+{
+  display        : flex;
+  align-items    : center;
+  gap            : var(--space-2);
+  padding        : var(--space-2) var(--space-3);
+  border-bottom  : 1px solid var(--border);
+}
+
+.mg-tile__name
+{
+  flex           : 1;
+  font-size      : 0.85rem;
+  font-weight    : 600;
+  color          : var(--text);
+  white-space    : nowrap;
+  overflow       : hidden;
+  text-overflow  : ellipsis;
+}
+
+.mg-tile__checkbox
+{
+  flex-shrink    : 0;
+  cursor         : pointer;
+}
+
+.mg-tile__body
+{
+  min-height     : 132px;
+  display        : flex;
+  flex-direction : column;
+}
+
+.mg-tile__placeholder,
+.mg-tile__nogrant
+{
+  flex           : 1;
+  display        : flex;
+  align-items    : center;
+  justify-content: center;
+  gap            : var(--space-2);
+  font-size      : 0.8rem;
+  color          : var(--text-muted);
+  padding        : var(--space-3);
+  text-align     : center;
+}
+
+.mg-tile__nogrant
+{
+  color          : var(--warning);
+  font-style     : italic;
+}
+
+/* status badge shared by keylog / power tiles */
+.mg-badge
+{
+  display        : inline-flex;
+  align-items    : center;
+  gap            : 4px;
+  font-size      : 0.72rem;
+  font-weight    : 600;
+  color          : var(--text-muted);
+}
+
+.mg-badge--live
+{
+  color          : var(--danger);
+}
+
+.mg-badge--ok
+{
+  color          : var(--success);
+}
+
+/* sysinfo tile */
+.mg-sysinfo
+{
+  display        : flex;
+  flex-direction : column;
+  gap            : var(--space-2);
+  padding        : var(--space-3);
+}
+
+.mg-metric
+{
+  display        : flex;
+  align-items    : center;
+  gap            : var(--space-2);
+  font-size      : 0.75rem;
+  color          : var(--text-muted);
+}
+
+.mg-metric__label
+{
+  width          : 34px;
+}
+
+.mg-metric__bar
+{
+  flex           : 1;
+  height         : 6px;
+  border-radius  : 3px;
+  background     : var(--gray-100);
+  overflow       : hidden;
+}
+
+.mg-metric__fill
+{
+  height         : 100%;
+  background     : var(--accent);
+}
+
+.mg-metric__val
+{
+  width          : 34px;
+  text-align     : right;
+  color          : var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.mg-sysinfo__meta
+{
+  font-size      : 0.7rem;
+  color          : var(--text-muted);
+  white-space    : nowrap;
+  overflow       : hidden;
+  text-overflow  : ellipsis;
+}
+
+/* keylog tile */
+.mg-keylog
+{
+  display        : flex;
+  flex-direction : column;
+  gap            : var(--space-1);
+  padding        : var(--space-3);
+}
+
+.mg-keylog__preview
+{
+  font-family    : ui-monospace, monospace;
+  font-size      : 0.75rem;
+  color          : var(--text);
+  word-break     : break-all;
+  max-height     : 64px;
+  overflow       : hidden;
+}
+
+.mg-keylog__count
+{
+  font-size      : 0.7rem;
+  color          : var(--text-muted);
+}
+
+/* power tile */
+.mg-power
+{
+  display        : flex;
+  flex-direction : column;
+  gap            : var(--space-2);
+  padding        : var(--space-3);
+}
+
+.mg-power__meta
+{
+  font-size      : 0.72rem;
+  color          : var(--text-muted);
+}

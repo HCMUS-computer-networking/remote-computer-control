@@ -8,8 +8,7 @@ import useAgentSocket     from './hooks/UseAgentSocket'
 import LoginScreen        from './components/LoginScreen'
 import Sidebar            from './components/layout/Sidebar'
 import TopBar             from './components/layout/TopBar'
-import GridView           from './components/livescreen/GridView'
-import FocusView          from './components/livescreen/FocusView'
+import MainArea           from './components/MainArea'
 import E2EEUnlockModal    from './components/E2EEUnlockModal'
 
 // Full-width strip shown while the socket is not open. Warns the operator that
@@ -42,7 +41,6 @@ function ConnectionBanner({ status })
 // component unmounts (the hook is ref-counted: last unmount → socket.close()).
 function ConsoleShell()
 {
-    const layout_mode  = useUiStore((s) => s.layout_mode)
     const conn_status  = useConnectionStore((s) => s.status)
 
     // open the socket connection and start receiving data from MockSocket / Gateway
@@ -57,7 +55,7 @@ function ConsoleShell()
                 <TopBar />
 
                 <main className="main-area">
-                    {layout_mode === 'grid' ? <GridView /> : <FocusView />}
+                    <MainArea />
                 </main>
             </div>
         </div>

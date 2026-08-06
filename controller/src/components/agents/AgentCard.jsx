@@ -1,7 +1,7 @@
 // AgentCard.jsx — one agent row in the sidebar list.
-// Left checkbox: toggles multi-select. Clicking the card body: opens focus view.
+// Checkbox: toggles multi-select (batch target). Clicking the card body: selects
+// ONLY this agent, which the view router reads as "focus this one machine".
 import useAgentStore from '../../store/AgentStore'
-import useUiStore    from '../../store/UiStore'
 import useModuleStore from '../../store/ModuleStore'
 
 /*
@@ -11,11 +11,11 @@ import useModuleStore from '../../store/ModuleStore'
 function AgentCard({ agent })
 {
     // subscribe to only the slice that affects THIS card to avoid re-rendering all cards on every selection change
-    const is_focused   = useAgentStore((s) => s.focused_agent_id === agent.id)
-    const is_selected  = useAgentStore((s) => s.selected_agent_ids.includes(agent.id))
-    const setFocused   = useAgentStore((s) => s.setFocused)
-    const toggleSelect = useAgentStore((s) => s.toggleSelect)
-    const setLayoutMode = useUiStore((s) => s.setLayoutMode)
+    const is_focused    = useAgentStore((s) => s.focused_agent_id === agent.id)
+    const is_selected   = useAgentStore((s) => s.selected_agent_ids.includes(agent.id))
+    const setFocused    = useAgentStore((s) => s.setFocused)
+    const toggleSelect  = useAgentStore((s) => s.toggleSelect)
+    const setSelectedIds = useAgentStore((s) => s.setSelectedIds)
 
     // Transparency red-dot — visible whenever any sensitive module is active on
     // this agent, OR the agent is being remotely controlled (in_session).
@@ -36,8 +36,11 @@ function AgentCard({ agent })
 
     function handleCardClick()
     {
+        // Selecting only this agent makes the router show its single-agent Focus
+        // (services/viewMode: exactly one selected → focus). setFocused keeps the
+        // highlight instant without waiting for the router's sync effect.
+        setSelectedIds([agent.id])
         setFocused(agent.id)
-        setLayoutMode('focus')
     }
 
     function handleCheckboxChange(e)

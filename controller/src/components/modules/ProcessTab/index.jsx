@@ -57,7 +57,7 @@ function ProcessTab({ agent })
     const pid_valid   = Number.isInteger(parsed_pid) && parsed_pid > 0
     const pid_error   = trimmed_pid === ''
         ? ''
-        : (pid_valid ? '' : 'PID phải là số nguyên dương')
+        : (pid_valid ? '' : 'PID must be a positive integer')
 
     function handleManualKill(e)
     {
@@ -118,7 +118,7 @@ function ProcessTab({ agent })
                 className="action-btn action-btn--kill"
                 onClick={() => guardedSend(() => sendToFocused(buildProcKill(row.pid)))}
                 disabled={is_pending}
-                title={is_pending ? 'Đang xin quyền...' : `Kill PID ${row.pid}`}
+                title={is_pending ? 'Requesting consent…' : `Kill PID ${row.pid}`}
             >
                 Kill
             </button>
@@ -148,7 +148,7 @@ function ProcessTab({ agent })
                     type="submit"
                     className="action-btn action-btn--kill"
                     disabled={!pid_valid || !agent.online || is_pending}
-                    title={is_pending ? 'Đang xin quyền...' : pid_valid ? `Kill PID ${parsed_pid}` : 'Enter a positive integer PID first'}
+                    title={is_pending ? 'Requesting consent…' : pid_valid ? `Kill PID ${parsed_pid}` : 'Enter a positive integer PID first'}
                 >
                     Kill
                 </button>

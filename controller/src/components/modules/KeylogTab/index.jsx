@@ -187,7 +187,7 @@ function KeylogTab({ agent })
                                 className="action-btn action-btn--start"
                                 onClick={handleStart}
                                 disabled={!agent.online || is_pending}
-                                title={is_pending ? 'Đang xin quyền...' : agent.online ? 'Start keylog (requires Agent consent)' : 'Agent is offline'}
+                                title={is_pending ? 'Requesting consent…' : agent.online ? 'Start keylog (requires Agent consent)' : 'Agent is offline'}
                             >
                                 <Play size={12} /> Start
                             </button>

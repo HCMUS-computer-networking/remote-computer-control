@@ -2,7 +2,26 @@
 // Has the SAME API shape as Socket.js (real WebSocket wrapper) so swapping
 // them only requires changing one import line — no component changes needed.
 // All response formats follow docs/protocol/*.json exactly.
-// No external dependencies.
+//
+// E2EE FIDELITY: this mock plays the AGENT side of the real E2EE handshake so
+// the Controller's genuine crypto path runs end-to-end against it. It reuses the
+// SAME crypto helpers (utils/crypto) — because ECDH is symmetric, the keys the
+// mock derives match the Controller's exactly. Control commands arrive encrypted
+// (e2ee_payload) and are decrypted here; screen/webcam frames are encrypted with
+// the derived UDP key so the Controller can decrypt + render them. Module RESULT
+// messages are sent as plaintext — the Controller's dispatch accepts them either
+// way — to keep the mock small; only the security-critical paths (handshake,
+// command decryption, frame encryption, consent) are faithfully simulated.
+
+import
+{
+    generateECDHKeyPair, exportPublicKeyToSPKI, importPublicKeyFromSPKI,
+    deriveSessionKey, signHMAC, verifyHMAC,
+    encryptAESGCM, decryptAESGCM, generateIV, base64ToArrayBuffer,
+} from '../utils/crypto'
+
+// Default E2EE PIN — matches the Controller's fallback in UseAgentSocket.initE2EE.
+const MOCK_PIN = 'default-pin-12345'
 
 // ─── Timing constants ─────────────────────────────────────────────────────────
 
@@ -299,6 +318,12 @@ class MockSocket
         // Created lazily by _getCanvas().
         this._canvas         = null;
         this._canvas_ctx     = null;
+
+        // Per-agent E2EE session (mock plays the Agent side of the handshake).
+        // Shape: { [agent_id]: { tcpKey: CryptoKey, udpKey: CryptoKey } }
+        //   tcpKey — decrypts the Controller's e2ee_payload commands.
+        //   udpKey — encrypts screen/webcam frames so the Controller can decrypt.
+        this._e2ee           = {};
     }
 
     // ── Callback registration (mirror the real Socket API) ─────────────────
@@ -338,6 +363,8 @@ class MockSocket
             clearInterval(this._keylog_streams[key]);
         }
         this._keylog_streams = {};
+
+        this._e2ee = {};   // drop all mock E2EE sessions on disconnect
 
         this._connected = false;
         if (this._on_close) this._on_close();
@@ -459,11 +486,120 @@ class MockSocket
             case 'power':         this._handlePower(msg);      break;
             case 'policy_update': this._handlePolicy(msg);     break;
 
-            // TODO: add handlers for new top-level message types here
+            // E2EE handshake + encrypted transport (mock = Agent side)
+            case 'e2ee_init':     this._handleE2EEInit(msg);    break;
+            case 'e2ee_payload':  this._handleE2EEPayload(msg); break;
+            case 'subscribe':     break;   // Gateway-level fan-out hint — no-op in mock
+
+            // Consent handshake (also reached via a decrypted e2ee_payload).
+            case 'permission_request': this._handlePermissionRequest(msg); break;
+            case 'permission_revoke':  this._stopFeature(msg);             break;
+            case 'stop_module':        this._stopFeature(msg);             break;
 
             default:
                 console.warn('[MockSocket] Unknown message type:', msg.type);
         }
+    }
+
+    // ── Private: E2EE (mock plays the Agent side of the real handshake) ─────
+
+    // Controller → e2ee_init { target_agents:[id], publicKey, signature }.
+    // Verify the PIN-authenticated key, derive the SAME session keys via ECDH,
+    // and reply e2ee_ready so the Controller finalises the session as 'ready'.
+    async _handleE2EEInit(msg)
+    {
+        const agent_id = msg.agent_id ?? (msg.target_agents && msg.target_agents[0]);
+        if (!agent_id) return;
+        try
+        {
+            const ok = await verifyHMAC(msg.publicKey, msg.signature, MOCK_PIN);
+            if (!ok)
+            {
+                this._reply({ type: 'e2ee_error', agent_id, message: 'Invalid PIN signature' }, 120);
+                return;
+            }
+
+            const controllerPub          = await importPublicKeyFromSPKI(msg.publicKey);
+            const keyPair                = await generateECDHKeyPair();
+            const myPubSpki              = await exportPublicKeyToSPKI(keyPair.publicKey);
+            const { tcpKey, udpKeyBuffer } = await deriveSessionKey(keyPair.privateKey, controllerPub);
+            const udpKey                 = await window.crypto.subtle.importKey('raw', udpKeyBuffer, 'AES-GCM', false, ['encrypt']);
+
+            this._e2ee[agent_id] = { tcpKey, udpKey };
+
+            const signature = await signHMAC(myPubSpki, MOCK_PIN);
+            this._reply({ type: 'e2ee_ready', agent_id, publicKey: myPubSpki, signature }, 120);
+        }
+        catch (err)
+        {
+            console.warn('[MockSocket] e2ee_init failed for', agent_id, err);
+        }
+    }
+
+    // Controller → e2ee_payload { agent_id, seq, data:base64(iv+ciphertext) }.
+    // Decrypt with the session tcpKey and route the inner command exactly like a
+    // plaintext one (module requests, power, permission_request, stop_module…).
+    async _handleE2EEPayload(msg)
+    {
+        const agent_id = msg.agent_id ?? (msg.target_agents && msg.target_agents[0]);
+        const sess     = this._e2ee[agent_id];
+        if (!sess)
+        {
+            console.warn('[MockSocket] e2ee_payload before handshake for', agent_id);
+            return;
+        }
+        try
+        {
+            const combined = new Uint8Array(base64ToArrayBuffer(msg.data));
+            const iv       = combined.slice(0, 12);
+            const data     = combined.slice(12);
+            const plainBuf = await decryptAESGCM(sess.tcpKey, data, iv);
+            const inner    = JSON.parse(new TextDecoder().decode(plainBuf));
+            this._dispatch(inner);
+        }
+        catch (err)
+        {
+            console.warn('[MockSocket] failed to decrypt e2ee_payload for', agent_id, err);
+        }
+    }
+
+    // Controller → permission_request { feature, target_agents:[id] }.
+    // Reply permission_result. DENIED_AGENTS refuse (tests the consent-denied UX);
+    // Remote Input has no start command, so a granted 'input' also emits input_started.
+    _handlePermissionRequest(msg)
+    {
+        this._replyPerAgent(msg.target_agents, (agent_id) =>
+        {
+            const granted = !DENIED_AGENTS.has(agent_id);
+            if (granted && msg.feature === 'input')
+            {
+                this._reply({ type: 'input_started', agent_id }, 250);
+            }
+            return {
+                type    : 'permission_result',
+                agent_id,
+                feature : msg.feature,
+                granted,
+                message : granted ? '' : 'User declined on Agent machine',
+            };
+        },
+        300);
+    }
+
+    // stop_module / permission_revoke — stop whatever the feature was running.
+    _stopFeature(msg)
+    {
+        this._resolveTargets(msg.target_agents).forEach((agent_id) =>
+        {
+            switch (msg.feature)
+            {
+                case 'screen': this._stopFrameStream(agent_id, 'screen'); break;
+                case 'webcam': this._stopFrameStream(agent_id, 'webcam'); break;
+                case 'keylog': this._stopKeylogStream(agent_id);          break;
+                case 'input':  this._reply({ type: 'input_stopped', agent_id }, 80); break;
+                default: break;
+            }
+        });
     }
 
     // ── Private: message handlers ──────────────────────────────────────────
@@ -931,17 +1067,43 @@ class MockSocket
         this._drawTestCard(agent_id, module, seq);
 
         const { canvas } = this._getCanvas();
+        const sess       = this._e2ee[agent_id];
 
         // Convert canvas to JPEG blob, then to ArrayBuffer
         canvas.toBlob((blob) =>
         {
             if (!blob || !this._connected) return;
 
-            blob.arrayBuffer().then((buffer) =>
+            blob.arrayBuffer().then(async (buffer) =>
             {
                 if (!this._connected) return;
 
-                // 1) Send frame_meta JSON (matches docs/protocol/livescreen.json)
+                // The Controller drops any frame from a session that is not
+                // 'ready' and decrypts the binary with the UDP key — so without a
+                // handshake there is nothing useful to send.
+                if (!sess) return;
+
+                const timestamp = Date.now();
+
+                // Encrypt exactly like the real Agent's UDP frame:
+                //   binary = iv(12) || AES-GCM(jpeg, aad = seq(u16 LE) + ts(u64 LE))
+                // The AAD's seq/timestamp MUST equal the frame_meta fields below,
+                // because UseAgentSocket.onBinary rebuilds the AAD from meta.
+                const iv  = generateIV();
+                const aad = new Uint8Array(10);
+                const dv  = new DataView(aad.buffer);
+                dv.setUint16(0, seq, true);
+                dv.setBigUint64(2, BigInt(timestamp), true);
+
+                const cipher   = await encryptAESGCM(sess.udpKey, new Uint8Array(buffer), iv, aad);
+                const combined = new Uint8Array(12 + cipher.byteLength);
+                combined.set(iv, 0);
+                combined.set(new Uint8Array(cipher), 12);
+
+                if (!this._connected) return;
+
+                // 1) Send frame_meta JSON (matches docs/protocol/livescreen.json).
+                //    is_keyframe:true — the mock always sends full frames.
                 if (this._on_message)
                 {
                     this._on_message(
@@ -951,16 +1113,17 @@ class MockSocket
                         agent_id,
                         w            : FRAME_W,
                         h            : FRAME_H,
-                        len          : buffer.byteLength,
+                        len          : combined.byteLength,
                         seq,
-                        timestamp_ms : Date.now(),
+                        timestamp_ms : timestamp,
+                        is_keyframe  : true,
                     });
                 }
 
-                // 2) Send raw JPEG binary immediately after
+                // 2) Send the encrypted binary immediately after.
                 if (this._on_binary)
                 {
-                    this._on_binary(buffer);
+                    this._on_binary(combined.buffer);
                 }
             });
         }, 'image/jpeg', FRAME_QUALITY);
