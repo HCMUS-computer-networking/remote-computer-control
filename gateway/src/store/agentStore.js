@@ -2,7 +2,9 @@
 // Registry of connected Agent WebSocket clients.
 // Key: agentId (string) → Value: { agentId, ws, hostname, ip, os, connectedAt }
 //
-// Credential verification: agents.json maps agent_id → secretHash (bcrypt).
+// Credential verification: secret is checked against the `agents` table in
+// SQLite (secret_hash, bcrypt); unknown agent_id is auto-registered when the
+// secret matches the global AGENT_KEY.
 // Duplicate rejection: if agent_id is already online, NEW connection is refused.
 
 const path = require('path');

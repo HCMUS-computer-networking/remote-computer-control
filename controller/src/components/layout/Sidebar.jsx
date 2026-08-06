@@ -1,5 +1,4 @@
 /* Sidebar.jsx — left panel: logo, agent search, agent list, gateway status */
-import { Search }         from 'lucide-react'
 import useAgentStore      from '../../store/AgentStore'
 import useConnectionStore from '../../store/ConnectionStore'
 import useUiStore         from '../../store/UiStore'

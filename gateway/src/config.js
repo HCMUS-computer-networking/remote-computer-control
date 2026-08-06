@@ -23,8 +23,8 @@ const config = {
   logLevel: process.env.LOG_LEVEL || 'info',
 
   // ─── TLS (Phase 1: Security Hardening) ─────────────────────────
-  // Set TLS_ENABLED=true to start in HTTPS/WSS mode.
-  // When false (default), server runs plain HTTP/WS (dev mode).
+  // Enabled by default (HTTPS/WSS). Set TLS_ENABLED=false to run
+  // plain HTTP/WS instead (dev mode).
   //
   // Generate a self-signed certificate for local testing:
   //   openssl req -x509 -newkey rsa:2048 -nodes \

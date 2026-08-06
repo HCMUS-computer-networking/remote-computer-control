@@ -172,19 +172,6 @@ export const deriveSessionKey = async (myPrivateKey, agentPublicKey) => {
     return { tcpKey, udpKeyBuffer };
 };
 
-/**
- * Steps the Symmetric Ratchet Key for PFS (Forward Secrecy).
- * NextKey = SHA256(CurrentKey + "Ratchet_v1")
- */
-export const stepRatchetKey = async (currentKeyBuffer) => {
-    const currentBytes = new Uint8Array(currentKeyBuffer);
-    const suffix = new TextEncoder().encode("Ratchet_v1");
-    const msg = new Uint8Array(currentBytes.byteLength + suffix.byteLength);
-    msg.set(currentBytes);
-    msg.set(suffix, currentBytes.byteLength);
-    return await window.crypto.subtle.digest('SHA-256', msg);
-};
-
 // --- Encryption / Decryption (AES-GCM) ---
 
 /**

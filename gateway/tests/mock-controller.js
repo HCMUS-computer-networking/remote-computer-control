@@ -2,16 +2,19 @@
 // Mock Controller CLI để test Gateway (thay thế Web App)
 
 const WebSocket = require('ws');
-const http = require('http');
+const https = require('https');
 
 console.log('Starting Mock Controller...');
+
+const HOST = process.env.GATEWAY_HOST || 'localhost';
 
 function login() {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify({ username: 'admin', password: 'admin123' });
-    const req = http.request({
-      hostname: 'localhost', port: 8080, path: '/api/login',
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+    const req = https.request({
+      hostname: HOST, port: 8080, path: '/api/login',
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      rejectUnauthorized: false
     }, (res) => {
       let b = '';
       res.on('data', c => b += c);

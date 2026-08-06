@@ -93,7 +93,7 @@ controller/
     │       └── PowerTab/          lock / restart / shutdown / sleep + countdown UI.
     │
     ├── hooks/
-    │   └── UseAgentSocket.js      Singleton socket (refcount, ONE global connection). Public API: sendCommand, sendToFocused, sendToSelected, requestPermission, revokePermission, stopModule. Điều phối E2EE: bọc mọi lệnh gửi đi thành e2ee_payload, giải mã e2ee_payload nhận về, chạy handshake khi agent online, giải mã + ratchet frame UDP rồi emit sang FrameEventBus.
+    │   └── UseAgentSocket.js      Singleton socket (refcount, ONE global connection). Public API: sendCommand, sendToFocused, sendToSelected, requestPermission, revokePermission, stopModule. Điều phối E2EE: bọc mọi lệnh gửi đi thành e2ee_payload, giải mã e2ee_payload nhận về, chạy handshake khi agent online, giải mã frame UDP bằng khoá phiên ổn định rồi emit sang FrameEventBus.
     │
     ├── services/
     │   ├── index.js               ONE place chọn mock vs real: `USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'`.
@@ -104,7 +104,7 @@ controller/
     │   └── AuthService.js         POST /api/login, /api/refresh, /api/logout; xử lý refresh cookie.
     │
     ├── utils/
-    │   └── crypto.js              WebCrypto helper cho E2EE: sinh cặp ECDH P-256, export/import SPKI, HMAC-SHA256 (ký PIN), HKDF-SHA256 (dẫn xuất khoá phiên TCP + UDP), AES-256-GCM encrypt/decrypt, bước ratchet SHA-256, tiện ích Base64/ArrayBuffer.
+    │   └── crypto.js              WebCrypto helper cho E2EE: sinh cặp ECDH P-256, export/import SPKI, HMAC-SHA256 (ký PIN), HKDF-SHA256 (dẫn xuất khoá phiên TCP + UDP), AES-256-GCM encrypt/decrypt, tiện ích Base64/ArrayBuffer.
     │
     └── store/                     Zustand — xem 4.1
 ```
@@ -170,7 +170,7 @@ agent/
 │
 ├── Modules/                       Đều kế thừa BaseModule (IAgentContext + SecurityManager + UIManager).
 │   ├── BaseModule.cs              abstract: SupportedCommands, ExecuteAsync, virtual OnDisconnected.
-│   ├── CryptoModule.cs            E2EE crypto: ECDH P-256, HMAC-SHA256 (xác thực PIN), HKDF-SHA256 (khoá TCP "RemoteControl_E2EE_v1" + khoá UDP "RemoteControl_UDP_v1"), AES-256-GCM (TCP payload + UDP frame với AAD), sequence window chống replay, UDP symmetric ratchet SHA-256 mỗi 100 frame.
+│   ├── CryptoModule.cs            E2EE crypto: ECDH P-256, HMAC-SHA256 (xác thực PIN), HKDF-SHA256 (khoá TCP "RemoteControl_E2EE_v1" + khoá UDP "RemoteControl_UDP_v1"), AES-256-GCM (TCP payload + UDP frame với AAD = frameId + timestamp), sequence window chống replay; khoá UDP ổn định theo phiên (không ratchet).
 │   ├── AppModule.cs               app_list / app_start / app_stop (chỉ chạy app trong whitelist).
 │   ├── ProcessModule.cs           proc_list / proc_kill; chặn kill tiến trình lõi hệ thống + tiến trình đặc quyền.
 │   ├── KeyloggerModule.cs         keylog_start/stop + global low-level keyboard hook; batch qua ConcurrentQueue (lock-free) rồi flush theo PeriodicTimer.
@@ -258,7 +258,7 @@ Hai kênh binary trên cùng một WS:
 2. Chia thành chunk ≤ 1300 byte; header UDP 24 byte cố định + agent_id/command_id. Frame nhiều chunk kèm **1 parity chunk** (index = totalChunks) = XOR toàn bộ chunk.
 3. Gateway (`udpServer.js`) gom chunk theo `frameKey`; đủ chunk → ghép; thiếu đúng 1 chunk + có parity → **fecWorker** khôi phục bằng XOR; timeout 40 ms; GC frame dở sau 100 ms.
 4. Gateway forward `frame_meta` (JSON) + payload (binary) tới controller.
-5. Controller giải mã (nếu E2EE), bước ratchet khoá UDP theo epoch, rồi **emit sang FrameEventBus** để FrameCanvas vẽ.
+5. Controller giải mã (nếu E2EE) bằng khoá UDP phiên (IV 12 byte + AAD frameId/timestamp), rồi **emit sang FrameEventBus** để FrameCanvas vẽ.
 
 **Delta encoding:** `frame_meta` screen mang `is_keyframe`, `x/y/w/h`. Keyframe = full frame (resize canvas, vẽ (0,0)); non-keyframe = diff-rect vẽ tại (x,y). Agent chèn keyframe định kỳ để tránh drift.
 
@@ -269,7 +269,7 @@ Hai kênh binary trên cùng một WS:
   1. Controller → `e2ee_init { publicKey (SPKI), signature = HMAC-SHA256(publicKey, PIN) }`.
   2. Agent verify HMAC → ECDH P-256 (raw secret) → HKDF-SHA256 dẫn xuất khoá TCP + UDP → Controller nhận `e2ee_ready { publicKey, signature }` → verify HMAC → dẫn xuất cùng khoá. Từ chối → `e2ee_error`.
 - **Kênh TCP (WS JSON):** mọi lệnh/response bọc `e2ee_payload { agent_id, seq, data = base64(iv[12] + ciphertext + tag[16]) }`, AES-256-GCM; **sequence sliding window (size 5)** chống replay.
-- **Kênh UDP (frame):** mã hoá bằng khoá UDP, AAD = frameId + timestamp; **symmetric ratchet** `key = SHA-256(key ‖ "Ratchet_v1")` sau mỗi 100 frame (epoch) cho forward secrecy.
+- **Kênh UDP (frame):** mã hoá AES-256-GCM bằng **khoá UDP ổn định theo phiên** (dẫn xuất một lần khi handshake, không ratchet), AAD = `frameId(2) + timestamp(8)`; mỗi frame dùng IV ngẫu nhiên 12 byte.
 - **Gateway:** chỉ relay `e2ee_init`/`e2ee_payload`, **không giữ khoá, không đọc plaintext**.
 - **Re-handshake:** khi agent reconnect / `permissions_reset`, hai bên reset sequence và bắt tay lại.
 
@@ -287,7 +287,7 @@ Hai kênh binary trên cùng một WS:
 | **PermissionStore** | `permissions[agent_id][feature] = 'idle'\|'requesting'\|'granted'\|'denied'` | `requestPermission(id, feature)`, `setPermissionResult(id, feature, granted)`, `revoke(id, feature)`, `revokeAll(id)`, getter `getStatus(id, feature)` |
 | **PolicyStore** | `app_whitelist[]`, `sandbox_path`, `last_result[agent_id]` | `setWhitelist`, `setSandboxPath`, `setPolicyResult(id, result)` |
 | **UiStore** | `theme`, `layout_mode: 'grid'\|'focus'`, `active_tab`, `toasts[]` | `setTheme`, `setLayoutMode`, `setActiveTab`, `addToast(msg, variant)` |
-| **E2EEStore** | `isUnlocked`, `masterKey`, `sessions[agent_id] = { state, sessionKey, udpKeyBuffer, udpEpoch, udpFrameIdOffset, udpLastSeq, sendSeq, recvSeq }` | `unlock/lock`, `saveAgentPin/getAgentPin` (IndexedDB), `setSessionState`, `resetSession`, `getSessionKey`, `getSendSeqAndIncrement`, `checkAndUpdateRecvSeq`, `updateUdpSeq`, `updateUdpRatchet` |
+| **E2EEStore** | `isUnlocked`, `masterKey`, `sessions[agent_id] = { state, sessionKey, udpKeyBuffer, udpFrameIdOffset, udpLastSeq, sendSeq, recvSeq }` | `unlock/lock`, `saveAgentPin/getAgentPin` (IndexedDB), `setSessionState`, `resetSession`, `getSessionKey`, `getSendSeqAndIncrement`, `checkAndUpdateRecvSeq`, `updateUdpSeq` |
 
 Mọi component subscribe **selector cụ thể** (`useStore(s => s.x)`).
 
@@ -313,7 +313,7 @@ AgentSocket.onMessage(raw)
 Binary frame:
 AgentSocket.onBinary(bytes)
    → nếu _pending_fs_chunks (fs_get_result chờ) → pair theo transfer_id → appendFileDownloadChunk
-   → nếu _pending_meta (frame_meta) → (E2EE) giải mã + ratchet UDP → FrameEventBus.emit(agent_id, module, frame, meta)
+   → nếu _pending_meta (frame_meta) → (E2EE) giải mã bằng khoá UDP phiên → FrameEventBus.emit(agent_id, module, frame, meta)
        → FrameCanvas (đã subscribe) vẽ canvas trực tiếp
    → ngược lại drop + warn
 ```
@@ -385,7 +385,7 @@ AgentSocket.onBinary(bytes)
 
 ### 6.5. E2EE / Crypto (cross-cutting)
 
-- Tham số phải **khớp tuyệt đối** hai phía: ECDH **P-256**, HKDF-SHA256 với `info` `"RemoteControl_E2EE_v1"` (TCP) / `"RemoteControl_UDP_v1"` (UDP), salt rỗng; AES-256-GCM IV 12 byte + tag 16 byte; ratchet `SHA-256(key ‖ "Ratchet_v1")` mỗi 100 frame.
+- Tham số phải **khớp tuyệt đối** hai phía: ECDH **P-256**, HKDF-SHA256 với `info` `"RemoteControl_E2EE_v1"` (TCP) / `"RemoteControl_UDP_v1"` (UDP), salt rỗng; AES-256-GCM IV 12 byte + tag 16 byte; khoá UDP dẫn xuất một lần theo phiên (không ratchet), AAD UDP = `frameId(2) + timestamp(8)` khớp cả hai phía.
 - Handshake xác thực bằng **HMAC-SHA256(publicKey, PIN)** — không bỏ verify.
 - Gateway **không bao giờ** giữ khoá / đọc plaintext. PIN/khoá không log, không đưa vào URL.
 - Khoá phiên xoá (zeroize) khi Dispose/Reset.

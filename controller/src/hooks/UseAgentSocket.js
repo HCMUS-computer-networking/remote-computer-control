@@ -705,7 +705,7 @@ function stopLocalFeature(agent_id, feature)
 //   policy_update_result → PolicyStore.setPolicyResult(id, …); toast on failure
 //   permission_result  → PermissionStore.setPermissionResult(id, feature, granted) + toast
 
-function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleData, appendKeylog, appendSysInfo, setKeylogActive, setWebcamActive, setScreenStreamActive, setInputActive, setFsEntries, appendFileDownloadChunk,setFilePutAck, setPolicyResult, setPermissionResult, addToast })
+function dispatchMessage(msg, { setStatus: _setStatus, setAgents, setAgentStatus, setModuleData, appendKeylog, appendSysInfo, setKeylogActive, setWebcamActive, setScreenStreamActive, setInputActive, setFsEntries, appendFileDownloadChunk,setFilePutAck, setPolicyResult, setPermissionResult, addToast })
 {
     // Every per-agent message MUST carry an agent_id after normalization.
     // Drop malformed messages so we never write into ModuleStore under an
@@ -751,6 +751,7 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
                     useModuleStore.getState().clearLiveFlagsForAgent(msg.agent_id)
                     useE2EEStore.getState().resetSession(msg.agent_id)
                     usePermissionStore.getState().revokeAll(msg.agent_id)
+                    _pendingE2EEKeys.delete(msg.agent_id)
                 }
                 else if (msg.online === true)
                 {
@@ -977,16 +978,6 @@ function dispatchMessage(msg, { setStatus, setAgents, setAgentStatus, setModuleD
                     : `${msg.feature} denied on ${msg.agent_id}: ${msg.message || 'user declined'}`,
                 msg.granted ? 'success' : 'error'
             )
-            break
-
-        case MSG_TYPE.AGENT_STATUS:
-            setAgentStatus(msg.agent_id, msg.online)
-            if (!msg.online)
-            {
-                _pendingE2EEKeys.delete(msg.agent_id)
-                useE2EEStore.getState().setSessionState(msg.agent_id, 'uninitialized', null)
-                usePermissionStore.getState().revokeAll(msg.agent_id)
-            }
             break
 
         case MSG_TYPE.PERMISSIONS_RESET:

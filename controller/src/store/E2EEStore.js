@@ -108,7 +108,7 @@ const useE2EEStore = create((set, get) => ({
     masterKey: null, // CryptoKey instance
     
     // Per-agent sessions
-    // Structure: { [agentId]: { state: 'uninitialized' | 'handshaking' | 'ready', sessionKey: CryptoKey, udpKeyBuffer: ArrayBuffer, udpEpoch: number, udpFrameIdOffset: number, udpLastSeq: number, sendSeq: number, recvSeq: number } }
+    // Structure: { [agentId]: { state: 'uninitialized' | 'handshaking' | 'ready', sessionKey: CryptoKey, udpKeyBuffer: ArrayBuffer, udpFrameIdOffset: number, udpLastSeq: number, sendSeq: number, recvSeq: number } }
     sessions: {},
 
     setSessionState: (agentId, state, sessionKeys = null) => {
@@ -120,7 +120,6 @@ const useE2EEStore = create((set, get) => ({
                     state,
                     sessionKey: sessionKeys ? sessionKeys.tcpKey : prev.sessions[agentId]?.sessionKey,
                     udpKeyBuffer: sessionKeys ? sessionKeys.udpKeyBuffer : prev.sessions[agentId]?.udpKeyBuffer,
-                    udpEpoch: state === 'handshaking' ? 0 : (prev.sessions[agentId]?.udpEpoch ?? 0),
                     udpFrameIdOffset: state === 'handshaking' ? 0 : (prev.sessions[agentId]?.udpFrameIdOffset ?? 0),
                     udpLastSeq: state === 'handshaking' ? 0 : (prev.sessions[agentId]?.udpLastSeq ?? 0),
                     sendSeq: state === 'handshaking' ? 0 : (prev.sessions[agentId]?.sendSeq ?? 0),
@@ -178,19 +177,6 @@ const useE2EEStore = create((set, get) => ({
             }
         }))
         return true
-    },
-
-    updateUdpRatchet: (agentId, newKeyBuffer, newEpoch) => {
-        set((prev) => ({
-            sessions: {
-                ...prev.sessions,
-                [agentId]: {
-                    ...prev.sessions[agentId],
-                    udpKeyBuffer: newKeyBuffer,
-                    udpEpoch: newEpoch
-                }
-            }
-        }))
     },
 
     updateUdpSeq: (agentId, seq) => {

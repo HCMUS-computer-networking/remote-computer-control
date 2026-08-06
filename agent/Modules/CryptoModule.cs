@@ -10,8 +10,6 @@ namespace agent.Modules
         private ECDiffieHellman _ecdh;
         private byte[] _sessionKey;
         private byte[] _udpSessionKey;
-        private uint _udpFramesSent = 0;
-        public uint UdpEpoch => _udpFramesSent / 100;
         private readonly string _e2eeSharedSecret;
 
         public bool IsE2EEReady => _sessionKey != null;
@@ -125,19 +123,6 @@ namespace agent.Modules
             }
         }
 
-        public void RatchetUdpKey()
-        {
-            byte[] msg = new byte[_udpSessionKey.Length + 10];
-            Buffer.BlockCopy(_udpSessionKey, 0, msg, 0, _udpSessionKey.Length);
-            byte[] ratchetStr = Encoding.UTF8.GetBytes("Ratchet_v1");
-            Buffer.BlockCopy(ratchetStr, 0, msg, _udpSessionKey.Length, ratchetStr.Length);
-            
-            using (var sha = SHA256.Create())
-            {
-                _udpSessionKey = sha.ComputeHash(msg);
-            }
-        }
-
         /// <summary>
         /// Generates a random 12-byte IV for AES-GCM.
         /// </summary>
@@ -184,8 +169,6 @@ namespace agent.Modules
             // whenever screen+webcam streamed together (shared counter, separate frameIds) or a
             // stream restarted (frameId reset, counter not), causing permanent GCM decrypt failure.
             // Confidentiality still holds: AES-256-GCM with a fresh random IV + AAD per frame.
-            _udpFramesSent++;
-
             byte[] iv = GenerateIV();
             byte[] ciphertext = new byte[plaintext.Length];
             byte[] authTag = new byte[16];
@@ -247,7 +230,6 @@ namespace agent.Modules
                 Array.Clear(_udpSessionKey, 0, _udpSessionKey.Length);
                 _udpSessionKey = null;
             }
-            _udpFramesSent = 0;
             _ecdh?.Dispose();
             _ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
             

@@ -96,7 +96,7 @@ class Socket
             this._ws.onmessage = null;
             this._ws.onclose   = null;
             this._ws.onerror   = null;
-            try { this._ws.close(); } catch (e) { /* ignore */ }
+            try { this._ws.close(); } catch { /* ignore */ }
             this._ws = null;
         }
         this._retry_count      = 0;

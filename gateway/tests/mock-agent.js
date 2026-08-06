@@ -3,8 +3,9 @@
 
 const WebSocket = require('ws');
 
-const AGENT_KEY = 'agent-secret-key-2024';
-const GATEWAY_URL = `wss://localhost:8080/agent?key=${AGENT_KEY}`;
+const AGENT_KEY = process.env.AGENT_KEY || 'agent-secret-key-2024';
+const HOST = process.env.GATEWAY_HOST || 'localhost';
+const GATEWAY_URL = `wss://${HOST}:8080/agent`;
 const AGENT_ID = 'MOCK-AGENT-999';
 
 console.log('Starting Mock Agent...');
@@ -16,6 +17,7 @@ ws.on('open', () => {
   const registerMsg = {
     type: 'REGISTER',
     agent_id: AGENT_ID,
+    secret: AGENT_KEY,
     hostname: 'Mock-PC',
     ip: '127.0.0.1',
     os: 'Windows 10 Mock'

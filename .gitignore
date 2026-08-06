@@ -59,6 +59,7 @@ repomix.config.json
 repomix-*.xml
 test_hook.cs
 controller/test-results/
+gateway/src/store/*.sqlite
 gateway/src/store/*.sqlite-shm
 gateway/src/store/*.sqlite-wal
 gateway/certs/*.key

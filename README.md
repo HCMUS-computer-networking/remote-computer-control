@@ -20,7 +20,7 @@ Full detail: see [`Architecture.md`](Architecture.md) and the per-subsystem desi
 
 ## 2. Main features
 
-- **End-to-end encryption (Zero-Trust)** — ECDH P-256 + HKDF + AES-256-GCM between Controller and Agent; the handshake is authenticated by a pre-shared PIN (HMAC-SHA256) and UDP frames use a symmetric ratchet. The Gateway only relays ciphertext.
+- **End-to-end encryption (Zero-Trust)** — ECDH P-256 + HKDF + AES-256-GCM between Controller and Agent; the handshake is authenticated by a pre-shared PIN (HMAC-SHA256). UDP stream frames use a stable per-session key with a random IV and per-frame AAD (`frameId + timestamp`). The Gateway only relays ciphertext.
 - **Screen live stream** — bounding-box delta encoding (only changed regions sent) with periodic keyframes, over UDP with FEC parity recovery.
 - **Remote Input** — inject mouse + keyboard events via Win32 `SendInput`, with an on-screen indicator on the Agent.
 - **Keylogger** — consent + visible indicator, lock-free capture queue; consecutive characters grouped into a single line.
@@ -38,57 +38,75 @@ Full detail: see [`Architecture.md`](Architecture.md) and the per-subsystem desi
 
 | Component  | Requirement                                                                  |
 |------------|------------------------------------------------------------------------------|
-| Gateway    | Node.js **18+**, npm                                                         |
-| Controller | Node.js **18+**, npm, a modern browser (recent Chrome / Edge / Firefox)      |
+| Gateway    | Node.js **≥ 20**, npm, `openssl` (to generate the TLS cert)                  |
+| Controller | Node.js **≥ 20**, npm, a modern browser (recent Chrome / Edge / Firefox)     |
 | Agent      | Windows **10/11**, **.NET 8 SDK** (dev) or .NET 8 Runtime (run), Visual Studio 2022 (optional) |
 
-## 4. How to run (in this order)
+## 4. How to run (WSS/TLS mode, in this order)
 
 ```bash
 git clone <repo-url>
 cd remote-computer-control
 ```
 
+TLS/WSS is **on by default** (`TLS_ENABLED !== 'false'`); the demo runs over HTTPS/WSS. Set `TLS_ENABLED=false` only for a plain HTTP/WS dev run.
+
 ### 4.1. Gateway (start first)
+
+Generate a self-signed certificate, then configure and start:
 
 ```bash
 cd gateway
-npm install
-cp .env.example .env         # set AGENT_KEY / JWT_SECRET / ALLOWED_ORIGINS
-npm run dev                  # dev mode (auto-restart). Production: npm start
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout certs/server.key -out certs/server.cert \
+  -days 365 -subj "/CN=localhost"
+cp .env.example .env          # fill CONTROLLER_KEY / AGENT_KEY / JWT_SECRET, keep TLS_ENABLED=true
+npm ci
+npm start                     # dev auto-reload: npm run dev
 ```
 
-Listens on `:8080` by default. TLS/WSS is on by default: place `server.cert` + `server.key` in `gateway/certs/`, or set `TLS_ENABLED=false` in `.env` to run plain HTTP/WS for local dev. Health check: `GET <http|https>://localhost:8080/health`.
+The cert is self-signed — open `https://<gateway-ip>:8080` once in the browser and accept the warning, otherwise the Controller's WSS connection is silently blocked. Health check: `GET https://localhost:8080/health`.
+
+Seed an admin user and register an agent into SQLite (`src/store/data.sqlite`; `users.json` / `agents.json` are migration seeds only):
+
+```bash
+node scripts/hash-password.js "<your-password>"                  # prints a bcrypt hash
+node -e "require('./src/db').queries.upsertUser('admin', '<hash>', 'admin')"
+node scripts/add_agent.js <agent_id>                             # prints the agent secret to paste into agent/config.json
+```
 
 ### 4.2. Controller
 
+Create `controller/.env`:
+
+```
+VITE_GATEWAY_URL=wss://<gateway-ip>:8080
+VITE_CONTROLLER_KEY=<same value as CONTROLLER_KEY>
+```
+
 ```bash
 cd controller
-npm install
-npm run dev                  # → http://localhost:5173
+npm ci
+npm run dev -- --host         # → http://localhost:5173
 ```
 
-By default the Controller runs against `MockSocket` (an in-browser Gateway + Agent simulator). To point at a real Gateway, create `.env.local` with `VITE_USE_MOCK=false` and `VITE_GATEWAY_URL=wss://<host>:8080`.
+### 4.3. Agent (Windows)
 
-### 4.3. Agent
-
-**Option A — Visual Studio 2022:**
-1. Open `agent/agent.sln` in VS 2022.
-2. Edit `agent/config.json`:
-   - `gateway_url` — point at the Gateway (default `wss://127.0.0.1:8080`); leave empty to auto-discover the Gateway over the LAN.
-   - `auth_key` — must match `AGENT_KEY` in the Gateway `.env`.
-   - `e2ee_shared_secret` — the PIN the Controller must enter (after unlocking with its master password) to establish E2EE with this Agent.
-   - `agent_id` — leave as `"AUTO"` to derive it from hostname + MAC.
-3. Press **F5** to build and run. The Agent minimises to the system tray.
-
-**Option B — CLI:**
 ```bash
 cd agent
-dotnet build
-dotnet run
+dotnet build agent.sln -c Release
 ```
 
-On first launch, if `gateway_url` is empty the Agent opens a configuration dialog.
+Run the built `.exe`, then enter the E2EE master password. The Agent auto-discovers the Gateway over the LAN (UDP `:8888`), or you can type the endpoint (`wss://<gateway-ip>:8080`) manually if discovery is unavailable (different subnet, broadcast blocked). `auth_key` in `agent/config.json` must match `AGENT_KEY`, and `e2ee_shared_secret` is the PIN the Controller enters to establish E2EE.
+
+### 4.4. Firewall (open on the Gateway host)
+
+| Port | Proto | Purpose                              |
+|------|-------|--------------------------------------|
+| 8080 | TCP   | REST `/api/login` + WebSocket (WSS)  |
+| 9000 | UDP   | Receives stream frames from Agents   |
+| 8888 | UDP   | LAN discovery beacon                 |
 
 ## 5. Default test account
 
