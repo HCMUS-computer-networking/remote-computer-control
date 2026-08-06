@@ -406,8 +406,11 @@ const NORMALIZERS =
         withAgentId({
             type         : MSG_TYPE.FRAME_META,
             module       : pickField(m, ['module', 'kind', 'source']),         // "screen" | "webcam"
+            x            : pickField(m, ['x']),
+            y            : pickField(m, ['y']),
             w            : pickField(m, ['w', 'width']),
             h            : pickField(m, ['h', 'height']),
+            is_keyframe  : pickField(m, ['is_keyframe', 'isKeyframe']),
             len          : pickField(m, ['len', 'length', 'byte_len']),
             seq          : pickField(m, ['seq', 'sequence', 'frame_no']),
             timestamp_ms : pickField(m, TIMESTAMP_ALIASES),
