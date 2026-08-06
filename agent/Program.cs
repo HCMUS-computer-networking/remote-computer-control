@@ -12,6 +12,7 @@ using Serilog;
 using Microsoft.Extensions.DependencyInjection;
 using AgentSystem.Modules;
 using AgentSystem.Forms;
+using AgentSystem.Utils;
 
 namespace AgentSystem
 {
@@ -20,6 +21,7 @@ namespace AgentSystem
         [STAThread]
         static void Main(string[] args)
         {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             // === THÊM ĐOẠN NÀY ĐỂ KHỞI TẠO LOG ===
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug() // Ghi lại từ mức Debug trở lên
@@ -48,22 +50,38 @@ namespace AgentSystem
                 bool forceConfig = Array.Exists(args, arg => arg.Equals("--config", StringComparison.OrdinalIgnoreCase));
                 if (string.IsNullOrEmpty(gatewayUrl) || forceConfig)
                 {
-                    using (var configForm = new GatewayConfigForm(gatewayUrl))
+                    if (!forceConfig)
                     {
-                        if (configForm.ShowDialog() == DialogResult.OK)
+                        Log.Information("[INFO] Đang tìm kiếm Gateway trong mạng LAN (3s)...");
+                        string discovered = NetworkDiscovery.ScanForGatewayAsync(3000).GetAwaiter().GetResult();
+                        if (!string.IsNullOrEmpty(discovered))
                         {
-                            gatewayUrl = configForm.GatewayUrl;
-                            if (ConfigManager.Current.GatewayUrl != gatewayUrl)
-                            {
-                                ConfigManager.Current.GatewayUrl = gatewayUrl;
-                                ConfigManager.Save();
-                                Log.Information("[INFO] Đã lưu URL Gateway mới vào cấu hình.");
-                            }
+                            gatewayUrl = discovered;
+                            ConfigManager.Current.GatewayUrl = gatewayUrl;
+                            ConfigManager.Save();
+                            Log.Information("[INFO] Đã lưu IP tìm được vào cấu hình: {Url}", gatewayUrl);
                         }
-                        else
+                    }
+
+                    if (string.IsNullOrEmpty(gatewayUrl) || forceConfig)
+                    {
+                        using (var configForm = new GatewayConfigForm(gatewayUrl))
                         {
-                            Log.Information("[INFO] Người dùng đã hủy cấu hình. Đang thoát hệ thống...");
-                            return;
+                            if (configForm.ShowDialog() == DialogResult.OK)
+                            {
+                                gatewayUrl = configForm.GatewayUrl;
+                                if (ConfigManager.Current.GatewayUrl != gatewayUrl)
+                                {
+                                    ConfigManager.Current.GatewayUrl = gatewayUrl;
+                                    ConfigManager.Save();
+                                    Log.Information("[INFO] Đã lưu URL Gateway mới vào cấu hình.");
+                                }
+                            }
+                            else
+                            {
+                                Log.Information("[INFO] Người dùng đã hủy cấu hình. Đang thoát hệ thống...");
+                                return;
+                            }
                         }
                     }
                 }

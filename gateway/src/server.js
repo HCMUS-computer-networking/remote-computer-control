@@ -20,6 +20,7 @@ const { verifyControllerAuth } = require('./middleware/auth');
 const handleAgent = require('./socket/agentHandler');
 const handleController = require('./socket/controllerHandler');
 const udpServer = require('./udp/udpServer');
+const { startBeacon, stopBeacon } = require('./udp/beacon');
 
 // ─── Express App ───────────────────────────────────────────────
 const cookieParser = require('cookie-parser');
@@ -222,6 +223,7 @@ function start() {
     logger.info('═══════════════════════════════════════════════════');
   });
   udpServer.start(9000);
+  startBeacon(config.port, protocol);
 }
 
 // ─── Graceful Shutdown ─────────────────────────────────────────
@@ -238,6 +240,7 @@ function shutdown(signal) {
   }
   
   udpServer.shutdown();
+  stopBeacon();
 
   // Close WebSocket server
   wss.close(() => {
