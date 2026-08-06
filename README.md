@@ -5,7 +5,7 @@ A consent-based **remote administration** tool for a lab environment: a web-base
 ## 1. Architecture
 
 ```
-┌──────────────┐   ws://:8080/controller   ┌──────────────┐   ws://:8080/agent   ┌──────────────┐
+┌──────────────┐   wss://:8080/controller   ┌──────────────┐   wss://:8080/agent   ┌──────────────┐
 │  Controller  │ ◄─────────────────────► │   Gateway    │ ◄──────────────────► │    Agent     │
 │ (React SPA)  │      HTTPS /api/login   │ (Node.js WS) │  (many Agents in     │  (C# .NET 8, │
 │              │                          │              │   parallel)          │  Windows tray)│
@@ -20,19 +20,19 @@ Full detail: see [`Architecture.md`](Architecture.md) and the per-subsystem desi
 
 ## 2. Main features
 
-- **Screen live stream** with **Software Bounding Box Delta Encoding** (only changed regions are sent, MD5 change detection, 1 keyframe every 30 frames).
-- **Remote Input** — inject mouse + keyboard events via Win32 `user32.dll` (`SetCursorPos` / `SendInput`).
-- **Keylogger** with consent + visible indicator; consecutive characters grouped into a single line.
-- **File transfer sandbox** — WebSocket binary frame, 512 KB chunks + SHA-256, sandbox root `C:\AgentSandbox\`.
-- **Process / Application control** — list, kill process; start/stop applications from a whitelist.
+- **End-to-end encryption (Zero-Trust)** — ECDH P-256 + HKDF + AES-256-GCM between Controller and Agent; the handshake is authenticated by a pre-shared PIN (HMAC-SHA256) and UDP frames use a symmetric ratchet. The Gateway only relays ciphertext.
+- **Screen live stream** — bounding-box delta encoding (only changed regions sent) with periodic keyframes, over UDP with FEC parity recovery.
+- **Remote Input** — inject mouse + keyboard events via Win32 `SendInput`, with an on-screen indicator on the Agent.
+- **Keylogger** — consent + visible indicator, lock-free capture queue; consecutive characters grouped into a single line.
+- **File transfer sandbox** — WebSocket binary frames, chunked + SHA-256, locked to a sandbox root.
+- **Process / Application control** — list/kill process (critical system processes protected); start/stop apps from a whitelist.
 - **SysInfo dashboard** — CPU, RAM, disk, uptime, OS, IP in near real time.
-- **Power** — lock / restart / shutdown / sleep with a 10 s countdown on the Controller.
-- **Webcam** — MJPEG stream with a visible on-screen red-dot indicator while the camera is on.
-- **Consent flow** — every sensitive module requires a confirmation dialog on the Agent (30 s timeout, anti-DoS single-popup guard).
+- **Power** — lock / restart / shutdown / sleep with a countdown on the Controller.
+- **Webcam** — MJPEG stream with an on-screen red-dot indicator while the camera is on.
+- **Consent flow** — every sensitive module requires confirmation on the Agent (30 s timeout, single-popup anti-DoS guard).
 - **Dynamic policy** — the Controller pushes the app whitelist and sandbox path into Agent RAM without a restart.
-- **Enterprise Security (OWASP 2024 & DPAPI)** — PBKDF2 600,000 rounds, ECDH + AES-256-GCM E2EE, RAM-only One-Time PIN (OTP), Windows DPAPI configuration protection, and Symmetric Ratchet key rotation.
-- **Enterprise Performance** — UDP FEC Worker Pool on Gateway (multi-threaded XOR parity recovery) and Frontend Canvas Rendering Bypass (`FrameEventBus` + `requestAnimationFrame`) for low-latency 24 FPS video.
-- **System Hardening** — Lock-free keylogger queue (`ConcurrentQueue`) preventing keyboard input lag, and core system process protection blacklist (`csrss.exe`, `lsass.exe`, `SYSTEM`).
+- **Zero-config LAN discovery** — the Gateway broadcasts its address on UDP `:8888`; the Agent auto-discovers it, no manual endpoint needed.
+- **WSS/TLS by default** — set `TLS_ENABLED=false` for plain HTTP/WS in dev.
 
 ## 3. Environment requirements
 
@@ -54,11 +54,11 @@ cd remote-computer-control
 ```bash
 cd gateway
 npm install
-cp .env.example .env         # set AGENT_KEY / CONTROLLER_KEY / JWT_SECRET
+cp .env.example .env         # set AGENT_KEY / JWT_SECRET / ALLOWED_ORIGINS
 npm run dev                  # dev mode (auto-restart). Production: npm start
 ```
 
-Listens on `:8080` by default. Health check: `GET http://localhost:8080/health`.
+Listens on `:8080` by default. TLS/WSS is on by default: place `server.cert` + `server.key` in `gateway/certs/`, or set `TLS_ENABLED=false` in `.env` to run plain HTTP/WS for local dev. Health check: `GET <http|https>://localhost:8080/health`.
 
 ### 4.2. Controller
 
@@ -68,15 +68,16 @@ npm install
 npm run dev                  # → http://localhost:5173
 ```
 
-By default the Controller runs against `MockSocket` (an in-browser Gateway + Agent simulator). To point at a real Gateway, create `.env.local` with `VITE_USE_MOCK=false` and `VITE_GATEWAY_URL=ws://<host>:8080`.
+By default the Controller runs against `MockSocket` (an in-browser Gateway + Agent simulator). To point at a real Gateway, create `.env.local` with `VITE_USE_MOCK=false` and `VITE_GATEWAY_URL=wss://<host>:8080`.
 
 ### 4.3. Agent
 
 **Option A — Visual Studio 2022:**
 1. Open `agent/agent.sln` in VS 2022.
 2. Edit `agent/config.json`:
-   - `gateway_url` — point at the Gateway (default `ws://127.0.0.1:8080`).
+   - `gateway_url` — point at the Gateway (default `wss://127.0.0.1:8080`); leave empty to auto-discover the Gateway over the LAN.
    - `auth_key` — must match `AGENT_KEY` in the Gateway `.env`.
+   - `e2ee_shared_secret` — the PIN the Controller must enter (after unlocking with its master password) to establish E2EE with this Agent.
    - `agent_id` — leave as `"AUTO"` to derive it from hostname + MAC.
 3. Press **F5** to build and run. The Agent minimises to the system tray.
 
