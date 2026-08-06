@@ -40,8 +40,6 @@ graph LR
 remote-computer-control/
 ├── Architecture.md            Tài liệu này
 ├── README.md                  Trang chủ monorepo (giới thiệu + link)
-├── CONTRIBUTING.md            Quy ước đóng góp
-├── CHANGELOG.md               Nhật ký phiên bản
 ├── LICENSE
 ├── docs/                      Tài liệu chung
 │   ├── protocol/              Schema canonical của mọi message JSON
@@ -174,7 +172,7 @@ agent/
 │   ├── BaseModule.cs              abstract: SupportedCommands, ExecuteAsync, virtual OnDisconnected.
 │   ├── CryptoModule.cs            E2EE crypto: ECDH P-256, HMAC-SHA256 (xác thực PIN), HKDF-SHA256 (khoá TCP "RemoteControl_E2EE_v1" + khoá UDP "RemoteControl_UDP_v1"), AES-256-GCM (TCP payload + UDP frame với AAD = frameId + timestamp), sequence window chống replay; khoá UDP ổn định theo phiên (không ratchet).
 │   ├── AppModule.cs               app_list / app_start / app_stop (chỉ chạy app trong whitelist).
-│   ├── ProcessModule.cs           proc_list / proc_kill; chặn kill tiến trình lõi hệ thống + tiến trình đặc quyền.
+│   ├── ProcessModule.cs           proc_list (pid/name/cpu%/ram — không tra owner) / proc_kill (tra owner để chặn kill tiến trình lõi hệ thống + đặc quyền).
 │   ├── KeyloggerModule.cs         keylog_start/stop + global low-level keyboard hook; batch qua ConcurrentQueue (lock-free) rồi flush theo PeriodicTimer.
 │   ├── WebcamModule.cs            webcam_start/stop, MJPEG, red-dot overlay khi bật; bắn frame qua UdpStreamSender.
 │   ├── FileModule.cs              fs_list / fs_get / fs_put — chunk, sha256 verify, sandbox root. HandleBinaryChunk cho upload.

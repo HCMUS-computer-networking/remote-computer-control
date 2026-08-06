@@ -98,13 +98,15 @@ namespace AgentSystem.Modules
                     catch (Win32Exception) { }
                     catch (InvalidOperationException) { }
 
-                    string username = GetProcessOwner(p);
-
+                    // Ghi chú: KHÔNG resolve owner (OpenProcessToken + WindowsIdentity) ở đây.
+                    // Controller không hiển thị cột owner, mà lookup SID->tên user cho từng
+                    // process lại có thể treo/ném exception trên máy thật (join domain, quyền
+                    // hạn chế), khiến proc_list_result không bao giờ được gửi -> UI loading mãi.
+                    // Owner chỉ cần cho proc_kill (fail-closed), nên vẫn giữ ở nhánh đó.
                     processList.Add(new
                     {
                         pid = p.Id,
                         name = p.ProcessName + ".exe",
-                        username = username,
                         cpu_percent = cpuPercent,
                         ram_mb = ramMb
                     });
