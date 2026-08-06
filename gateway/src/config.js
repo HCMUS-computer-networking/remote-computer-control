@@ -31,7 +31,7 @@ const config = {
   //     -keyout certs/server.key -out certs/server.cert \
   //     -days 365 -subj "/CN=localhost"
   //
-  tlsEnabled: process.env.TLS_ENABLED === 'true',
+  tlsEnabled: process.env.TLS_ENABLED !== 'false',
   tlsCertPath: process.env.TLS_CERT_PATH || './certs/server.cert',
   tlsKeyPath: process.env.TLS_KEY_PATH || './certs/server.key',
 

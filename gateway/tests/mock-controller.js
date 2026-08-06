@@ -34,7 +34,7 @@ async function run() {
   const token = res.token;
   console.log('✅ Logged in, JWT acquired.');
 
-  const ws = new WebSocket(`ws://localhost:8080/controller?token=${token}`);
+  const ws = new WebSocket(`wss://localhost:8080/controller?token=${token}`, { rejectUnauthorized: false });
   let targetAgentId = null;
 
   ws.on('open', () => {

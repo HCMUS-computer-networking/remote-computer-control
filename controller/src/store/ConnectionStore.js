@@ -14,7 +14,7 @@ const useConnectionStore = create(function (set)
 {
     return {
         status      : 'idle',                  // 'idle' | 'connecting' | 'open' | 'closed'
-        gateway_url : 'ws://localhost:8080',   // destination for the real Socket.js
+        gateway_url : 'wss://localhost:8080',   // destination for the real Socket.js
         auth_token  : null,                    // access JWT from /api/login (memory only)
 
         // Mark connection as pending. UseAgentSocket hook watches this and opens the socket.
