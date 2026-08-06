@@ -24,17 +24,17 @@ namespace AgentSystem.Forms
         // Ánh xạ feature -> các control của một dòng module để cập nhật nhanh.
         private readonly Dictionary<string, ModuleRow> _rows = new Dictionary<string, ModuleRow>();
 
-        // Tên hiển thị tiếng Việt cho 8 module (khớp AgentClient.AllFeatures).
+        // Display names for the 8 modules (matches AgentClient.AllFeatures).
         private static readonly Dictionary<string, string> FeatureNames = new Dictionary<string, string>
         {
-            { "application", "Ứng dụng (Application)" },
-            { "process",     "Tiến trình (Process)" },
-            { "screen",      "Màn hình (Screen)" },
-            { "keylog",      "Bàn phím (Keylog)" },
-            { "file",        "Tập tin (File)" },
+            { "application", "Application" },
+            { "process",     "Process" },
+            { "screen",      "Screen" },
+            { "keylog",      "Keylogger" },
+            { "file",        "File Transfer" },
             { "webcam",      "Webcam" },
-            { "power",       "Nguồn (Power)" },
-            { "input",       "Chuột/Bàn phím từ xa (Input)" },
+            { "power",       "Power" },
+            { "input",       "Remote Input" },
         };
 
         private static readonly Color ClrControlled = Color.FromArgb(200, 40, 40);
@@ -99,7 +99,7 @@ namespace AgentSystem.Forms
 
             lblStatus = new Label
             {
-                Text = "Đang kiểm tra...",
+                Text = "Checking...",
                 Font = new Font("Segoe UI", 10F, FontStyle.Bold),
                 Location = new Point(42, 52),
                 AutoSize = true
@@ -146,7 +146,7 @@ namespace AgentSystem.Forms
 
             btnConfig = new Button
             {
-                Text = "Đổi Gateway",
+                Text = "Change Gateway",
                 Location = new Point(285, 148),
                 Size = new Size(155, 32),
                 FlatStyle = FlatStyle.Flat
@@ -157,7 +157,7 @@ namespace AgentSystem.Forms
             // --- Tiêu đề khu module ---
             var lblModTitle = new Label
             {
-                Text = "TRẠNG THÁI ĐIỀU KHIỂN THEO MODULE",
+                Text = "PER-MODULE CONTROL STATUS",
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(80, 80, 80),
                 Location = new Point(20, 195),
@@ -191,7 +191,7 @@ namespace AgentSystem.Forms
 
                 var status = new Label
                 {
-                    Text = "Rảnh",
+                    Text = "Idle",
                     Location = new Point(200, y + 6),
                     Width = 110,
                     Font = new Font("Segoe UI", 9F, FontStyle.Bold),
@@ -201,7 +201,7 @@ namespace AgentSystem.Forms
 
                 var exit = new Button
                 {
-                    Text = "Thoát",
+                    Text = "Exit",
                     Tag = feature,
                     Location = new Point(315, y + 2),
                     Size = new Size(90, 28),
@@ -224,14 +224,14 @@ namespace AgentSystem.Forms
         {
             if (_agent.IsConnected)
             {
-                lblStatus.Text = "Đang ngắt kết nối...";
+                lblStatus.Text = "Disconnecting...";
                 lblStatus.ForeColor = Color.Orange;
                 lblConnDot.ForeColor = Color.Orange;
                 _agent.DisconnectManually();
             }
             else
             {
-                lblStatus.Text = "Đang kết nối...";
+                lblStatus.Text = "Connecting...";
                 lblStatus.ForeColor = Color.Orange;
                 lblConnDot.ForeColor = Color.Orange;
                 _agent.Reconnect();
@@ -262,9 +262,9 @@ namespace AgentSystem.Forms
             {
                 string display = FeatureNames.TryGetValue(feature, out var n) ? n : feature;
                 var confirm = MessageBox.Show(
-                    $"Thoát chế độ bị điều khiển cho module [{display}]?\n\n" +
-                    "Quyền sẽ bị thu hồi và Controller phải xin lại nếu muốn tiếp tục.",
-                    "Xác nhận thoát điều khiển",
+                    $"Exit controlled mode for the [{display}] module?\n\n" +
+                    "The permission will be revoked and the Controller must request it again to continue.",
+                    "Confirm exit control",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
 
                 if (confirm == DialogResult.Yes)
@@ -295,21 +295,21 @@ namespace AgentSystem.Forms
         {
             if (_agent.IsConnected)
             {
-                lblStatus.Text = "Đã kết nối (Connected)";
+                lblStatus.Text = "Connected";
                 lblStatus.ForeColor = ClrConnected;
                 lblConnDot.ForeColor = ClrConnected;
 
-                btnConnToggle.Text = "Ngắt kết nối";
+                btnConnToggle.Text = "Disconnect";
                 btnConnToggle.BackColor = ClrDisconnect;
                 btnConnToggle.Enabled = true;
             }
             else
             {
-                lblStatus.Text = "Mất kết nối (Disconnected)";
+                lblStatus.Text = "Disconnected";
                 lblStatus.ForeColor = ClrDisconnect;
                 lblConnDot.ForeColor = ClrDisconnect;
 
-                btnConnToggle.Text = "Kết nối lại";
+                btnConnToggle.Text = "Reconnect";
                 btnConnToggle.BackColor = ClrConnected;
                 btnConnToggle.Enabled = true;
             }
@@ -327,13 +327,13 @@ namespace AgentSystem.Forms
                 bool controlled = connected && _agent.IsFeatureGranted(feature);
                 if (controlled)
                 {
-                    row.Status.Text = "● Đang bị điều khiển";
+                    row.Status.Text = "● Controlled";
                     row.Status.ForeColor = ClrControlled;
                     row.Exit.Enabled = true;
                 }
                 else
                 {
-                    row.Status.Text = "Rảnh";
+                    row.Status.Text = "Idle";
                     row.Status.ForeColor = ClrIdle;
                     row.Exit.Enabled = false;
                 }

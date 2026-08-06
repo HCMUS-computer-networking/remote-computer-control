@@ -113,7 +113,7 @@ namespace AgentSystem.Modules
             else
             {
                 // Chỉ đếm ngược 10s nếu là phiên stream hoàn toàn mới
-                ui.ShowCountdown(10, "Cảnh báo Chia sẻ Màn hình", "Màn hình sẽ bị theo dõi sau {0} giây...");
+                ui.ShowCountdown(10, "Screen Sharing Alert", "Your screen will be monitored in {0} seconds...");
                 await Task.Delay(10000);
             }
 

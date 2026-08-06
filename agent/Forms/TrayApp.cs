@@ -29,18 +29,18 @@ namespace AgentSystem.Forms
             mainForm.Show();
 
             bool isAutoStart = CheckAutoStart();
-            autoStartMenuItem = new ToolStripMenuItem("Khởi động cùng Windows", null, ToggleAutoStart);
+            autoStartMenuItem = new ToolStripMenuItem("Start with Windows", null, ToggleAutoStart);
             autoStartMenuItem.Checked = isAutoStart;
 
             // Context Menu
             trayMenu = new ContextMenuStrip();
-            trayMenu.Items.Add("Bảng Điều Khiển (Dashboard)", null, ShowDashboard);
+            trayMenu.Items.Add("Dashboard", null, ShowDashboard);
             trayMenu.Items.Add("-");
             trayMenu.Items.Add(autoStartMenuItem);
             trayMenu.Items.Add("-");
-            trayMenu.Items.Add("Mở thư mục Log", null, OpenLogFolder);
+            trayMenu.Items.Add("Open Log Folder", null, OpenLogFolder);
             trayMenu.Items.Add("-");
-            trayMenu.Items.Add("Thoát", null, Exit);
+            trayMenu.Items.Add("Exit", null, Exit);
 
             // Khởi tạo System Tray Icon
             trayIcon = new NotifyIcon()
@@ -117,7 +117,7 @@ namespace AgentSystem.Forms
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Không thể thay đổi Registry: {ex.Message}", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Unable to modify the Registry: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -134,12 +134,12 @@ namespace AgentSystem.Forms
                 }
                 else
                 {
-                    MessageBox.Show("Thư mục Log chưa được tạo.", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("The Log folder has not been created yet.", "Notice", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Lỗi khi mở thư mục Log: {ex.Message}", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Error opening the Log folder: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Log.Error(ex, "[TrayApp] Lỗi mở thư mục log");
             }
         }

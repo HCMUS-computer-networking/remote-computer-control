@@ -21,8 +21,8 @@ namespace AgentSystem.Forms
         {
             this.GatewayUrl = defaultUrl;
 
-            this.Text = "Cấu hình kết nối hệ thống";
-            this.Size = new Size(460, 220); // Mở rộng Form để chứa thêm nút và label
+            this.Text = "System Connection Settings";
+            this.Size = new Size(460, 220); // Widen the form to fit the extra button and label
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
@@ -34,7 +34,7 @@ namespace AgentSystem.Forms
 
             Label lblInstruction = new Label
             {
-                Text = "Nhập địa chỉ Gateway hoặc nhấn Tự động quét (UDP):",
+                Text = "Enter the Gateway address or click Auto-scan (UDP):",
                 Location = new Point(20, 20),
                 Size = new Size(400, 20),
                 Font = new Font("Arial", 9, FontStyle.Bold)
@@ -53,7 +53,7 @@ namespace AgentSystem.Forms
             // Nút: Tự động quét UDP
             btnScan = new Button
             {
-                Text = "Tự động quét",
+                Text = "Auto-scan",
                 Location = new Point(20, 95),
                 Size = new Size(110, 35),
                 BackColor = Color.LightSkyBlue
@@ -64,7 +64,7 @@ namespace AgentSystem.Forms
             // Nút: Kết nối
             Button btnConnect = new Button
             {
-                Text = "Kết nối (Connect)",
+                Text = "Connect",
                 Location = new Point(160, 95),
                 Size = new Size(120, 35),
                 BackColor = Color.LightGreen,
@@ -76,7 +76,7 @@ namespace AgentSystem.Forms
             // Nút: Thoát
             Button btnCancel = new Button
             {
-                Text = "Thoát (Exit)",
+                Text = "Cancel",
                 Location = new Point(300, 95),
                 Size = new Size(120, 35),
                 BackColor = Color.LightGray,
@@ -87,7 +87,7 @@ namespace AgentSystem.Forms
             // Nhãn hiển thị trạng thái quét
             lblStatus = new Label
             {
-                Text = "Sẵn sàng.",
+                Text = "Ready.",
                 Location = new Point(20, 145),
                 Size = new Size(400, 20),
                 Font = new Font("Arial", 8, FontStyle.Italic),
@@ -102,7 +102,7 @@ namespace AgentSystem.Forms
         private async void BtnScan_Click(object sender, EventArgs e)
         {
             btnScan.Enabled = false;
-            lblStatus.Text = "Đang lắng nghe tín hiệu Gateway trên mạng LAN (Port 8888)...";
+            lblStatus.Text = "Listening for Gateway beacons on the LAN (port 8888)...";
             lblStatus.ForeColor = Color.Blue;
 
             try
@@ -111,12 +111,12 @@ namespace AgentSystem.Forms
                 if (!string.IsNullOrEmpty(discoveredUrl))
                 {
                     txtUrl.Text = discoveredUrl;
-                    lblStatus.Text = $"Tìm thấy Gateway an toàn tại: {discoveredUrl}";
+                    lblStatus.Text = $"Found a secure Gateway at: {discoveredUrl}";
                     lblStatus.ForeColor = Color.Green;
                 }
                 else
                 {
-                    lblStatus.Text = "Hết thời gian (5s). Không tìm thấy Gateway nào phát tín hiệu.";
+                    lblStatus.Text = "Timed out (5s). No Gateway beacon found.";
                     lblStatus.ForeColor = Color.Red;
                 }
             }

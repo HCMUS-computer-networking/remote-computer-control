@@ -65,7 +65,7 @@ namespace AgentSystem.Modules
                 return;
             }
 
-            ui.ShowCountdown(10, "Cảnh báo Ghi hình", "Camera sẽ được kích hoạt sau {0} giây...");
+            ui.ShowCountdown(10, "Webcam Recording Alert", "The camera will be activated in {0} seconds...");
             
             _startupCts = new CancellationTokenSource();
             try

@@ -184,7 +184,7 @@ namespace AgentSystem.Managers
             timeLeft = timeoutMs / 1000;
             
             // Cấu hình Form
-            this.Text = "Cảnh báo Bảo mật Hệ thống";
+            this.Text = "System Security Alert";
             this.Size = new Size(400, 200);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.TopMost = true; // Luôn nằm trên cùng
@@ -203,7 +203,7 @@ namespace AgentSystem.Managers
             // Nhãn thông báo
             lblMessage = new Label
             {
-                Text = $"Hệ thống Trung tâm đang yêu cầu quyền truy cập vào: [{moduleName.ToUpper()}].\n\nBạn có đồng ý không? (Tự động từ chối sau {timeLeft}s)",
+                Text = $"The Control Center is requesting access to: [{moduleName.ToUpper()}].\n\nDo you allow it? (Auto-declines in {timeLeft}s)",
                 Location = new Point(20, 20),
                 Size = new Size(340, 60),
                 Font = new Font("Arial", 10, FontStyle.Regular)
@@ -213,7 +213,7 @@ namespace AgentSystem.Managers
             // Nút Đồng ý
             Button btnAccept = new Button
             {
-                Text = "Đồng ý (Approve)",
+                Text = "Approve",
                 Location = new Point(50, 100),
                 Size = new Size(120, 40),
                 BackColor = Color.LightGreen
@@ -229,7 +229,7 @@ namespace AgentSystem.Managers
             // Nút Từ chối
             Button btnReject = new Button
             {
-                Text = "Từ chối (Reject)",
+                Text = "Reject",
                 Location = new Point(210, 100),
                 Size = new Size(120, 40),
                 BackColor = Color.LightCoral
@@ -255,7 +255,7 @@ namespace AgentSystem.Managers
                 }
                 else
                 {
-                    lblMessage.Text = $"Hệ thống Trung tâm đang yêu cầu quyền truy cập vào: [{moduleName.ToUpper()}].\n\nBạn có đồng ý không? (Tự động từ chối sau {timeLeft}s)";
+                    lblMessage.Text = $"The Control Center is requesting access to: [{moduleName.ToUpper()}].\n\nDo you allow it? (Auto-declines in {timeLeft}s)";
                 }
             };
             timeoutTimer.Start();

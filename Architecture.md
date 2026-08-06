@@ -43,11 +43,11 @@ remote-computer-control/
 ├── LICENSE
 ├── docs/                      Tài liệu chung
 │   ├── protocol/              Schema canonical của mọi message JSON
-│   ├── design/                Thiết kế chi tiết từng subsystem
-│   ├── reports/               Báo cáo đánh giá
-│   └── guide.md               Hướng dẫn tổng hợp
+│   ├── design/                Thiết kế chi tiết: agent/, gateway/, wireframe/
+│   └── reports/               Báo cáo đánh giá & bug còn mở
 ├── scripts/                   setup.ps1 (bootstrap 1 lệnh: sinh secret + cert + deps + seed),
 │                              gen-cert.ps1 (tạo TLS cert, tự dò openssl), dev-up.ps1
+├── AgentSystem.Tests/         Unit test xUnit cho Agent (SecurityManagerTests)
 ├── controller/                React SPA — xem 2.2
 ├── gateway/                   Node.js relay — xem 2.3
 └── agent/                     C# tray app — xem 2.4
@@ -124,6 +124,8 @@ gateway/
 ├── package.json               Express 5 + ws + better-sqlite3 + bcryptjs + jsonwebtoken + AJV + winston + express-rate-limit + cookie-parser + cors
 ├── nodemon.json               Dev auto-reload
 ├── certs/                     server.cert + server.key (self-signed, KHÔNG commit — gitignore)
+├── scripts/                   add_agent.js (cấp secret riêng 1 agent), hash-password.js, migrate_from_json.js
+├── tests/                     mock-agent.js, mock-controller.js (harness thủ công)
 └── src/
     ├── index.js               Boot: init DB, start server.
     ├── server.js              1 HTTP(S) server + WebSocketServer(noServer:true). Tự chọn HTTPS/WSS khi tlsEnabled. CORS whitelist + rate-limit /api/login (10/60s). Route upgrade theo pathname (/agent, /controller). Khởi động UDP :9000 + beacon :8888.
@@ -192,9 +194,9 @@ agent/
 │   └── InputModule.cs             input_mouse_move (fire-and-forget) / input_mouse_click / input_key / input_type qua SendInput. Overlay blue "K".
 │
 ├── Forms/
-│   ├── TrayApp.cs                 NotifyIcon + context menu: mở Dashboard, bật/tắt "Khởi động cùng Windows" (Registry Run key), mở thư mục Log, Thoát. Double-click icon = mở Dashboard. Autostart/Log/Exit yêu cầu tray_password nếu đã đặt.
-│   ├── MainForm.cs               Dashboard: Agent ID, Gateway URL, pill trạng thái kết nối (Connected/Disconnected); nút chủ động Ngắt kết nối / Kết nối lại; nút Đổi Gateway; bảng 8 module (application/process/screen/keylog/file/webcam/power/input) hiển thị "Đang bị điều khiển"/"Rảnh" + nút Thoát để agent chủ động thu hồi quyền và dừng module đó (gọi AgentClient.RevokeFeatureLocally). Cập nhật realtime qua OnConnected/OnDisconnected/OnPermissionsChanged. Bấm X = ẩn xuống tray.
-│   ├── GatewayConfigForm.cs       Dialog nhập gateway_url + nút "Tự động quét" (lắng nghe UDP :8888) khi config trống / discovery thất bại.
+│   ├── TrayApp.cs                 NotifyIcon + context menu: "Dashboard", bật/tắt "Start with Windows" (Registry Run key), "Open Log Folder", "Exit". Double-click icon = mở Dashboard. Autostart/Log/Exit yêu cầu tray_password nếu đã đặt.
+│   ├── MainForm.cs               Dashboard: Agent ID, Gateway URL, pill trạng thái kết nối ("Connected"/"Disconnected"); nút chủ động "Disconnect" / "Reconnect"; nút "Change Gateway"; bảng 8 module (application/process/screen/keylog/file/webcam/power/input) hiển thị "● Controlled"/"Idle" + nút "Exit" để agent chủ động thu hồi quyền và dừng module đó (gọi AgentClient.RevokeFeatureLocally). Cập nhật realtime qua OnConnected/OnDisconnected/OnPermissionsChanged. Bấm X = ẩn xuống tray.
+│   ├── GatewayConfigForm.cs       Dialog nhập gateway_url + nút "Auto-scan" (lắng nghe UDP :8888) khi config trống / discovery thất bại.
 │   └── PasswordPromptForm.cs      Prompt tray_password trước action nhạy cảm ở tray.
 │
 ├── Models/
@@ -403,7 +405,7 @@ AgentSocket.onBinary(bytes)
 - **P/Invoke** khu trú ở `InputModule`, `KeyloggerModule`, `Utils/*`; signature khớp Win32, comment WHY.
 - **DI**: Managers Singleton, Modules Transient (`Program.cs`).
 - **Logging** Serilog rolling; không log secret / khoá.
-- **Comment tiếng Việt**; string UI trên Form (Dashboard, consent popup, dialog) tiếng Việt cho người dùng máy Agent.
+- **Comment tiếng Việt**; **mọi chuỗi UI trên Form (Dashboard, consent popup, countdown, dialog, tray menu, MessageBox) dùng tiếng Anh** — toàn hệ thống thống nhất tiếng Anh cho chuỗi hiển thị.
 - **WinForms**: cập nhật control từ luồng nền phải marshal qua `InvokeRequired`/`BeginInvoke`; huỷ đăng ký event khi Form dispose.
 
 ### 6.5. E2EE / Crypto (cross-cutting)
@@ -480,7 +482,7 @@ Người vai trò Agent đọc được toàn bộ source (bình thường — c
 ## 9. Nơi tra cứu
 
 - Schema JSON: [`docs/protocol/`](docs/protocol/) — nguồn duy nhất cho tên field.
-- Thiết kế Controller: [`docs/design/controller/architecture.md`](docs/design/controller/architecture.md).
 - Thiết kế Gateway: [`docs/design/gateway/technical_design.md`](docs/design/gateway/technical_design.md).
 - Thiết kế Agent: [`docs/design/agent/technical_design.md`](docs/design/agent/technical_design.md).
+- Wireframe & UI Controller: [`docs/design/wireframe/`](docs/design/wireframe/).
 - Đánh giá & bug còn mở: [`docs/reports/evaluation.md`](docs/reports/evaluation.md).

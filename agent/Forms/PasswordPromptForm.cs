@@ -13,7 +13,7 @@ namespace AgentSystem.Forms
 
         public PasswordPromptForm()
         {
-            this.Text = "Xác Thực Quản Trị Viên";
+            this.Text = "Administrator Authentication";
             this.Size = new Size(300, 150);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -23,7 +23,7 @@ namespace AgentSystem.Forms
 
             Label lbl = new Label
             {
-                Text = "Vui lòng nhập mật khẩu Tray Icon:",
+                Text = "Please enter the tray icon password:",
                 Location = new Point(20, 20),
                 AutoSize = true
             };
@@ -40,7 +40,7 @@ namespace AgentSystem.Forms
 
             btnSubmit = new Button
             {
-                Text = "Xác nhận",
+                Text = "Confirm",
                 Location = new Point(100, 75),
                 Size = new Size(80, 25)
             };
@@ -57,7 +57,7 @@ namespace AgentSystem.Forms
             }
             else
             {
-                MessageBox.Show("Mật khẩu không chính xác!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Incorrect password!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 txtPassword.Clear();
                 txtPassword.Focus();
             }
