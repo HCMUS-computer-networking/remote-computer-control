@@ -110,7 +110,28 @@ Copy-Item agent\config.local.json agent\bin\Release\net8.0-windows\config.json
 .\agent\bin\Release\net8.0-windows\agent.exe
 ```
 
-From source instead of the built exe: `dotnet run --project agent -c Release` (in that case put the copy at `agent/config.json`). The copied config must keep `"e2ee_shared_secret": "default-pin-12345"` (it already does if you ran `setup.ps1 -E2eePin default-pin-12345`) so the E2EE handshake matches the Controller.
+The Agent runs **hidden in the system tray** — a shield icon at the bottom-right of the taskbar (click **˄ “show hidden icons”** if you don't see it). Double-click it to reopen the dashboard.
+
+> **Clicking ✕ only hides the Agent; it keeps running and keeps `agent.exe` locked.** To stop it completely, **right-click the tray shield → Exit**. Do this *before* rebuilding: a running Agent locks the exe, so `dotnet build` silently keeps the old binary and you relaunch stale code — the classic *"I rebuilt but the UI didn't change"* trap. If a build ever reports the file is *in use / locked*, an Agent is still running: Exit it from the tray (or `Get-Process agent | Stop-Process -Force`) and build again.
+
+**After editing Agent code**, rebuild the **same configuration you launch** (you run the `Release` exe above, so build `Release`), then copy the config next to it and run:
+
+```powershell
+# PowerShell — build, copy config, run
+dotnet build agent\agent.csproj -c Release
+Copy-Item agent\config.local.json agent\bin\Release\net8.0-windows\config.json -Force
+.\agent\bin\Release\net8.0-windows\agent.exe
+```
+
+Simplest of all — **`dotnet run` builds and runs in one step**, so you can never launch a stale exe. Running from source uses the working directory for config, so copy to `agent/config.json` first:
+
+```powershell
+# PowerShell — from source
+Copy-Item agent\config.local.json agent\config.json -Force
+dotnet run --project agent -c Release
+```
+
+The copied config must keep `"e2ee_shared_secret": "default-pin-12345"` (it already does if you ran `setup.ps1 -E2eePin default-pin-12345`) so the E2EE handshake matches the Controller.
 
 Then, in the Controller browser tab (`https://localhost:5173`):
 
