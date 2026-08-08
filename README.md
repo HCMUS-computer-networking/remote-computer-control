@@ -47,18 +47,35 @@ Three-tier **star topology** — Agents never talk to the Controller directly; a
 
 ## Setup
 
+### Option 1: All-in-One Setup (Single Machine)
+
 Open PowerShell as Administrator in the repository root and run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ./scripts/setup.ps1 -E2eePin default-pin-12345
 ```
 
-This single command automatically:
-1. Detects your machine's primary LAN IPv4 address (e.g., `192.168.1.x`).
-2. Generates shared secrets and self-signed TLS certificates for LAN & localhost.
-3. Installs Gateway and Controller Node.js dependencies.
-4. Seeds the default `admin` account.
-5. Builds the C# Agent in Release mode and populates `config.json` files.
+This single command automatically detects your machine's primary LAN IPv4 address, generates shared secrets, installs Gateway and Controller dependencies, seeds the `admin` account, and builds the C# Agent.
+
+### Option 2: Individual Component Setup (Multi-Machine LAN)
+
+If components run on separate machines across the local network, run the specific script for each component:
+
+#### 1. Setup Gateway (Run on Gateway Server Machine)
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/setup-gateway.ps1 -E2eePin default-pin-12345
+```
+*Note down the generated `CONTROLLER_KEY` and `AGENT_KEY` output by this script to configure Controller and Agent machines.*
+
+#### 2. Setup Controller (Run on Controller Web Host / Admin Machine)
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/setup-controller.ps1 -GatewayIp <GATEWAY_IP> -ControllerKey <CONTROLLER_KEY>
+```
+
+#### 3. Setup Agent (Run on Client/Target Windows Machine)
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/setup-agent.ps1 -GatewayIp <GATEWAY_IP> -AgentKey <AGENT_KEY> -E2eePin default-pin-12345
+```
 
 ## Run
 
@@ -109,7 +126,7 @@ cd controller; npm run dev -- --host
 | [`gateway/`](gateway/)                     | Gateway — Node.js WebSocket relay + Auth                  |
 | [`AgentSystem.Tests/`](AgentSystem.Tests/) | .NET unit tests (xUnit) for the Agent                     |
 | [`docs/`](docs/)                           | Protocol schemas and design documentation                 |
-| [`scripts/`](scripts/)                     | `setup.ps1`, `gen-cert.ps1`, `dev-up.ps1`                 |
+| [`scripts/`](scripts/)                     | `setup.ps1`, `setup-gateway.ps1`, `setup-controller.ps1`, `setup-agent.ps1`, `gen-cert.ps1`, `dev-up.ps1` |
 
 ## Documentation
 
