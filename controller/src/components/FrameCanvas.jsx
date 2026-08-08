@@ -199,7 +199,16 @@ function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'scre
             <canvas
                 ref={canvas_ref}
                 data-module={module}
-                style={{ width, height, display: 'block', objectFit: 'contain' }}
+                style={{
+                    // Letterbox: canvas keeps its intrinsic aspect-ratio (set by drawImage),
+                    // and the flex container (screen-tab__canvas-wrapper) centres it.
+                    // `objectFit: contain` is NOT valid on <canvas> — CSS ignores it.
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    width: 'auto',
+                    height: 'auto',
+                    display: 'block',
+                }}
                 aria-label={aria_label}
             />
         )
@@ -210,7 +219,13 @@ function FrameCanvas({ agent_id, frame_buffer, frame_meta = null, module = 'scre
             <canvas
                 ref={canvas_ref}
                 data-module={module}
-                style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }}
+                style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    width: 'auto',
+                    height: 'auto',
+                    display: 'block',
+                }}
                 aria-label={aria_label}
             />
             <span className="frame-canvas__badge" aria-hidden="true">

@@ -218,6 +218,16 @@ function ScreenTab({ agent })
         requestPermission(FEATURE.INPUT, agent.id)
     }
 
+    // Keep refs to the latest revoke/stop actions so the unmount cleanup
+    // always calls the fresh action handlers without needing them in the
+    // useEffect dependency array (which would re-trigger cleanup on every render).
+    const revoke_ref = useRef(revokePermission)
+    const stop_ref   = useRef(stopModule)
+    useEffect(() => {
+        revoke_ref.current = revokePermission
+        stop_ref.current   = stopModule
+    })
+
     // Cleanup: if operator leaves the tab or switches agent while Remote
     // Input is granted, revoke the grant so the Agent's overlay does not
     // linger and stray clicks cannot be sent after the tab unmounts.
@@ -228,11 +238,12 @@ function ScreenTab({ agent })
             const current = usePermissionStore.getState().permissions[agent.id]?.[FEATURE.INPUT]
             if (current === 'granted' || current === 'requesting')
             {
-                revokePermission(FEATURE.INPUT, agent.id)
-                stopModule(FEATURE.INPUT, agent.id)
+                revoke_ref.current(FEATURE.INPUT, agent.id)
+                stop_ref.current(FEATURE.INPUT, agent.id)
             }
         }
-    }, [agent.id, revokePermission, stopModule])
+    }, [agent.id])
+
 
     // Focus the capture wrapper the moment Remote Input becomes usable so
     // the operator can start typing without an extra click. Losing focus on
@@ -249,6 +260,8 @@ function ScreenTab({ agent })
     // Map an event's client coords to Agent-screen pixel coords. Returns
     // null when the canvas has not yet received a keyframe (no intrinsic
     // resolution) — the caller must drop the event in that case.
+    // Also returns null when the click lands in the letterbox padding area
+    // (outside the rendered content region inside a contain-fit container).
     function toAgentCoords(evt)
     {
         const wrap = canvas_wrap_ref.current
@@ -257,8 +270,22 @@ function ScreenTab({ agent })
         if (!cvs || cvs.width === 0 || cvs.height === 0) return null
         const rect = cvs.getBoundingClientRect()
         if (rect.width === 0 || rect.height === 0) return null
-        const x = Math.round(((evt.clientX - rect.left) / rect.width)  * cvs.width)
-        const y = Math.round(((evt.clientY - rect.top)  / rect.height) * cvs.height)
+
+        // Calculate the rendered content area inside the canvas element.
+        // The canvas intrinsic resolution (cvs.width × cvs.height) is drawn
+        // with contain-fit semantics: drawImage always fills the full intrinsic
+        // area, so the canvas CSS size IS the content area (no letterbox inside
+        // the canvas itself).  Any letterboxing is added by the flex container
+        // OUTSIDE the canvas element — those areas are not inside rect at all,
+        // so clientX/Y will naturally be outside rect when the user clicks there.
+        const localX = evt.clientX - rect.left
+        const localY = evt.clientY - rect.top
+
+        // Guard: click outside canvas bounding rect (should not happen, but be safe)
+        if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) return null
+
+        const x = Math.round((localX / rect.width)  * cvs.width)
+        const y = Math.round((localY / rect.height) * cvs.height)
         // Clamp so a rounding overshoot at the right/bottom edge does not
         // ship coordinates outside the Agent's actual screen.
         const cx = Math.max(0, Math.min(cvs.width  - 1, x))

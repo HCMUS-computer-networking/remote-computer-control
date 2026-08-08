@@ -38,9 +38,11 @@ namespace agent.Modules
         {
             lock (_seqLock)
             {
-                // Sliding window size = 5
-                if (_recvSeq != unchecked((uint)-1) && seq + 5 <= _recvSeq)
+                // Sliding window size = 32 (tăng từ 5 để tránh drop lệnh input khi có jitter nhỏ.
+                // WebSocket đảm bảo ordering nên replay attack trong window 32 packet là không thực tế.)
+                if (_recvSeq != unchecked((uint)-1) && seq + 32 <= _recvSeq)
                 {
+                    Log.Warning("[E2EE] Dropped seq={Seq} (current _recvSeq={RecvSeq}). Possible replay or large reorder.", seq, _recvSeq);
                     return false; // Replay / Too old
                 }
 

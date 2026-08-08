@@ -24,7 +24,7 @@
 // correct Zustand store action. See the dispatchMessage() function at the bottom
 // for the full routing table.
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 
 import AgentSocket                       from '../services'   // mock or real, chosen by VITE_USE_MOCK in services/index.js
 import { buildListAgents, buildPolicyUpdate, buildPermissionRequest, buildPermissionRevoke, buildStopModule, normalizeIncoming, MSG_TYPE, MODULE, FEATURE } from '../services/Protocol'
@@ -517,7 +517,9 @@ export default function useAgentSocket()
         }
     }
 
-    return { sendCommand, sendToFocused, sendToSelected, requestPermission, revokePermission, stopModule }
+    return useMemo(() => ({
+        sendCommand, sendToFocused, sendToSelected, requestPermission, revokePermission, stopModule
+    }), [])
 }
 
 // ── Private: inject target_agents and send ───────────────────────────────────
@@ -547,7 +549,10 @@ async function sendToSocketE2EE(agent_id, msgObj) {
             console.error('[E2EE] Failed to encrypt message', e);
         }
     } else {
-        const allowedPlaintext = ['e2ee_init', 'permissions_reset', 'policy_update'];
+        const allowedPlaintext = [
+            'e2ee_init', 'permissions_reset', 'policy_update',
+            'permission_request', 'permission_revoke', 'stop_module',
+        ];
         if (allowedPlaintext.includes(msgObj.type)) {
             _socket.send(jsonStr);
         } else {
@@ -867,6 +872,7 @@ function dispatchMessage(msg, { setStatus: _setStatus, setAgents, setAgentStatus
 
         // ── Remote Input ──────────────────────────────────────────────────
         case MSG_TYPE.INPUT_STARTED:
+            console.log('[Remote Input] input_started received for agent:', msg.agent_id, '— setting input_active = true')
             setInputActive(msg.agent_id, true)
             break
 
