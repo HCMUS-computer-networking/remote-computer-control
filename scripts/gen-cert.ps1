@@ -54,11 +54,13 @@ if (-not $openssl)
 
 New-Item -ItemType Directory -Force -Path $certs_dir | Out-Null
 
+$san = if ([System.Net.IPAddress]::TryParse($Cn, [ref]$null)) { "IP:$Cn,DNS:localhost" } else { "DNS:$Cn,DNS:localhost" }
 Write-Host "[gen-cert] Using openssl: $openssl" -ForegroundColor DarkGray
-Write-Host "[gen-cert] Generating self-signed cert (CN=$Cn, 365 days)..." -ForegroundColor Green
+Write-Host "[gen-cert] Generating self-signed cert (CN=$Cn, SAN=$san, 365 days)..." -ForegroundColor Green
 
 & $openssl req -x509 -newkey rsa:2048 -nodes `
-    -keyout $key_path -out $cert_path -days 365 -subj "/CN=$Cn"
+    -keyout $key_path -out $cert_path -days 365 -subj "/CN=$Cn" `
+    -addext "subjectAltName=$san"
 
 if ($LASTEXITCODE -ne 0) { throw "openssl failed with exit code $LASTEXITCODE" }
 

@@ -1,8 +1,8 @@
-# setup.ps1 - one-shot bootstrap for Remote Computer Control.
+# setup.ps1 - one-shot bootstrap for Remote Computer Control (LAN ready).
 #
-# Turns a fresh clone into a runnable system with as little manual work as
+# Turns a fresh clone into a runnable LAN system with as little manual work as
 # possible. It generates every shared secret ONCE and writes it consistently
-# into gateway/.env, controller/.env and the Agent config, so the four secrets
+# into gateway/.env, controller/.env and Agent config, so the four secrets
 # never drift out of sync. Re-runnable; existing files are kept unless -Force.
 #
 # Manual prerequisites (cannot be scripted - install these yourself):
@@ -11,17 +11,17 @@
 #   * Git for Windows           (clone + bundles openssl for the TLS cert)
 #
 # Usage (from repo root):
-#   pwsh ./scripts/setup.ps1                       # single-machine demo (all)
+#   pwsh ./scripts/setup.ps1                       # Auto-detect LAN IP & setup all
 #   pwsh ./scripts/setup.ps1 -GatewayIp 192.168.1.50
-#   pwsh ./scripts/setup.ps1 -Component gateway    # only this machine's role
+#   pwsh ./scripts/setup.ps1 -Component gateway    # Gateway role only
 #   pwsh ./scripts/setup.ps1 -Component agent -GatewayIp 192.168.1.50 `
-#         -AgentKey <key> -E2eePin <pin>           # agent machine, keys from gateway
-#   pwsh ./scripts/setup.ps1 -Force                # regenerate secrets/cert/env
+#         -AgentKey <key> -E2eePin <pin>           # Agent machine, keys from gateway
+#   pwsh ./scripts/setup.ps1 -Force                # Regenerate secrets/cert/env
 
 param(
     [ValidateSet("all", "gateway", "controller", "agent")]
     [string] $Component = "all",                                                        # Which role(s) to set up on this machine
-    [string] $GatewayIp = "localhost",                                                  # Host/IP the Controller + Agent dial
+    [string] $GatewayIp = "auto",                                                       # Host/IP (default 'auto' detects LAN IP)
     [string] $AdminPassword = "admin123",                                              # Seeded Controller login password
     [string] $AgentKey = "",                                                            # Agent shared key (paste from gateway on an agent-only machine)
     [string] $E2eePin = "",                                                             # E2EE PIN (paste from gateway on an agent-only machine)
@@ -51,12 +51,44 @@ function New-Secret([int] $bytes = 32)                                          
     return (& node -e "console.log(require('crypto').randomBytes($bytes).toString('hex'))").Trim()
 }
 
+function Get-LanIpAddress
+{
+    try {
+        $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { 
+            $_.IPAddress -notlike "127.*" -and 
+            $_.IPAddress -notlike "169.254.*" -and 
+            $_.InterfaceAlias -notlike "*Loopback*" -and 
+            $_.InterfaceAlias -notlike "*vEthernet*" -and 
+            $_.InterfaceAlias -notlike "*WSL*" -and 
+            $_.InterfaceAlias -notlike "*Virtual*"
+        } | Select-Object -ExpandProperty IPAddress -First 1)
+        if ($ip) { return $ip }
+    } catch { }
+
+    try {
+        $ip = ([System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) | 
+            Where-Object { $_.AddressFamily -eq 'InterNetwork' -and $_.IPAddressToString -notlike "127.*" } | 
+            Select-Object -ExpandProperty IPAddressToString -First 1)
+        if ($ip) { return $ip }
+    } catch { }
+
+    return "127.0.0.1"
+}
+
 function Section([string] $text)
 {
     Write-Host ""
     Write-Host "-- $text " -ForegroundColor Cyan -NoNewline
     Write-Host ("-" * [Math]::Max(1, 60 - $text.Length)) -ForegroundColor Cyan
 }
+
+# Resolve LAN IP if auto or empty
+if ($GatewayIp -eq "auto" -or [string]::IsNullOrWhiteSpace($GatewayIp))
+{
+    $GatewayIp = Get-LanIpAddress
+}
+
+Write-Host "Target Gateway IP/Host: $GatewayIp" -ForegroundColor Yellow
 
 # -- Prerequisite check -------------------------------------------------------
 Section "Checking prerequisites"
@@ -79,8 +111,6 @@ if ($missing.Count -gt 0)
 Write-Host "All required tools found." -ForegroundColor Green
 
 # -- Secret generation (shared across gateway + controller + agent) -----------
-# On an agent-only machine the operator pastes AgentKey + E2eePin that the
-# gateway printed, so we do NOT invent new ones there.
 $controller_key = ""
 $agent_key      = $AgentKey
 $jwt_secret     = ""
@@ -92,8 +122,8 @@ if ($Component -in @("all", "gateway", "controller"))
     $controller_key = New-Secret 32
     $jwt_secret     = New-Secret 48
     if (-not $agent_key) { $agent_key = New-Secret 32 }
-    if (-not $e2ee_pin)  { $e2ee_pin  = New-Secret 8  }                                 # 16 hex chars - short enough to type on the Controller
-    Write-Host "Secrets generated (shown in the summary at the end)." -ForegroundColor Green
+    if (-not $e2ee_pin)  { $e2ee_pin  = New-Secret 8  }                                 # 16 hex chars - short PIN
+    Write-Host "Secrets generated (shown in summary at the end)." -ForegroundColor Green
 }
 
 # -- Gateway ------------------------------------------------------------------
@@ -101,7 +131,6 @@ if ($Component -in @("all", "gateway"))
 {
     Section "Gateway"
 
-    # .env - write only if absent or -Force, so re-runs don't rotate live keys.
     $env_path = Join-Path $gateway_dir ".env"
     if ((Test-Path $env_path) -and -not $Force)
     {
@@ -109,7 +138,7 @@ if ($Component -in @("all", "gateway"))
     }
     else
     {
-        $allowed_origin = "${scheme}://${GatewayIp}:5173,http://localhost:5173"
+        $allowed_origin = "${scheme}://${GatewayIp}:5173,http://${GatewayIp}:5173,http://localhost:5173,https://localhost:5173"
         $env_body = @"
 PORT=8080
 AGENT_KEY=$agent_key
@@ -131,7 +160,7 @@ LOGIN_RATE_LIMIT_MAX_REQUESTS=10
         Write-Host "Wrote gateway/.env" -ForegroundColor Green
     }
 
-    # TLS cert (skip in -NoTls mode).
+    # TLS cert
     if (-not $NoTls)
     {
         $cert_args = @{ Cn = $GatewayIp }
@@ -139,12 +168,12 @@ LOGIN_RATE_LIMIT_MAX_REQUESTS=10
         & (Join-Path $PSScriptRoot "gen-cert.ps1") @cert_args
     }
 
-    # Dependencies.
+    # Dependencies
     Write-Host "Installing gateway dependencies..." -ForegroundColor Green
     Push-Location $gateway_dir
     if (Test-Path (Join-Path $gateway_dir "package-lock.json")) { npm ci } else { npm install }
 
-    # Seed the admin user into SQLite (bcrypt hash - plaintext never stored).
+    # Seed admin user
     Write-Host "Seeding admin user into SQLite..." -ForegroundColor Green
     $admin_hash = (& node -e "console.log(require('bcryptjs').hashSync(process.argv[1],10))" $AdminPassword).Trim()
     & node -e "require('./src/db').queries.upsertUser('admin', process.argv[1], 'admin')" $admin_hash
@@ -167,7 +196,7 @@ if ($Component -in @("all", "controller"))
         if (-not $controller_key)
         {
             Write-Host "No CONTROLLER_KEY available. Run with -Component all/gateway first," -ForegroundColor Red
-            Write-Host "or paste the gateway's CONTROLLER_KEY into controller/.env manually." -ForegroundColor Yellow
+            Write-Host "or paste gateway's CONTROLLER_KEY into controller/.env manually." -ForegroundColor Yellow
         }
         $cenv_body = @"
 VITE_GATEWAY_URL=${ws_scheme}://${GatewayIp}:8080
@@ -197,27 +226,32 @@ if ($Component -in @("all", "agent"))
     }
     else
     {
-        # config.local.json is gitignored - it holds this machine's live secrets.
-        $agent_cfg_path = Join-Path $agent_dir "config.local.json"
-        if ((Test-Path $agent_cfg_path) -and -not $Force)
-        {
-            Write-Host "agent/config.local.json exists - keeping it (use -Force to overwrite)." -ForegroundColor DarkGray
+        $agent_cfg = [ordered]@{
+            agent_id            = $env:COMPUTERNAME
+            gateway_url         = "${ws_scheme}://${GatewayIp}:8080"
+            auth_key            = $agent_key
+            e2ee_shared_secret  = $e2ee_pin
+            app_whitelist       = @("notepad", "calc", "chrome", "winword")
+            sandbox_root_path   = "C:\AgentSandbox\"
+            log_retention_days  = 7
+            consent_timeout_ms  = 30000
+            tray_password       = ""
         }
-        else
+
+        # Write agent/config.json
+        $agent_cfg_main = Join-Path $agent_dir "config.json"
+        if ((-not (Test-Path $agent_cfg_main)) -or $Force)
         {
-            $agent_cfg = [ordered]@{
-                agent_id            = $env:COMPUTERNAME
-                gateway_url         = "${ws_scheme}://${GatewayIp}:8080"
-                auth_key            = $agent_key
-                e2ee_shared_secret  = $e2ee_pin
-                app_whitelist       = @("notepad", "calc", "chrome", "winword")
-                sandbox_root_path   = "C:\AgentSandbox\"
-                log_retention_days  = 7
-                consent_timeout_ms  = 30000
-                tray_password       = ""
-            }
-            $agent_cfg | ConvertTo-Json -Depth 5 | Set-Content -Path $agent_cfg_path -Encoding utf8
-            Write-Host "Wrote agent/config.local.json (copy to config.json next to agent.exe after build)." -ForegroundColor Green
+            $agent_cfg | ConvertTo-Json -Depth 5 | Set-Content -Path $agent_cfg_main -Encoding utf8
+            Write-Host "Wrote agent/config.json" -ForegroundColor Green
+        }
+
+        # Write agent/config.local.json
+        $agent_cfg_local = Join-Path $agent_dir "config.local.json"
+        if ((-not (Test-Path $agent_cfg_local)) -or $Force)
+        {
+            $agent_cfg | ConvertTo-Json -Depth 5 | Set-Content -Path $agent_cfg_local -Encoding utf8
+            Write-Host "Wrote agent/config.local.json" -ForegroundColor Green
         }
     }
 
@@ -227,6 +261,14 @@ if ($Component -in @("all", "agent"))
         Push-Location $agent_dir
         dotnet build agent.sln -c Release
         Pop-Location
+
+        # Copy config.json to build bin output directory
+        $bin_config_dir = Join-Path $agent_dir "bin\Release\net8.0-windows"
+        if (Test-Path $bin_config_dir)
+        {
+            $agent_cfg | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $bin_config_dir "config.json") -Encoding utf8
+            Write-Host "Wrote config.json to agent/bin/Release/net8.0-windows/" -ForegroundColor Green
+        }
     }
 }
 
@@ -238,15 +280,15 @@ if ($controller_key -or $agent_key -or $e2ee_pin)
     if ($controller_key) { Write-Host ("  CONTROLLER_KEY : {0}" -f $controller_key) }
     if ($agent_key)      { Write-Host ("  AGENT_KEY      : {0}" -f $agent_key) }
     if ($jwt_secret)     { Write-Host ("  JWT_SECRET     : {0}" -f $jwt_secret) }
-    if ($e2ee_pin)       { Write-Host ("  E2EE PIN       : {0}  (enter this on the Controller to unlock an agent)" -f $e2ee_pin) }
+    if ($e2ee_pin)       { Write-Host ("  E2EE PIN       : {0}  (enter this on Controller to unlock an agent)" -f $e2ee_pin) }
     Write-Host ("  Login          : admin / {0}" -f $AdminPassword)
 }
 Write-Host ""
 Write-Host "Next:" -ForegroundColor Cyan
 Write-Host "  Gateway:    cd gateway && npm start" -ForegroundColor Gray
-Write-Host "  Controller: cd controller && npm run dev -- --host   (${scheme}://${GatewayIp}:5173)" -ForegroundColor Gray
-Write-Host "  Agent:      run agent/bin/Release/net8.0-windows/agent.exe (copy config.local.json -> config.json beside it)" -ForegroundColor Gray
+Write-Host ("  Controller: cd controller && npm run dev -- --host   ({0}://{1}:5173)" -f $scheme, $GatewayIp) -ForegroundColor Gray
+Write-Host "  Agent:      run agent/bin/Release/net8.0-windows/agent.exe" -ForegroundColor Gray
 if (-not $NoTls)
 {
-    Write-Host "  TLS: open ${scheme}://${GatewayIp}:8080/health once and accept the self-signed cert." -ForegroundColor Gray
+    Write-Host ("  TLS: open {0}://{1}:8080/health once on your browser and accept the self-signed cert." -f $scheme, $GatewayIp) -ForegroundColor Gray
 }
